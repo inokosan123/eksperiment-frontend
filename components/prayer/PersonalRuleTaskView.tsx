@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
+  Easing,
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
@@ -21,8 +22,11 @@ import * as Haptics from 'expo-haptics';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import PantocratorAboutSheet from '@/components/prayer/PantocratorAboutSheet';
-import { PantocratorPanel } from '@/components/prayer/PantocratorIcon';
+import { PantocratorPanel, PrayerLamp, panelWidth } from '@/components/prayer/PantocratorIcon';
+import PrayerFocusSwitch, { type PrayerFocus } from '@/components/prayer/PrayerFocusSwitch';
+import StandingCross from '@/components/prayer/StandingCross';
 import PrayerOrbit, { useIgnition, useReadoutInk } from '@/components/prayer/PrayerOrbit';
+import { useAppSettings } from '@/components/settings/SettingsContext';
 import { ArrowLeft, CheckSmall, ChevronDown, OpenBook, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -142,7 +146,9 @@ export default function PersonalRuleTaskView({
   onRuleChange,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { height, width: screenWidth } = useWindowDimensions();
+  const { settings, updateSettings } = useAppSettings();
+  const focus: PrayerFocus = settings.prayerFocus === 'icon' ? 'icon' : 'cross';
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const [running, setRunning] = useState(false);
   const [showExit, setShowExit] = useState(false);
@@ -160,9 +166,11 @@ export default function PersonalRuleTaskView({
   const [readoutSize, setReadoutSize] = useState({ width: 0, height: 0 });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finishLockRef = useRef(false);
-  const lampMotion = useSharedValue(0);
   // One value lights the orbit, the reading and the button. See useIgnition.
   const ignition = useIgnition(running);
+  // 0 = the cross is standing, 1 = the icon is. The exchange between them
+  // is the one animation on this screen that has to be worth watching.
+  const swap = useSharedValue(focus === 'icon' ? 1 : 0);
 
   const isCompactHeight = height < 720;
   const hasHours = elapsedSecs >= 3600;
@@ -179,6 +187,10 @@ export default function PersonalRuleTaskView({
   // it stops growing on a tall phone: past that the controls start to look
   // like they fell off the bottom.
   const panelHeight = iconRoom > 0 ? Math.max(150, Math.min(iconRoom - 10, 380)) : 0;
+  // The pool reaches well outside whatever is standing in it; a glow that
+  // stops at the object's edge is a rectangle of light, which is not what
+  // a lamp makes. Capped to the screen so it is never clipped.
+  const lampSize = Math.min(screenWidth, Math.round(panelWidth(panelHeight) * 2.1));
 
   useEffect(() => {
     if (!running) return;
@@ -194,8 +206,14 @@ export default function PersonalRuleTaskView({
   }, [running]);
 
   useEffect(() => {
-    lampMotion.value = withTiming(running ? 1 : 0, { duration: running ? 420 : 260 });
-  }, [lampMotion, running]);
+    // Long and even. A spring here would overshoot the exchange and snap
+    // the incoming object into place, and this is not a control settling
+    // — it is one thing giving way to another.
+    swap.value = withTiming(focus === 'icon' ? 1 : 0, {
+      duration: 560,
+      easing: Easing.inOut(Easing.cubic),
+    });
+  }, [focus, swap]);
 
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -285,6 +303,40 @@ export default function PersonalRuleTaskView({
     transform: [{ translateY: (1 - ignition.value) * 9 }],
   }));
 
+  /* ── The exchange ──────────────────────────────────────────────────
+   *
+   * ⚠ THE TWO OBJECTS NEVER OVERLAP AT FULL STRENGTH, which is what
+   * stops this from being a dissolve between two pictures. The one
+   * leaving is gone by 55% of the way through; the one arriving does
+   * not begin until 45%. For that tenth in the middle the lamp is
+   * alone — and the lamp is flaring exactly then — so what you see is
+   * a light with nothing in it yet, and then the other object rising
+   * into it.
+   *
+   * Both move UPWARD throughout: the old one lifts away, the new one
+   * rises from below into the same seat. Nothing sinks, so the two
+   * movements read as one continuous gesture rather than as a swap.
+   *
+   * ⚠ Opacity and translateY only — no scale. These are large views,
+   * but the rule that scaling resamples bitmaps on Android is not worth
+   * testing on the one element the user called the important part.
+   */
+  const crossStyle = useAnimatedStyle(() => {
+    const out = Math.min(1, swap.value / 0.55);
+    return { opacity: 1 - out, transform: [{ translateY: out * -14 }] };
+  });
+  const iconStyle = useAnimatedStyle(() => {
+    const arrive = Math.max(0, (swap.value - 0.45) / 0.55);
+    return { opacity: arrive, transform: [{ translateY: (1 - arrive) * 14 }] };
+  });
+  // The About door belongs to the icon — there is no sheet behind the
+  // cross — but it stays MOUNTED either way, so the deck below never
+  // changes height and the only thing that moves during the exchange is
+  // the object itself.
+  const aboutStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, (swap.value - 0.45) / 0.55),
+  }));
+
   return (
     <View style={s.screen}>
       <LinearGradient
@@ -318,9 +370,18 @@ export default function PersonalRuleTaskView({
         </TouchableOpacity>
       )}
 
+      {/* What stands in front of you. The choice is stored, so nobody has
+          to make it again every time they sit down to pray. */}
+      <View style={s.focusWrap}>
+        <PrayerFocusSwitch
+          value={focus}
+          onChange={next => updateSettings({ prayerFocus: next })}
+        />
+      </View>
+
       {/* The epigraph steps aside on a short phone. It is the one thing
           here that can go without breaking anything, and it costs the
-          icon eighty points it needs more. */}
+          object eighty points it needs more. */}
       {!isCompactHeight && (
         <>
           <Text style={s.quote}>{QUOTE}</Text>
@@ -328,9 +389,22 @@ export default function PersonalRuleTaskView({
         </>
       )}
 
-      {/* ── The icon ────────────────────────────────────────────────── */}
+      {/* ── The object, in its light ────────────────────────────────── */}
       <View style={s.iconRoom} onLayout={onIconRoomLayout}>
-        {panelHeight > 0 && <PantocratorPanel height={panelHeight} light={lampMotion} />}
+        {panelHeight > 0 && (
+          <>
+            {/* One lamp, behind both. It does not belong to either object
+                — see PrayerLamp — because the whole point of the change
+                is that the light stays lit and the thing in it changes. */}
+            <PrayerLamp size={lampSize} light={ignition} swap={swap} />
+            <Reanimated.View style={[s.stage, crossStyle]} pointerEvents="none">
+              <StandingCross height={panelHeight} />
+            </Reanimated.View>
+            <Reanimated.View style={[s.stage, iconStyle]} pointerEvents="none">
+              <PantocratorPanel height={panelHeight} />
+            </Reanimated.View>
+          </>
+        )}
       </View>
 
       {/* ── The reading, the controls, the door ─────────────────────── */}
@@ -422,17 +496,21 @@ export default function PersonalRuleTaskView({
             glyph, because what is behind it IS a book — and it opens
             without touching the clock: the prayer keeps its time while
             you read. */}
-        <TouchableOpacity
-          onPress={() => setShowAbout(true)}
-          activeOpacity={0.76}
-          haptic="selection"
-          style={s.about}
-          accessibilityRole="button"
-          accessibilityLabel="About the icon"
-        >
-          <OpenBook s={15} c={C.goldDark} w={1.6} />
-          <Text style={s.aboutText}>About the icon</Text>
-        </TouchableOpacity>
+        <Reanimated.View style={aboutStyle} pointerEvents={focus === 'icon' ? 'auto' : 'none'}>
+          <TouchableOpacity
+            onPress={() => setShowAbout(true)}
+            activeOpacity={0.76}
+            haptic="selection"
+            style={s.about}
+            accessibilityRole="button"
+            accessibilityLabel="About the icon"
+            accessibilityElementsHidden={focus !== 'icon'}
+            importantForAccessibility={focus === 'icon' ? 'auto' : 'no-hide-descendants'}
+          >
+            <OpenBook s={15} c={C.goldDark} w={1.6} />
+            <Text style={s.aboutText}>About the icon</Text>
+          </TouchableOpacity>
+        </Reanimated.View>
       </View>
 
       <PantocratorAboutSheet visible={showAbout} onClose={() => setShowAbout(false)} />
@@ -568,14 +646,24 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // The icon takes what is left, and it is the only thing on this screen
-  // that flexes — everything else is worth exactly what it measures.
+  focusWrap: { paddingHorizontal: 34, paddingTop: 12 },
+
+  // The object takes what is left, and it is the only thing on this
+  // screen that flexes — everything else is worth exactly what it
+  // measures.
   iconRoom: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
     paddingTop: 14,
+  },
+  // Both objects stand on the same seat, absolutely, so the exchange
+  // between them moves nothing else on the screen.
+  stage: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   deck: { alignItems: 'center', paddingHorizontal: 16 },

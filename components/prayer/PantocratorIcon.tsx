@@ -111,27 +111,23 @@ const FIELD_EMPTY = ['#F3EADA', '#E4D6BD'] as const;
 /** How much of the board the raised border takes, as a share of its width. */
 const BORDER_RATIO = 0.055;
 
+export function panelWidth(height: number) {
+  return height * PANEL_ASPECT;
+}
+
 export function PantocratorPanel({
   /** Total height of the board including its border. Width follows. */
   height,
-  /** 0 at rest, 1 while the prayer runs — the lamp. */
-  light,
   style,
 }: {
   height: number;
-  light?: SharedValue<number>;
   style?: StyleProp<ViewStyle>;
 }) {
   const width = height * PANEL_ASPECT;
   const border = Math.max(7, Math.round(width * BORDER_RATIO));
-  // The pool reaches well outside the board; a glow that stops at the
-  // frame is a rectangle of light, which is not what a lamp makes.
-  const pool = Math.round(width * 2.1);
 
   return (
     <View style={[{ width, height }, s.panelWrap, style]}>
-      <Lamp size={pool} light={light} />
-
       <View style={[s.board, { width, height, borderRadius: Math.max(6, border * 0.7) }]}>
         <LinearGradient
           colors={GOLD_FRAME}
@@ -173,16 +169,38 @@ export function PantocratorPanel({
 }
 
 /**
- * The lamp: one warm pool behind the board.
+ * THE LAMP: one warm pool, behind whatever is standing there.
  *
- * Resting it is not extinguished — it banks, the way the app's dormant
- * register does everywhere else. A prayer that is paused is still a
- * prayer that was begun.
+ * ⚠ IT BELONGS TO THE SCREEN, NOT TO THE BOARD, and that is deliberate.
+ * The prayer screen holds two objects — the cross and the icon — and the
+ * change between them is the good part: THE LIGHT STAYS LIT AND THE
+ * THING IN IT CHANGES. A lamp owned by the board would go out with it
+ * and come back with the other, which is a swap; a lamp that stays is a
+ * lamp.
+ *
+ * Resting it is not extinguished either — it banks, the way the app's
+ * dormant register does everywhere else. A prayer that is paused is
+ * still a prayer that was begun.
+ *
+ * `swap` lifts it as the objects exchange, so the moment of the change
+ * is lit rather than merely got through.
  */
-function Lamp({ size, light }: { size: number; light?: SharedValue<number> }) {
-  const style = useAnimatedStyle(() => ({
-    opacity: 0.34 + (light?.value ?? 0) * 0.66,
-  }), [light]);
+export function PrayerLamp({
+  size,
+  light,
+  swap,
+}: {
+  size: number;
+  light?: SharedValue<number>;
+  swap?: SharedValue<number>;
+}) {
+  const style = useAnimatedStyle(() => {
+    const base = 0.34 + (light?.value ?? 0) * 0.66;
+    // Brightest exactly halfway through the exchange, and back to
+    // nothing at either end of it.
+    const flare = 1 + 0.26 * Math.sin(Math.PI * (swap?.value ?? 0));
+    return { opacity: base * flare };
+  }, [light, swap]);
 
   return (
     <Reanimated.View pointerEvents="none" style={[s.lamp, { width: size, height: size }, style]}>

@@ -27,6 +27,18 @@ export type AppSettings = {
   notifChallenges: boolean;
   quietHours: boolean;
   dndEnabled: boolean;
+  /**
+   * What stands in front of you on the My Rule prayer screen: a plain
+   * cross, or the Sinai icon of Christ.
+   *
+   * ⚠ IT IS STORED, AND THAT IS THE WHOLE POINT. My Rule is written for
+   * Christians of every tradition, and some of them do not pray in front
+   * of images. Asking that person to reject an icon every single time
+   * they sit down to pray would be worse than never having offered one.
+   * The default is the cross for the same reason: it is the ground every
+   * tradition shares, and the icon is an offer rather than an assumption.
+   */
+  prayerFocus: 'cross' | 'icon';
 };
 
 export type AccountProfile = {
@@ -58,6 +70,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notifChallenges: true,
   quietHours: true,
   dndEnabled: false,
+  prayerFocus: 'cross',
 };
 
 const DEFAULT_ACCOUNT: AccountProfile = {
@@ -116,6 +129,10 @@ function normalizeSettings(value: unknown): AppSettings {
     notifChallenges: typeof raw.notifChallenges === 'boolean' ? raw.notifChallenges : DEFAULT_SETTINGS.notifChallenges,
     quietHours: typeof raw.quietHours === 'boolean' ? raw.quietHours : DEFAULT_SETTINGS.quietHours,
     dndEnabled: typeof raw.dndEnabled === 'boolean' ? raw.dndEnabled : DEFAULT_SETTINGS.dndEnabled,
+    // Anything that is not the icon falls back to the cross, so a corrupt
+    // or older store never puts an image in front of someone who chose
+    // not to have one.
+    prayerFocus: raw.prayerFocus === 'icon' ? 'icon' : 'cross',
   };
 }
 
