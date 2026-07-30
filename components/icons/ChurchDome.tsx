@@ -22,12 +22,16 @@ import { EMBLEM_LIGHT, emblemStrokes, type EmblemProps } from '@/components/icon
  *   · THE DOME, an onion that bulges and draws back to the point
  *     the cross stands on. A hemisphere was tried first and read as
  *     a mosque; the shoulder is the whole difference.
- *   · THE DRUM beneath it, with its ring of light slits — the
- *     windows a real drum is pierced with, and the members that
- *     give the mark something to look at up close.
- *   · THE CORNICE, one rubricated line wider than the walls, which
- *     is what makes the body read as built rather than drawn.
- *   · THE BODY, and inside it the ARCHED DOOR and TWO WINDOWS,
+ *   · THE DRUM beneath it, under its own hairline cornice, pierced
+ *     by an arcade of three filled arches — the windows a real drum
+ *     is lit through, and the members that give the mark something
+ *     to look at up close.
+ *   · THE LOW GABLED ROOF, whose ridge is the drum's seat. A flat
+ *     box with a cornice was drawn first and it read as a hall with
+ *     a dome dropped on it; the pitch is what makes it a nave.
+ *   · THE EAVES, one rubricated line wider than the walls, which is
+ *     what makes the building read as built rather than drawn.
+ *   · THE WALLS, and between them the ARCHED DOOR and TWO WINDOWS,
  *     filled. Filled because the family's solid marks are what
  *     carry it at emblem size — the rope's beads, the Gospel's four
  *     Evangelists — and because a window seen from outside is dark.
@@ -43,40 +47,49 @@ import { EMBLEM_LIGHT, emblemStrokes, type EmblemProps } from '@/components/icon
 /** Nearly square, and a shade wider than tall: a church has shoulders. */
 const GRID = { w: 22, h: 24 } as const;
 
-/** The cross stands on the dome's point at y=4.75. Kept narrow on purpose:
+/** The cross stands on the dome's point at y=4.4, and the whole of it —
+ * titulus, bar and footrest — is inside the grid. Kept narrow on purpose:
  * struck as wide as the Gospel's it stopped being a finial and started
  * reading as an aerial planted in the roof. */
 const CROSS = {
-  x: 11, top: 1.0, foot: 4.75,
-  titulus: { y: 1.95, x1: 10.15, x2: 11.85 },
-  bar: { y: 2.95, x1: 9.3, x2: 12.7 },
-  rest: { x1: 9.85, y1: 3.95, x2: 12.15, y2: 4.4 },
+  x: 11, top: 0.6, foot: 4.4,
+  titulus: { y: 1.5, x1: 10.2, x2: 11.8 },
+  bar: { y: 2.45, x1: 9.4, x2: 12.6 },
+  rest: { x1: 9.9, y1: 3.35, x2: 12.1, y2: 3.8 },
 } as const;
 
 /** The onion: out to the shoulders, then back to the point. */
-const DOME = 'M 7.55 9.5 C 6.85 7.25, 9.35 6.35, 11 4.75 C 12.65 6.35, 15.15 7.25, 14.45 9.5';
+const DOME = 'M 7.5 8.4 C 6.75 6.25, 9.35 5.45, 11 4.4 C 12.65 5.45, 15.25 6.25, 14.5 8.4';
 
-const DRUM = { x: 8.6, y: 9.5, w: 4.8, h: 2.9 } as const;
-/** The drum's ring of light. */
-const SLITS: readonly number[] = [9.8, 11, 12.2];
+const DRUM = { x: 8.6, y: 8.4, w: 4.8, h: 3.2 } as const;
+/** The drum's own cornice, and the arcade of windows under it. */
+const DRUM_CORNICE = { y: 9.25, x1: 8.6, x2: 13.4 } as const;
+const ARCADE: readonly number[] = [9.8, 11, 12.2];
 
-const CORNICE = { y: 12.4, x1: 3.0, x2: 19.0 } as const;
-const BODY = { x: 3.7, y: 12.4, w: 14.6, h: 9.0, r: 0.5 } as const;
+/** The nave: two walls under a low gable, and the drum rides its ridge. */
+const WALLS = 'M 4.4 21.6 L 4.4 14.6 M 17.6 21.6 L 17.6 14.6';
+const ROOF = 'M 3.2 14.6 L 11 11.6 L 18.8 14.6 Z';
+const EAVES = { y: 14.6, x1: 3.2, x2: 18.8 } as const;
 
-/** The ends of the cornice — this mark's bosses. */
-const ACROTERIA: readonly (readonly [number, number])[] = [[3.2, 12.4], [18.8, 12.4]];
+/** The ends of the eaves — this mark's bosses. */
+const ACROTERIA: readonly (readonly [number, number])[] = [[3.3, 14.6], [18.7, 14.6]];
 const ACROTERION_R = 0.7;
 
 /** The door: arched, and it reaches the floor. */
-const DOOR = 'M 9.3 21.4 L 9.3 17.6 A 1.7 1.7 0 0 1 12.7 17.6 L 12.7 21.4 Z';
+const DOOR = 'M 9.4 21.6 L 9.4 18.1 A 1.6 1.6 0 0 1 12.6 18.1 L 12.6 21.6 Z';
 /** Two windows, arched the same way, filled for the same reason. */
 const WINDOWS = [
-  'M 5.85 19.3 L 5.85 17.0 A 0.85 0.85 0 0 1 7.55 17.0 L 7.55 19.3 Z',
-  'M 14.45 19.3 L 14.45 17.0 A 0.85 0.85 0 0 1 16.15 17.0 L 16.15 19.3 Z',
+  'M 5.82 19.8 L 5.82 17.7 A 0.78 0.78 0 0 1 7.38 17.7 L 7.38 19.8 Z',
+  'M 14.62 19.8 L 14.62 17.7 A 0.78 0.78 0 0 1 16.18 17.7 L 16.18 19.8 Z',
 ] as const;
 
 /** The steps, at half light, so the building has a bottom. */
-const STEPS = 'M 2.9 21.4 L 19.1 21.4 M 2.2 22.6 L 19.8 22.6';
+const STEPS = 'M 2.6 21.6 L 19.4 21.6 M 1.9 22.8 L 20.1 22.8';
+
+/** One arch of the drum's arcade, filled the way the windows are. */
+function arcade(x: number) {
+  return `M ${x - 0.4} 11.15 L ${x - 0.4} 10.15 A 0.4 0.4 0 0 1 ${x + 0.4} 10.15 L ${x + 0.4} 11.15 Z`;
+}
 
 export default function ChurchDome({ s: size = 24, c = '#000', w = 1.2 }: EmblemProps) {
   const stroke = emblemStrokes(size, w, GRID.h);
@@ -97,23 +110,26 @@ export default function ChurchDome({ s: size = 24, c = '#000', w = 1.2 }: Emblem
         strokeLinecap="round"
       />
 
-      <Rect
-        x={BODY.x}
-        y={BODY.y}
-        width={BODY.w}
-        height={BODY.h}
-        rx={BODY.r}
-        ry={BODY.r}
+      <Path
+        d={WALLS}
         stroke={c}
         strokeWidth={stroke.board}
         fill="none"
+        strokeLinecap="round"
+      />
+      <Path
+        d={ROOF}
+        stroke={c}
+        strokeWidth={stroke.board}
+        fill="none"
+        strokeLinejoin="round"
       />
 
       <Line
-        x1={CORNICE.x1}
-        y1={CORNICE.y}
-        x2={CORNICE.x2}
-        y2={CORNICE.y}
+        x1={EAVES.x1}
+        y1={EAVES.y}
+        x2={EAVES.x2}
+        y2={EAVES.y}
         stroke={c}
         strokeWidth={stroke.rubric}
         strokeLinecap="round"
@@ -131,18 +147,17 @@ export default function ChurchDome({ s: size = 24, c = '#000', w = 1.2 }: Emblem
         strokeWidth={stroke.board}
         fill="none"
       />
-      {SLITS.map((x, i) => (
-        <Line
-          key={i}
-          x1={x}
-          y1={10.2}
-          x2={x}
-          y2={11.7}
-          stroke={c}
-          strokeWidth={stroke.hair}
-          opacity={EMBLEM_LIGHT.hair}
-          strokeLinecap="round"
-        />
+      <Line
+        x1={DRUM_CORNICE.x1}
+        y1={DRUM_CORNICE.y}
+        x2={DRUM_CORNICE.x2}
+        y2={DRUM_CORNICE.y}
+        stroke={c}
+        strokeWidth={stroke.hair}
+        opacity={EMBLEM_LIGHT.rule}
+      />
+      {ARCADE.map((x, i) => (
+        <Path key={i} d={arcade(x)} fill={c} opacity={0.9} />
       ))}
 
       <Path

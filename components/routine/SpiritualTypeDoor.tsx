@@ -1,6 +1,7 @@
 import React, { useCallback, useId, useState } from 'react';
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import Svg, { Defs, Ellipse, Line, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronRight } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { toHsl } from '@/components/shared/tone';
@@ -26,11 +27,11 @@ import { F } from '@/constants/tokens';
  *
  * So the dose is inverted here, and that inversion is the design:
  *
- *   · ONE MATERIAL FOR ALL FOUR. Every door is the same warm
- *     parchment. Nothing about the plate says which kind it is.
- *   · THE COLOUR IS ONLY LIGHT. A wash of the subject's tone pools
- *     around the mark and is gone by the middle of the plate, the way
- *     a lamp set beside an object lights the object and not the room.
+ *   · THE PLATE IS STRUCK IN ITS OWN TONE, corner to corner, so it is
+ *     an object under light rather than a white card with a tint on
+ *     it — and then a pane of white light is laid over the shoulder.
+ *   · THE MARK STILL STANDS IN A POOL OF LIGHT, now brighter, because
+ *     it has to lift off a ground that carries colour of its own.
  *   · ONE RING, NOT THREE. The seat carries a single hairline; the
  *     pool behind it does the rest.
  *   · THE MARK CARRIES THE MEANING — `BeadLoop`, `ScriptureBook` and
@@ -38,17 +39,16 @@ import { F } from '@/constants/tokens';
  *     so their internal density survives. Below that the Gospel's
  *     tooled frame and the drum's slits are a smudge.
  *
- * The flourish along the far edge is the one thing kept literally
- * from the doors, at half their strength: ruled lines for Scripture
- * because it is text, and a lean for the rest.
+ * ⚠ NO RULED FLOURISH. The doors carry leaning lines along their far
+ * edge; struck across a full-width plate they stopped reading as a
+ * manuscript's ornament and started reading as scratches on the card.
+ * The plate's own gradient does that work instead.
  * ───────────────────────────────────────────────────────────── */
 
 /** The mark's seat, and the emblem drawn inside it. */
 const SEAT = 54;
 const MARK = 30;
 const SEAT_LEFT = 14;
-
-export type DoorFlourish = 'lean' | 'counter-lean' | 'ruled';
 
 /** The tone at a chosen lightness, at a chosen share of its own saturation. */
 function tone(hex: string, lightness: number, satScale = 1): string {
@@ -68,44 +68,8 @@ function ringColor(hex: string, alpha: number): string {
   return `hsla(${Math.round(h)}, ${Math.round(s)}%, 46%, ${alpha})`;
 }
 
-function Flourish({ kind, color, w, h }: { kind: DoorFlourish; color: string; w: number; h: number }) {
-  if (kind === 'ruled') {
-    return (
-      <>
-        {Array.from({ length: 5 }).map((_, i) => {
-          const y = 17 + i * 12;
-          return (
-            <Line
-              key={i}
-              x1={w - 84} y1={y} x2={w - 14} y2={y}
-              stroke={color} strokeOpacity={0.16 - i * 0.024} strokeWidth={1}
-            />
-          );
-        })}
-      </>
-    );
-  }
-
-  const lean = kind === 'lean' ? -34 : 34;
-  return (
-    <>
-      {Array.from({ length: 5 }).map((_, i) => {
-        const x = kind === 'lean' ? w + 4 - i * 15 : w - 44 + i * 15;
-        return (
-          <Line
-            key={i}
-            x1={x} y1={-6} x2={x + lean} y2={h + 6}
-            stroke={color} strokeOpacity={0.15 - i * 0.02} strokeWidth={1}
-          />
-        );
-      })}
-    </>
-  );
-}
-
 export default function SpiritualTypeDoor({
   tint,
-  flourish,
   title,
   body,
   Emblem,
@@ -114,7 +78,6 @@ export default function SpiritualTypeDoor({
   anchor,
 }: {
   tint: string;
-  flourish: DoorFlourish;
   title: string;
   body: string;
   Emblem: React.ComponentType<{ s?: number; c?: string; w?: number }>;
@@ -148,30 +111,49 @@ export default function SpiritualTypeDoor({
       activeOpacity={0.86}
       accessibilityRole="button"
       accessibilityLabel={`${title}. ${body}`}
-      style={[s.door, { borderColor: tone(tint, 88, 0.55) }]}
+      style={[s.door, { borderColor: litTone(tint, 78, 42) }]}
     >
+      {/* The plate itself, struck in the subject's own tone and running corner
+          to corner so it reads as an object under light, not as a tint. */}
+      <LinearGradient
+        colors={[litTone(tint, 98, 38), litTone(tint, 93, 42), litTone(tint, 87, 46)]}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.ground}
+      />
+
       {ready && (
         <Svg width={w} height={h} style={StyleSheet.absoluteFill} pointerEvents="none">
           <Defs>
             <RadialGradient id={washId} cx="50%" cy="50%" rx="50%" ry="50%">
               <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.95} />
-              <Stop offset="0.42" stopColor={litTone(tint, 88, 46)} stopOpacity={0.55} />
-              <Stop offset="1" stopColor={litTone(tint, 88, 46)} stopOpacity={0} />
+              <Stop offset="0.44" stopColor={litTone(tint, 95, 44)} stopOpacity={0.72} />
+              <Stop offset="1" stopColor={litTone(tint, 92, 44)} stopOpacity={0} />
             </RadialGradient>
           </Defs>
 
-          {/* The lamp set beside the mark: gone by the middle of the plate. */}
+          {/* The lamp set beside the mark, so the emblem still stands in light
+              now that the plate around it carries colour of its own. */}
           <Ellipse
             cx={SEAT_LEFT + SEAT / 2}
             cy={h / 2}
-            rx={124}
-            ry={54}
+            rx={92}
+            ry={50}
             fill={`url(#${washId})`}
           />
-
-          <Flourish kind={flourish} color={tone(tint, 52, 0.7)} w={w} h={h} />
         </Svg>
       )}
+
+      {/* The pane of light on the shoulder — transparent well before it ends,
+          so it never rules a line across the plate. */}
+      <LinearGradient
+        colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0)']}
+        locations={[0, 0.6]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.ground}
+      />
 
       <View pointerEvents="none" style={s.litEdge} />
 
@@ -182,11 +164,11 @@ export default function SpiritualTypeDoor({
         </View>
 
         <View style={s.copy}>
-          <Text style={[s.title, { color: tone(tint, 26) }]} numberOfLines={1}>{title}</Text>
-          <Text style={s.body} numberOfLines={2}>{body}</Text>
+          <Text style={[s.title, { color: tone(tint, 24) }]} numberOfLines={1}>{title}</Text>
+          <Text style={[s.body, { color: tone(tint, 40, 0.72) }]} numberOfLines={2}>{body}</Text>
         </View>
 
-        <ChevronRight s={16} c={tone(tint, 66, 0.5)} />
+        <ChevronRight s={16} c={tone(tint, 58, 0.6)} />
       </View>
     </TouchableOpacity>
   );
@@ -194,7 +176,7 @@ export default function SpiritualTypeDoor({
 
 const s = StyleSheet.create({
   door: {
-    minHeight: 88,
+    minHeight: 92,
     borderRadius: 21,
     borderWidth: 1,
     backgroundColor: '#FFFDF8',
@@ -209,6 +191,7 @@ const s = StyleSheet.create({
     shadowRadius: 12,
     elevation: 1,
   },
+  ground: { position: 'absolute', top: 1, left: 1, right: 1, bottom: 1, borderRadius: 19 },
   litEdge: {
     position: 'absolute',
     top: 1,
@@ -234,15 +217,17 @@ const s = StyleSheet.create({
   },
   copy: { flex: 1, gap: 3 },
   title: {
-    fontFamily: F.serifMedium,
-    fontSize: 18,
-    lineHeight: 22,
+    fontFamily: F.serifSemiBold,
+    fontSize: 21,
+    lineHeight: 25,
     letterSpacing: 0.2,
   },
+  // The description is set in the app's quiet voice — Garamond italic, the
+  // same face the empty states speak in — not in the interface sans, which
+  // read as a settings subtitle under a serif title.
   body: {
-    fontFamily: F.sans,
-    fontSize: 11.5,
-    lineHeight: 15,
-    color: '#8B8378',
+    fontFamily: F.serifItalic,
+    fontSize: 14,
+    lineHeight: 18,
   },
 });

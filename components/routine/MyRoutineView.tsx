@@ -77,7 +77,7 @@ import {
 import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
 import RoutinePhonePlanCard from '@/components/focus-watch/RoutinePhonePlanCard';
 import WeekDaySelector, { DayHead, type WeekDayGeometry } from '@/components/routine/WeekDaySelector';
-import SpiritualTypeDoor, { type DoorFlourish } from '@/components/routine/SpiritualTypeDoor';
+import SpiritualTypeDoor from '@/components/routine/SpiritualTypeDoor';
 import BeadLoop from '@/components/prayer/BeadLoop';
 import ScriptureBook from '@/components/icons/ScriptureBook';
 import ChurchDome from '@/components/icons/ChurchDome';
@@ -242,13 +242,12 @@ const SPIRITUAL_TYPES: {
   label: string;
   desc: string;
   accent: string;
-  flourish: DoorFlourish;
   Icon: React.ComponentType<{ s?: number; c?: string; w?: number }>;
 }[] = [
-  { id: 'prayer', label: 'Prayer', desc: 'Morning, evening, and meal prayer tasks', accent: '#6D5AAE', flourish: 'counter-lean', Icon: BeadLoop },
-  { id: 'reading', label: 'Scripture', desc: 'Bible, Psalter, and reading rhythms', accent: '#B54155', flourish: 'ruled', Icon: ScriptureBook },
-  { id: 'church', label: 'Church', desc: 'Liturgy and church attendance reminders', accent: '#B08A3E', flourish: 'lean', Icon: ChurchDome },
-  { id: 'custom', label: 'Custom', desc: 'Write a rule of your own', accent: '#5F7D8A', flourish: 'counter-lean', Icon: Sparkles },
+  { id: 'prayer', label: 'Prayer', desc: 'Morning, evening, and meal prayer tasks', accent: '#6D5AAE', Icon: BeadLoop },
+  { id: 'reading', label: 'Scripture', desc: 'Bible, Psalter, and reading rhythms', accent: '#B54155', Icon: ScriptureBook },
+  { id: 'church', label: 'Church', desc: 'Liturgy and church attendance reminders', accent: '#B08A3E', Icon: ChurchDome },
+  { id: 'custom', label: 'Custom', desc: 'Write a rule of your own', accent: '#5F7D8A', Icon: Sparkles },
 ];
 
 const GRATITUDE_ACCENT = '#F43F5E';
@@ -2019,7 +2018,6 @@ function SpiritualTypePickerSheet({
               <SpiritualTypeDoor
                 key={item.id}
                 tint={item.accent}
-                flourish={item.flourish}
                 title={item.label}
                 body={item.desc}
                 Emblem={item.Icon}
