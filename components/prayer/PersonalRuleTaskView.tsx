@@ -646,7 +646,9 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  focusWrap: { paddingHorizontal: 34, paddingTop: 12 },
+  // No side padding: the switch is two centred names now, not a track that
+  // has to be inset from the screen's edges.
+  focusWrap: { paddingTop: 10 },
 
   // The object takes what is left, and it is the only thing on this
   // screen that flexes — everything else is worth exactly what it
