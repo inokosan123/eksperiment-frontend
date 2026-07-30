@@ -21,8 +21,9 @@ import Svg, { Line } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
-  Book, CheckSmall, ChevronDown, Search, Trash2, X,
+  Book, CheckSmall, ChevronDown, ChevronRight, Search, Trash2, X,
 } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -129,6 +130,11 @@ const CHAPTER_COLUMNS = 5;
 const CHAPTER_GAP = 7;
 const PAGE_SIDE_PADDING = 16;
 const CHAPTER_GRID_SIDE_PADDING = 4;
+// What the opened leaf takes out of the row before the cells get any: its two
+// hairline borders and its own padding. Counted here rather than eyeballed —
+// left out of the sum, the table silently drops from five columns to four.
+const CHAPTER_LEAF_PADDING = 4;
+const CHAPTER_LEAF_INSET = 2 + CHAPTER_LEAF_PADDING * 2;
 const BIBLE_NOTES_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 const bibleNotesLayout = LinearTransition.duration(178).easing(BIBLE_NOTES_EASE);
 
@@ -217,6 +223,12 @@ function tabMatches(book: BibleBook, tab: BibleTab) {
   if (tab === 'psalms') return book.id === PSALMS_ID;
   if (tab === 'nt') return book.section === 'nt';
   return book.section === 'ot' && book.id !== PSALMS_ID;
+}
+
+/** Which room of the canon a book belongs to. */
+function tabForBook(book: BibleBook): BibleTab {
+  if (book.id === PSALMS_ID) return 'psalms';
+  return book.section === 'nt' ? 'nt' : 'ot';
 }
 
 const BIBLE_NOTES_GUIDE_TARGETS = {
@@ -391,7 +403,10 @@ export default function BibleNotesView({
     return book ? tabMatches(book, tab) : false;
   }).length;
 
-  const chapterGridWidth = Math.min(width, 430) - (PAGE_SIDE_PADDING * 2) - (CHAPTER_GRID_SIDE_PADDING * 2);
+  const chapterGridWidth = Math.min(width, 430)
+    - (PAGE_SIDE_PADDING * 2)
+    - CHAPTER_LEAF_INSET
+    - (CHAPTER_GRID_SIDE_PADDING * 2);
   const chapterCellWidth = Math.floor((chapterGridWidth - (CHAPTER_GAP * (CHAPTER_COLUMNS - 1))) / CHAPTER_COLUMNS);
 
   useEffect(() => {
@@ -767,6 +782,42 @@ export default function BibleNotesView({
                     exiting={FadeOutUp.duration(118).easing(Easing.out(Easing.cubic))}
                     layout={bibleNotesLayout}
                   >
+                   {/* THE OPENED LEAF.
+
+                       The chapters used to drop out of the card as twenty-eight
+                       loose white pills on the screen's own background: no
+                       spine, no frame, no motif, no ruling — none of the
+                       register every other surface on this screen is built
+                       from — and their numbers set in a grey so pale they were
+                       barely on the page at all. The book above them said
+                       "notebook"; the table under it said "keypad".
+
+                       So the table is the book OPENED. It is a page: the same
+                       double frame the card wears, the same lit top edge, the
+                       same tab motif, and — the piece that binds them — the
+                       same spine, running down the left of the leaf exactly as
+                       it runs down the left of the cover above it. Cover and
+                       page, one bound object. */}
+                   <View
+                     style={[
+                       s.chapterLeaf,
+                       { backgroundColor: tone.pill, borderColor: tone.frame },
+                       activeTab === 'psalms' && s.chapterLeafSolo,
+                     ]}
+                   >
+                    {/* NO MOTIF HERE, and it was tried both ways. In its
+                        corner it read as a smudge on a page this size; raked
+                        across the whole leaf it cut diagonals straight through
+                        a grid of horizontal and vertical cell edges, which is
+                        the same collision the Old Testament's ruling made on
+                        the cards — a motif must never fight the main linear
+                        element of the surface it is on, and here that element
+                        is the table itself. The leaf carries its register in
+                        the binding, the double frame and the lit edge; none of
+                        those cross the chapters. */}
+                    <View pointerEvents="none" style={[s.chapterLeafFrame, { borderColor: tone.frameInner }]} />
+                    <View pointerEvents="none" style={s.chapterLeafLit} />
+                    <View pointerEvents="none" style={[s.chapterLeafSpine, { backgroundColor: tone.spine }]} />
                     {activeTab === 'psalms' ? (
                       // The Psalter is read in kathismata, so it is written in
                       // them too — the same twenty divisions Holy Scripture
@@ -816,6 +867,7 @@ export default function BibleNotesView({
                         ))}
                       </View>
                     )}
+                   </View>
                   </Reanimated.View>
                 )}
               </Reanimated.View>
@@ -860,14 +912,27 @@ export default function BibleNotesView({
 // from the left. Horizontal ruling was tried here and does not work — the
 // leader dots crossing the card are horizontal too, so the two ran parallel
 // and the whole card read as mis-registered ruling.
-function NoteMotif({ tone }: { tone: NoteTone }) {
-  const W = 170;
-  const H = 90;
+function NoteMotif({
+  tone,
+  width = 170,
+  height = 90,
+  lines = 5,
+}: {
+  tone: NoteTone;
+  width?: number;
+  height?: number;
+  lines?: number;
+}) {
+  // The card's corner mark, and — given a page to cover — the page's own
+  // grain. Same rake either way, so a book and the leaf under it are the
+  // same paper.
+  const W = width;
+  const H = height;
   return (
     <View pointerEvents="none" style={s.noteMotif}>
       <Svg width={W} height={H}>
         {tone.motif === 'rays'
-          ? Array.from({ length: 5 }).map((_, index) => {
+          ? Array.from({ length: lines }).map((_, index) => {
             const offset = index * 26;
             return (
               <Line
@@ -882,7 +947,7 @@ function NoteMotif({ tone }: { tone: NoteTone }) {
               />
             );
           })
-          : Array.from({ length: 5 }).map((_, index) => {
+          : Array.from({ length: lines }).map((_, index) => {
             const offset = index * 26;
             return (
               <Line
@@ -994,15 +1059,19 @@ function ChapterCell({
       activeOpacity={0.82}
       style={[
         s.chapterCell,
-        { width },
+        { width, borderColor: tone.frameInner },
         hasNote && [s.chapterCellActive, {
-          backgroundColor: tone.ground,
           borderColor: tone.pillBorder,
           shadowColor: tone.accent,
         }],
       ]}
     >
-      <View pointerEvents="none" style={s.chapterCellLit} />
+      {/* On a tinted page the written chapter is the LIT one — it is the
+          figure, and the leaf is the ground. It used to be the other way
+          round: every cell was solid white on the screen's own background, so
+          a chapter you had written in had to be picked out by tint alone and
+          the rest of the table shouted just as loudly as it did. */}
+      {hasNote && <View pointerEvents="none" style={s.chapterCellLit} />}
       <Text style={[s.chapterText, hasNote && s.chapterTextActive]}>{chapter}</Text>
       {hasNote && <View style={[s.noteDot, { backgroundColor: tone.accent }]} />}
     </TouchableOpacity>
@@ -1065,38 +1134,73 @@ function ChapterEditor({
 }) {
   const insets = useSafeAreaInsets();
   const chapterKey = chapter ? `${chapter.book.id}-${chapter.chapter}` : 'empty';
+  // The editor wears the register of the room the chapter came from, so
+  // opening a note never feels like leaving the shelf you opened it from.
+  const tone = NOTE_TONES[chapter ? tabForBook(chapter.book) : 'nt'];
 
   return (
     <Modal visible={!!chapter} animationType="slide" onRequestClose={onClose}>
       <View style={s.editorScreen}>
+        {/* The bar carries the back arrow and the name, and nothing else. The
+            three actions used to sit inside it behind a sideWidth of 132,
+            which reserved 132 on BOTH sides and left a chapter like
+            "2 THESSALONIANS 3" about 52pt to live in — so it was shrunk to its
+            floor and then clipped. Given the whole width it simply fits. */}
         <ScreenTitleBar
           title={(chapter ? `${chapter.book.name} ${chapter.chapter}` : 'Bible Note').toUpperCase()}
           showBack
           bg={BG}
           onBackOverride={onClose}
-          sideWidth={132}
-          rightElement={(
-            <View style={s.editorActions}>
-            <TouchableOpacity
-              onPress={onScripture}
-              accessibilityRole='button'
-              accessibilityLabel='Open this chapter in Scripture'
-              style={[s.editorIconBtn, s.editorScriptureBtn]}
-              activeOpacity={0.76}
-            >
-              <Book s={18} c='#55705C' />
-            </TouchableOpacity>
-            {onDelete && (
-              <TouchableOpacity onPress={onDelete} style={[s.editorIconBtn, s.editorDeleteBtn]} activeOpacity={0.76}>
-                <Trash2 s={18} c={C.red} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={onSave} style={[s.editorIconBtn, s.editorSaveBtn]} activeOpacity={0.78}>
-              <CheckSmall s={19} c="#FFFFFF" />
-            </TouchableOpacity>
-            </View>
-          )}
+          compactBottom
         />
+
+        {/* The actions, in a row of their own: what you do least on the left,
+            what you came for in the middle, what you do most on the right. */}
+        <View style={s.editorBar}>
+          <TouchableOpacity
+            onPress={onDelete}
+            disabled={!onDelete}
+            accessibilityRole="button"
+            accessibilityLabel="Delete this note"
+            style={[s.editorSideBtn, s.editorDeleteBtn, !onDelete && s.editorSideBtnOff]}
+            activeOpacity={0.76}
+          >
+            <Trash2 s={18} c={onDelete ? C.red : '#C9BFB4'} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={onScripture}
+            accessibilityRole="button"
+            accessibilityLabel="Open this chapter in Scripture"
+            style={s.editorOpenBtn}
+            activeOpacity={0.82}
+          >
+            <LinearGradient
+              colors={[tone.pill, tone.ground]}
+              start={{ x: 0.1, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            <View pointerEvents="none" style={s.editorOpenLit} />
+            <Book s={17} c={tone.accent} />
+            <Text style={[s.editorOpenText, { color: tone.pillText }]} numberOfLines={1}>
+              OPEN IN SCRIPTURE
+            </Text>
+            <ChevronRight s={15} c={tone.spine} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={onSave}
+            accessibilityRole="button"
+            accessibilityLabel="Save this note"
+            style={[s.editorSideBtn, s.editorSaveBtn]}
+            activeOpacity={0.78}
+          >
+            <View pointerEvents="none" style={s.editorSaveLit} />
+            <CheckSmall s={19} c="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
         <ScrollView
           contentContainerStyle={[s.editorContent, { paddingBottom: insets.bottom + 42 }]}
@@ -1369,6 +1473,48 @@ const s = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
   kathismaLabel: { fontFamily: F.sansBold, fontSize: 8.8, letterSpacing: 2.1 },
+  /* The leaf the chapters are printed on — the book, opened. Everything on it
+     is the card's own construction at page scale. */
+  chapterLeaf: {
+    marginTop: 4,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    overflow: 'hidden',
+    position: 'relative',
+    paddingHorizontal: CHAPTER_LEAF_PADDING,
+  },
+  // On the Psalter every book is open at once, so there is no cover above the
+  // leaf to tuck under and it stands as a card in its own right.
+  chapterLeafSolo: { marginTop: 0, marginBottom: 4 },
+  chapterLeafFrame: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    right: 5,
+    bottom: 5,
+    borderRadius: 13,
+    borderWidth: 1,
+  },
+  chapterLeafLit: {
+    position: 'absolute',
+    top: 1,
+    left: 12,
+    right: 12,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  // The binding. It runs where the cover's spine runs, so the card above and
+  // the page below read as one object rather than as a card and a tray.
+  chapterLeafSpine: {
+    position: 'absolute',
+    left: 0,
+    top: 10,
+    bottom: 10,
+    width: 2.5,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+  },
   chapterCellLit: {
     position: 'absolute',
     top: 1,
@@ -1377,51 +1523,114 @@ const s = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.95)',
   },
+  // A folio, not a pill: 44 tall to clear Apple's tap minimum, but squared off
+  // at 12 so a table of them reads as ruled paper rather than as a keypad.
   chapterCell: {
     overflow: 'hidden',
     minHeight: 44,
-    borderRadius: 15,
+    borderRadius: 12,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(232,216,186,0.32)',
-    backgroundColor: 'rgba(255,255,255,0.90)',
+    backgroundColor: 'rgba(255,255,255,0.34)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   chapterCellActive: {
-    backgroundColor: '#F4FAF0',
-    borderColor: 'rgba(94,123,85,0.42)',
+    backgroundColor: '#FFFFFF',
     shadowColor: NOTE_GREEN,
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 7,
     elevation: 1,
   },
-  chapterText: { fontFamily: F.serifMedium, fontSize: 15, color: '#D4CEC6' },
+  // #D4CEC6 on near-white was a number you had to hunt for — the table's whole
+  // job is to be read at a glance. This is a legible ink held quiet.
+  chapterText: { fontFamily: F.serifMedium, fontSize: 15, color: '#9A9086' },
   chapterTextActive: { color: '#3D3229' },
   noteDot: { position: 'absolute', top: 7, right: 8, width: 5, height: 5, borderRadius: 2.5, backgroundColor: NOTE_GREEN },
 
   editorScreen: { flex: 1, backgroundColor: '#FDFBF5' },
-  editorActions: { width: 130, flexDirection: 'row', justifyContent: 'flex-end', gap: 7 },
-  editorIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+
+  // The action row. 44 tall throughout, so every target clears Apple's
+  // minimum, and the two side buttons are square so the long one between
+  // them reads as the primary way out of this screen.
+  editorBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 4,
+    paddingBottom: 12,
+    backgroundColor: BG,
+  },
+  editorSideBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    flexShrink: 0,
+    overflow: 'hidden',
   },
-  editorDeleteBtn: { backgroundColor: '#FEF2F2', borderColor: 'rgba(190,18,60,0.14)' },
-  editorScriptureBtn: { backgroundColor: '#F1F6EF', borderColor: 'rgba(85,112,92,0.16)' },
+  editorSideBtnOff: { opacity: 0.45 },
+  editorDeleteBtn: { backgroundColor: '#FEF2F2', borderColor: 'rgba(190,18,60,0.16)' },
   editorSaveBtn: {
     backgroundColor: GOLD,
-    borderColor: 'rgba(255,255,255,0.30)',
+    borderColor: 'rgba(255,255,255,0.32)',
     shadowColor: GOLD,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.24,
+    shadowOpacity: 0.26,
     shadowRadius: 10,
+    elevation: 3,
+  },
+  // The light every raised surface in this app catches along its top edge.
+  editorSaveLit: {
+    position: 'absolute',
+    top: 1,
+    left: 12,
+    right: 12,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  editorOpenBtn: {
+    flex: 1,
+    minWidth: 0,
+    height: 44,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(94,123,85,0.26)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 8,
+    paddingHorizontal: 12,
+    overflow: 'hidden',
+    shadowColor: '#3F5238',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.09,
+    shadowRadius: 9,
     elevation: 2,
   },
+  editorOpenLit: {
+    position: 'absolute',
+    top: 1,
+    left: 16,
+    right: 16,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  editorOpenText: {
+    flexShrink: 1,
+    fontFamily: F.sansBold,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    color: '#4C6644',
+  },
   editorContent: { padding: 18, gap: 13 },
+
   fieldCard: {
     position: 'relative',
     overflow: 'hidden',
