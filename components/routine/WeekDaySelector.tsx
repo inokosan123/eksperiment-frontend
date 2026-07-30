@@ -53,29 +53,50 @@ export default function WeekDaySelector({
   onSelect,
   onGeometryChange,
 }: WeekDaySelectorProps) {
-  const [plateWidth, setPlateWidth] = useState(0);
-  const count = labels.length;
-  const cellWidth = plateWidth > 0 ? (plateWidth - PLATE_INSET * 2) / count : 0;
+  // ⚠ THE PLATE IS PLACED ON A MEASURED SEAT, NEVER ON A COMPUTED ONE.
+  //
+  // It was computed first — inset plus index times an even share of the band —
+  // and it stopped a little right of the word every time. Every candidate for
+  // that drift (Yoga's rule for padding under absolutely positioned children,
+  // its pixel-grid rounding of seven flexed cells that do not divide evenly,
+  // the half-space letter-spacing leaves after the last letter) is a guess
+  // about layout, and guesses about layout are what put it off centre.
+  //
+  // So each cell reports the box Yoga actually gave it, and the plate is hung
+  // on that. Whatever the engine decides, the plate agrees with it.
+  const [rowX, setRowX] = useState(0);
+  const [seats, setSeats] = useState<{ x: number; width: number }[]>([]);
 
   const slide = useSharedValue(0);
   const ready = useSharedValue(0);
 
-  const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    const nextWidth = event.nativeEvent.layout.width;
-    setPlateWidth(current => (Math.abs(current - nextWidth) < 0.5 ? current : nextWidth));
+  const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextX = event.nativeEvent.layout.x;
+    setRowX(current => (Math.abs(current - nextX) < 0.5 ? current : nextX));
   }, []);
 
-  useEffect(() => {
-    if (cellWidth <= 0) return;
-    onGeometryChange?.({ cellWidth, inset: PLATE_INSET });
-  }, [cellWidth, onGeometryChange]);
+  const handleSeatLayout = useCallback((index: number, x: number, width: number) => {
+    setSeats(current => {
+      const seat = current[index];
+      if (seat && Math.abs(seat.x - x) < 0.5 && Math.abs(seat.width - width) < 0.5) return current;
+      const next = current.slice();
+      next[index] = { x, width };
+      return next;
+    });
+  }, []);
+
+  const seat = seats[selectedIndex];
+  const measured = !!seat && seat.width > 0;
 
   useEffect(() => {
-    if (cellWidth <= 0) return;
-    // Yoga rounds each cell onto the pixel grid; the plate is placed from the
-    // raw fraction, so round it the same way rather than landing a half point
-    // off the seat it is meant to fill.
-    const target = Math.round(PLATE_INSET + selectedIndex * cellWidth);
+    const first = seats[0];
+    if (!first || first.width <= 0) return;
+    onGeometryChange?.({ cellWidth: first.width, inset: rowX });
+  }, [onGeometryChange, rowX, seats]);
+
+  useEffect(() => {
+    if (!measured) return;
+    const target = rowX + seat.x + PLATE_GAP;
     if (ready.value === 0) {
       // First measured frame lands without motion, then the plate is live.
       slide.value = target;
@@ -83,21 +104,21 @@ export default function WeekDaySelector({
       return;
     }
     slide.value = withSpring(target, SLIDE_SPRING);
-  }, [cellWidth, ready, selectedIndex, slide]);
+  }, [measured, ready, rowX, seat, slide]);
 
   const plateStyle = useAnimatedStyle(() => ({
     opacity: ready.value,
-    transform: [{ translateX: slide.value + PLATE_GAP }],
+    transform: [{ translateX: slide.value }],
   }));
 
   return (
-    <View style={s.plate} onLayout={handleLayout}>
+    <View style={s.plate}>
       <View pointerEvents="none" style={s.plateRim} />
 
-      {cellWidth > 0 && (
+      {measured && (
         <Reanimated.View
           pointerEvents="none"
-          style={[s.dayPlateLayer, { width: Math.max(0, cellWidth - PLATE_GAP * 2) }, plateStyle]}
+          style={[s.dayPlateLayer, { width: Math.max(0, seat.width - PLATE_GAP * 2) }, plateStyle]}
         >
           <View pointerEvents="none" style={s.dayPlateBloom}>
             <Bloom color={BLOOM_COLOR} opacity={0.62} />
@@ -116,14 +137,16 @@ export default function WeekDaySelector({
         </Reanimated.View>
       )}
 
-      <View style={s.cellRow}>
+      <View style={s.cellRow} onLayout={handleRowLayout}>
         {labels.map((label, index) => (
           <DayCell
             key={label + index}
+            index={index}
             label={label}
             selected={index === selectedIndex}
             isToday={index === todayIndex}
             onPress={() => onSelect(index)}
+            onSeatLayout={handleSeatLayout}
           />
         ))}
       </View>
@@ -132,18 +155,27 @@ export default function WeekDaySelector({
 }
 
 function DayCell({
+  index,
   label,
   selected,
   isToday,
   onPress,
+  onSeatLayout,
 }: {
+  index: number;
   label: string;
   selected: boolean;
   isToday: boolean;
   onPress: () => void;
+  onSeatLayout: (index: number, x: number, width: number) => void;
 }) {
   const progress = useSharedValue(selected ? 1 : 0);
   const idleColor = isToday ? TODAY_LABEL : IDLE_LABEL;
+
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    const { x, width } = event.nativeEvent.layout;
+    onSeatLayout(index, x, width);
+  }, [index, onSeatLayout]);
 
   useEffect(() => {
     progress.value = withTiming(selected ? 1 : 0, { duration: 170 });
@@ -161,6 +193,7 @@ function DayCell({
   return (
     <TouchableOpacity
       onPress={onPress}
+      onLayout={handleLayout}
       activeOpacity={0.72}
       accessibilityRole="button"
       accessibilityState={{ selected }}
