@@ -11,12 +11,18 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useSharedValue, withTiming } from 'react-native-reanimated';
+import Reanimated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import PantocratorAboutSheet from '@/components/prayer/PantocratorAboutSheet';
 import { PantocratorPanel } from '@/components/prayer/PantocratorIcon';
+import PrayerOrbit, { useIgnition, useReadoutInk } from '@/components/prayer/PrayerOrbit';
 import { ArrowLeft, CheckSmall, ChevronDown, OpenBook, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -148,9 +154,15 @@ export default function PersonalRuleTaskView({
   // readout, a control deck and a door, and no constant survives all the
   // combinations of those across every phone.
   const [iconRoom, setIconRoom] = useState(0);
+  // The orbit is built around the reading, so it has to know how big the
+  // reading came out — which changes with the font, the language and
+  // whether an hour has passed.
+  const [readoutSize, setReadoutSize] = useState({ width: 0, height: 0 });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finishLockRef = useRef(false);
   const lampMotion = useSharedValue(0);
+  // One value lights the orbit, the reading and the button. See useIgnition.
+  const ignition = useIgnition(running);
 
   const isCompactHeight = height < 720;
   const hasHours = elapsedSecs >= 3600;
@@ -207,6 +219,15 @@ export default function PersonalRuleTaskView({
     setIconRoom(current => (Math.abs(current - measured) < 1 ? current : measured));
   }, []);
 
+  const onReadoutLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setReadoutSize(current => (
+      Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
+        ? current
+        : { width, height }
+    ));
+  }, []);
+
   const handleReset = useCallback(() => {
     setRunning(false);
     setElapsedSecs(0);
@@ -240,8 +261,29 @@ export default function PersonalRuleTaskView({
   }, [onRuleChange, selectedRule]);
 
   const screenTitle = titleForPrayer(prayerType, title);
-  const activeColor = running ? theme.accent : C.text;
   const canSwitchRules = canSwitchPrayerRule(prayerType);
+
+  // The reading warms into the hour's colour on the same curve the orbit
+  // kindles on, rather than flipping the instant `running` changes.
+  const readoutInk = useReadoutInk(ignition, C.text, theme.accent);
+
+  // The button travels with it: ink at rest, the hour's colour running,
+  // with a halo of its own light behind it while it does.
+  const mainControlStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(ignition.value, [0, 1], [C.text, theme.accent]),
+  }), [theme.accent]);
+  const mainHaloStyle = useAnimatedStyle(() => ({ opacity: ignition.value * 0.3 }));
+  // The two glyphs cross-fade in place and pass each other vertically.
+  // ⚠ No scale on the swap: this is a small view, and scaling small views
+  // on Android resamples their bitmaps.
+  const playGlyphStyle = useAnimatedStyle(() => ({
+    opacity: 1 - ignition.value,
+    transform: [{ translateY: ignition.value * -9 }],
+  }));
+  const pauseGlyphStyle = useAnimatedStyle(() => ({
+    opacity: ignition.value,
+    transform: [{ translateY: (1 - ignition.value) * 9 }],
+  }));
 
   return (
     <View style={s.screen}>
@@ -293,15 +335,25 @@ export default function PersonalRuleTaskView({
 
       {/* ── The reading, the controls, the door ─────────────────────── */}
       <View style={[s.deck, { paddingBottom: Math.max(insets.bottom, 10) + 6 }]}>
-        <View style={s.readout}>
-          <Text style={[s.timeText, { color: activeColor, fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-            {display.main}
-          </Text>
-          <Text style={[s.colonText, { color: activeColor, fontSize: colonFont }]}>:</Text>
-          <Text style={[s.timeText, { color: activeColor, fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-            {display.tail}
-          </Text>
-        </View>
+        {/* The reading, inside its orbit. The orbit's two layers sit either
+            side of these digits in the tree, which is the whole trick —
+            see PrayerOrbit's header. */}
+        <PrayerOrbit
+          readout={readoutSize}
+          running={running}
+          ignition={ignition}
+          tint={theme.accent}
+        >
+          <View style={s.readout} onLayout={onReadoutLayout}>
+            <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+              {display.main}
+            </Reanimated.Text>
+            <Reanimated.Text style={[s.colonText, readoutInk, { fontSize: colonFont }]}>:</Reanimated.Text>
+            <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+              {display.tail}
+            </Reanimated.Text>
+          </View>
+        </PrayerOrbit>
 
         <View style={[s.controlsDeck, isCompactHeight && s.controlsDeckCompact]}>
           <TouchableOpacity
@@ -313,17 +365,45 @@ export default function PersonalRuleTaskView({
             <Text style={s.smallLabel}>Reset</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => setRunning(value => !value)}
-            activeOpacity={0.88}
-            style={[
-              s.mainControl,
-              isCompactHeight && s.mainControlCompact,
-              { backgroundColor: running ? theme.accent : C.text, shadowColor: running ? theme.accent : C.text },
-            ]}
-          >
-            {running ? <Pause s={isCompactHeight ? 24 : 27} c="#FFFFFF" /> : <Play s={isCompactHeight ? 24 : 27} c="#FFFFFF" />}
-          </TouchableOpacity>
+          <View style={s.mainWrap}>
+            {/* The button's own light, behind it. */}
+            <Reanimated.View
+              pointerEvents="none"
+              style={[
+                s.mainHalo,
+                isCompactHeight && s.mainHaloCompact,
+                { backgroundColor: theme.accent },
+                mainHaloStyle,
+              ]}
+            />
+            <TouchableOpacity
+              onPress={() => setRunning(value => !value)}
+              activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel={running ? 'Pause' : 'Start'}
+              style={[s.mainHit, isCompactHeight && s.mainHitCompact]}
+            >
+              <Reanimated.View
+                style={[
+                  s.mainControl,
+                  isCompactHeight && s.mainControlCompact,
+                  { shadowColor: theme.accent },
+                  mainControlStyle,
+                ]}
+              >
+                {/* Both glyphs live on the button at once and pass each
+                    other; a straight swap on React state was the one
+                    thing on this screen that changed with no transition
+                    at all. */}
+                <Reanimated.View style={[s.mainGlyph, playGlyphStyle]}>
+                  <Play s={isCompactHeight ? 24 : 27} c="#FFFFFF" />
+                </Reanimated.View>
+                <Reanimated.View style={[s.mainGlyph, pauseGlyphStyle]}>
+                  <Pause s={isCompactHeight ? 24 : 27} c="#FFFFFF" />
+                </Reanimated.View>
+              </Reanimated.View>
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             onPress={() => isTask ? setShowFinish(true) : handleFinish()}
@@ -530,10 +610,14 @@ const s = StyleSheet.create({
     elevation: 9,
   },
   controlsDeckCompact: { gap: 15, marginTop: 10, padding: 7, paddingHorizontal: 11 },
+  mainWrap: { alignItems: 'center', justifyContent: 'center' },
+  mainHit: { width: 66, height: 66, borderRadius: 33 },
+  mainHitCompact: { width: 58, height: 58, borderRadius: 29 },
   mainControl: {
     width: 66,
     height: 66,
     borderRadius: 33,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     shadowOffset: { width: 0, height: 8 },
@@ -542,6 +626,17 @@ const s = StyleSheet.create({
     elevation: 10,
   },
   mainControlCompact: { width: 58, height: 58, borderRadius: 29 },
+  // Wider than the button and behind it, so what shows is a rim of light
+  // around the edge rather than a disc under it.
+  mainHalo: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    opacity: 0,
+  },
+  mainHaloCompact: { width: 84, height: 84, borderRadius: 42 },
+  mainGlyph: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   smallControl: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   smallControlCompact: { width: 46, height: 46, borderRadius: 23 },
   smallLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(28,25,23,0.32)', marginTop: 2, textTransform: 'uppercase' },
