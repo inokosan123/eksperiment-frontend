@@ -26,6 +26,9 @@ const CELL_HEIGHT = 52;
 const FACE_FILL = ['#FFFFFF', '#FFF8E9'] as const;
 const BLOOM_COLOR = '#E6C074';
 
+/** One tracking for both states — see `cellLabel`. */
+const LABEL_TRACKING = 1.4;
+
 const IDLE_LABEL = '#8E877C';
 const TODAY_LABEL = '#A9853B';
 const ACTIVE_LABEL = '#8B6B2F';
@@ -69,7 +72,10 @@ export default function WeekDaySelector({
 
   useEffect(() => {
     if (cellWidth <= 0) return;
-    const target = PLATE_INSET + selectedIndex * cellWidth;
+    // Yoga rounds each cell onto the pixel grid; the plate is placed from the
+    // raw fraction, so round it the same way rather than landing a half point
+    // off the seat it is meant to fill.
+    const target = Math.round(PLATE_INSET + selectedIndex * cellWidth);
     if (ready.value === 0) {
       // First measured frame lands without motion, then the plate is live.
       slide.value = target;
@@ -160,7 +166,7 @@ function DayCell({
       accessibilityState={{ selected }}
       style={s.cell}
     >
-      <Reanimated.Text style={[s.cellLabel, selected && s.cellLabelActive, labelStyle]}>
+      <Reanimated.Text style={[s.cellLabel, labelStyle]}>
         {label}
       </Reanimated.Text>
       {isToday && <Reanimated.View style={[s.todayMark, markStyle]} />}
@@ -205,9 +211,14 @@ const s = StyleSheet.create({
   plate: {
     // A recessed warm track. Solid fill, so the band needs no clipping and the
     // chosen day's light may spill a little past its edge.
+    //
+    // ⚠ The inset is carried by the CELL ROW'S MARGIN, not by padding here.
+    // Yoga and the web disagree about whether a parent's padding also offsets
+    // its absolutely positioned children, and the gliding plate is exactly
+    // such a child: routed through padding it lands PLATE_INSET off centre on
+    // one of the two. With a margin there is nothing to disagree about.
     position: 'relative',
     borderRadius: 21,
-    padding: PLATE_INSET,
     backgroundColor: '#F5F0E4',
   },
   plateRim: {
@@ -268,6 +279,7 @@ const s = StyleSheet.create({
     borderColor: 'rgba(197,160,89,0.20)',
   },
   cellRow: {
+    margin: PLATE_INSET,
     flexDirection: 'row',
     zIndex: 3,
     elevation: 3,
@@ -283,11 +295,13 @@ const s = StyleSheet.create({
   cellLabel: {
     fontFamily: F.sansBold,
     fontSize: 10.5,
-    letterSpacing: 1.3,
+    letterSpacing: LABEL_TRACKING,
     textTransform: 'uppercase',
-  },
-  cellLabelActive: {
-    letterSpacing: 1.5,
+    // Tracking is added after the final letter as well, so the glyphs sit
+    // LABEL_TRACKING/2 left of the box's centre. A transform nudges them back
+    // without touching layout. Held equal in both states on purpose: retracking
+    // the chosen day re-centred the word under a plate that had not moved.
+    transform: [{ translateX: LABEL_TRACKING / 2 }],
   },
   todayMark: {
     position: 'absolute',
