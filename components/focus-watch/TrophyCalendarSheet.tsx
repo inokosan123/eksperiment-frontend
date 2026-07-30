@@ -114,6 +114,18 @@ function CountUp({
   }
   return (
     <View pointerEvents="none">
+      {/* A TextInput has no intrinsic width — it expands to whatever the row
+          will give it, which here was 376pt for a two-digit number. With a
+          centred text style that goes unnoticed (the hero's does), but the
+          counters below are not centred, so their digits were drawn at the far
+          left of that box and everything after them was shoved across: BEST
+          STREAK lost its number off the edge of the sheet and TROPHIES EARNED
+          was left showing the word "days" alone.
+
+          So the box is set by a hidden Text at the FINAL value and the live
+          input is laid over it. Sizing from the final value rather than the
+          current one also means the row does not reflow as the digits climb. */}
+      <Text style={[textStyle, cu.measurer]} allowFontScaling={false}>{value}</Text>
       <AnimatedTextInput
         editable={false}
         caretHidden
@@ -122,7 +134,7 @@ function CountUp({
         underlineColorAndroid="transparent"
         defaultValue="0"
         animatedProps={animatedProps}
-        style={[textStyle, cu.reset]}
+        style={[textStyle, cu.reset, cu.overlay]}
       />
     </View>
   );
@@ -130,6 +142,10 @@ function CountUp({
 
 const cu = StyleSheet.create({
   reset: { padding: 0, margin: 0 },
+  measurer: { opacity: 0 },
+  // Centred over the box the measurer set, so a number still climbing to its
+  // final digit count grows into place instead of drifting left.
+  overlay: { ...StyleSheet.absoluteFillObject, textAlign: 'center' },
 });
 
 /* ── Laurel sprig ─────────────────────────────────────────── */
@@ -344,11 +360,13 @@ export function SharedTrophyCalendarSheet({
 
   return (
     <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.sheet}>
-      <FocusSheetHeader
-        kicker={kicker}
-        title={title}
-        onClose={close}
-      />
+      <View style={s.header}>
+        <FocusSheetHeader
+          kicker={kicker}
+          title={title}
+          onClose={close}
+        />
+      </View>
 
       {/* Hero — the hall's own emblem, open on the page: the current
           streak crowned between two engraved laurel sprigs, best and
@@ -521,7 +539,10 @@ export default function TrophyCalendarSheet({ visible, onClose }: TrophyCalendar
       onClose={onClose}
       model={model}
       kicker="FOCUS TROPHIES"
-      title="Your Trophy Streak"
+      // The card that opens this is MEDAL STREAK and the currency it counts is
+      // the focus medallion — "Trophy" is the challenge currency, and naming
+      // the wrong one here was the last place the two were still confused.
+      title="Your Focus Streak"
     />
   );
 }
@@ -534,12 +555,21 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 28,
   },
+  // The title rides higher on the sheet. FocusSheetHeader is shared by half
+  // the sheets in Focus, so its own margins stay where they are and the lift
+  // is taken here, against this sheet's header alone.
+  header: { marginTop: -6 },
 
   /* Hero — laurel emblem, open on the page. One tight crest: the wreath
      hugs a 66pt number, the unit sits right under it, and the counters
-     row follows close — no dead air between the pieces. */
+     row follows close — no dead air between the pieces.
+
+     The 6pt it used to sit at was measured when the title was tight to the
+     top of the sheet; with the title lifted, that gap read as the hero
+     chasing it. The hero keeps its own air now — the title is a heading and
+     wants clear space under it, not a laurel crown two lines below. */
   hero: {
-    marginTop: 6,
+    marginTop: 22,
     alignItems: 'center',
   },
   laurelRow: {
