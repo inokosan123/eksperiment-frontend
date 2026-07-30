@@ -10,12 +10,17 @@ import Reanimated, {
   useReducedMotion,
   useSharedValue,
   withDelay,
-  withRepeat,
   withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { F } from '@/constants/tokens';
+import {
+  continuousPhase,
+  easeInOutQuad,
+  pingPongPhase,
+  useContinuousAnimationClock,
+} from '@/components/shared/use-continuous-animation-clock';
 
 // "Banked ember" — the resting register shared by the app's two streak
 // cards: Your Progress on Home and Trophy Streak on Focus.
@@ -299,32 +304,24 @@ export function EmberPulse({
   size = 30,
   discs = ASH_PALETTE.coreDiscs,
   style,
+  active = true,
 }: {
   size?: number;
   // Warm in the ash register, white in the struck one — there the glow is
   // light behind a cut-out rather than a coal under ash.
   discs?: readonly [string, string, string];
   style?: ViewStyle;
+  active?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      t.value = 0.5;
-      return;
-    }
-    t.value = 0;
-    t.value = withRepeat(
-      withTiming(1, { duration: 5200, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, t]);
+  const motionEnabled = active && !reduceMotion;
+  const clock = useContinuousAnimationClock(motionEnabled);
 
   // Opacity only — scaling a small view on Android resamples its bitmap.
-  const breath = useAnimatedStyle(() => ({ opacity: 0.26 + t.value * 0.32 }));
+  const breath = useAnimatedStyle(() => {
+    const phase = motionEnabled ? pingPongPhase(clock.value, 5200) : 0.5;
+    return { opacity: 0.26 + phase * 0.32 };
+  });
 
   return (
     <Reanimated.View
@@ -668,15 +665,17 @@ const light = StyleSheet.create({
 });
 
 /* ── Banked glint ─────────────────────────────────────────── */
-// The light-sweep grammar of the app's cards, kept alive on a resting
-// card so it still catches the light — tuned to its register. A wide soft
-// halo carries a bright HOT core just ahead of it, five gradient stops
-// each with a bright heart and soft falloff, so the sweep reads as a real
-// pane of light passing over the card rather than a flat wash.
+// The light-sweep grammar of the app's cards — tuned to the register of the
+// card it passes over, including a LIVE one: a plate of struck metal that
+// never catches the light is a printed picture of a plate. A wide soft halo
+// carries a bright HOT core just ahead of it, five gradient stops each with a
+// bright heart and soft falloff, so the sweep reads as a real pane of light
+// passing over the card rather than a flat wash.
+//   active — Home's white light, verbatim, for a live card;
 //   ash    — a warm gold pass over warm parchment (rest days);
 //   struck — a cool white pane over the graphite skipped card.
 // Everything is opacity + translate/rotate; nothing scales.
-export type BankedGlintVariant = 'ash' | 'struck';
+export type BankedGlintVariant = 'active' | 'ash' | 'struck';
 
 const GLINT_WIDE_LOC = [0, 0.32, 0.5, 0.68, 1] as const;
 const GLINT_CORE_LOC = [0, 0.4, 0.5, 0.6, 1] as const;
@@ -694,6 +693,20 @@ const BANKED_GLINT: Record<BankedGlintVariant, {
   wide: readonly [string, string, string, string, string];
   core: readonly [string, string, string, string, string];
 }> = {
+  // The live pass, and it is Home's — the same white light, at the same
+  // cadence, on the same five stops. Both streak cards are lit by one lamp;
+  // giving Focus a beam of its own colour would have made two light sources
+  // in one app out of what should read as the same sun crossing two surfaces.
+  active: {
+    // Three breaths exactly (3 × 2800): the sweep arrives on the beat the
+    // card is already keeping instead of drifting against it.
+    duration: 8400,
+    arrival: 0.44,
+    peak: 0.95,
+    corePeak: 0.9,
+    wide: ['rgba(255,251,235,0)', 'rgba(255,246,214,0.4)', 'rgba(255,249,224,0.82)', 'rgba(255,246,214,0.4)', 'rgba(255,251,235,0)'],
+    core: ['rgba(255,255,255,0)', 'rgba(255,253,243,0.6)', 'rgba(255,255,255,0.98)', 'rgba(255,253,243,0.6)', 'rgba(255,255,255,0)'],
+  },
   ash: {
     duration: 4600,
     arrival: 0.78,
@@ -712,47 +725,52 @@ const BANKED_GLINT: Record<BankedGlintVariant, {
   },
 };
 
-export function BankedGlint({ variant = 'ash' }: { variant?: BankedGlintVariant }) {
+export function BankedGlint({
+  variant = 'ash',
+  active = true,
+}: {
+  variant?: BankedGlintVariant;
+  active?: boolean;
+}) {
   const reduceMotion = useReducedMotion();
   const [w, setW] = useState(0);
-  const t = useSharedValue(0);
   const cfg = BANKED_GLINT[variant];
   const { duration, arrival, peak, corePeak } = cfg;
+  const motionEnabled = active && !reduceMotion && w > 0;
+  const clock = useContinuousAnimationClock(motionEnabled);
 
-  useEffect(() => {
-    if (reduceMotion || w === 0) return;
-    t.value = 0;
-    t.value = withRepeat(
-      withTiming(1, { duration, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      false,
-    );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, w, t, duration]);
+  const sweep = useAnimatedStyle(() => {
+    const progress = easeInOutQuad(continuousPhase(clock.value, duration));
+    return {
+      opacity: interpolate(progress, [0, arrival * 0.2, arrival * 0.82, arrival * 1.14, 1], [0, peak, peak, 0, 0]),
+      transform: [
+        { translateX: interpolate(progress, [0, arrival, 1], [-140, w + 80, w + 80]) },
+        { rotate: '14deg' },
+      ],
+    };
+  });
 
-  const sweep = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, arrival * 0.2, arrival * 0.82, arrival * 1.14, 1], [0, peak, peak, 0, 0]),
-    transform: [
-      { translateX: interpolate(t.value, [0, arrival, 1], [-140, w + 80, w + 80]) },
-      { rotate: '14deg' },
-    ],
-  }));
-
-  const core = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, arrival * 0.24, arrival * 0.78, arrival * 1.1, 1], [0, corePeak, corePeak, 0, 0]),
-    transform: [
-      { translateX: interpolate(t.value, [0, arrival, 1], [-90, w + 120, w + 120]) },
-      { rotate: '14deg' },
-    ],
-  }));
+  const core = useAnimatedStyle(() => {
+    const progress = easeInOutQuad(continuousPhase(clock.value, duration));
+    return {
+      opacity: interpolate(progress, [0, arrival * 0.24, arrival * 0.78, arrival * 1.1, 1], [0, corePeak, corePeak, 0, 0]),
+      transform: [
+        { translateX: interpolate(progress, [0, arrival, 1], [-90, w + 120, w + 120]) },
+        { rotate: '14deg' },
+      ],
+    };
+  });
 
   return (
     <View
       pointerEvents="none"
       style={StyleSheet.absoluteFill}
-      onLayout={event => setW(event.nativeEvent.layout.width)}
+      onLayout={event => {
+        const width = event.nativeEvent.layout.width;
+        setW(current => current === width ? current : width);
+      }}
     >
-      {!reduceMotion && w > 0 && (
+      {!reduceMotion && active && w > 0 && (
         <>
           <Reanimated.View style={[glint.band, sweep]}>
             <LinearGradient colors={cfg.wide} locations={GLINT_WIDE_LOC} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={glint.fill} />
@@ -776,20 +794,30 @@ const glint = StyleSheet.create({
 // The closed-book line that keeps a measuring instrument's slot when
 // there is nothing to measure: a caption between two hairlines, capped by
 // diamonds, in the same grammar as Home's analytics button.
-export function LedgerRail({ label, style }: { label: string; style?: ViewStyle }) {
+/**
+ * A closed ledger line: the slot an instrument would occupy, ruled shut.
+ *
+ * `night` is for the streak card, which is not parchment — the rule is drawn
+ * in the sky's violet and the label in its lilac, so a card with no plan today
+ * still looks like the same card rather than a parchment strip pasted on.
+ */
+export function LedgerRail({ label, style, night = false }: { label: string; style?: ViewStyle; night?: boolean }) {
   return (
     <View pointerEvents="none" style={[rail.wrap, style]}>
-      <View style={rail.diamond} />
-      <View style={rail.line} />
-      <Text style={rail.text}>{label}</Text>
-      <View style={rail.line} />
-      <View style={rail.diamond} />
+      <View style={[rail.diamond, night && rail.diamondNight]} />
+      <View style={[rail.line, night && rail.lineNight]} />
+      <Text style={[rail.text, night && rail.textNight]}>{label}</Text>
+      <View style={[rail.line, night && rail.lineNight]} />
+      <View style={[rail.diamond, night && rail.diamondNight]} />
     </View>
   );
 }
 
 const rail = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  lineNight: { backgroundColor: 'rgba(142,95,164,0.5)' },
+  textNight: { color: 'rgba(217,184,230,0.82)' },
+  diamondNight: { backgroundColor: 'rgba(201,142,212,0.7)' },
   line: { flex: 1, height: 1, borderRadius: 1, backgroundColor: BANKED.ashSoft },
   text: {
     fontFamily: F.sansBold,

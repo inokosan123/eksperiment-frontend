@@ -1,32 +1,36 @@
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   BarChart3,
-  ChevronRight,
   Clock,
   Globe,
   Lock,
   Shield,
-  X,
 } from '@/components/icons/Icons';
-import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import FocusPhoneStatus from './FocusPhoneStatus';
 import { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
-import RibbonSectionCard from '@/components/shared/RibbonSectionCard';
+import RibbonSectionCard, { type RibbonCardProps } from '@/components/shared/RibbonSectionCard';
 import { PulseDot } from './FocusMeter';
-import DayGauge, { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
+import { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
 import { ScreenTimeProtectionCard, WebProtectionCard } from './ProtectionPillarCards';
-import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
-import { BANKED, BankedGlint, LedgerRail, RestSeal } from '@/components/shared/BankedEmber';
-import RadiantTodayPulse from '@/components/shared/RadiantTodayPulse';
+import MedalStreakCard, { type MedalStreakWeekCell } from './MedalStreakCard';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
 import ProtectionRegisterCard, { REGISTER_TONES } from './ProtectionRegister';
@@ -52,18 +56,18 @@ import {
   type DayPlanState,
   type DayRecord,
 } from './dayPlanStore';
+import {
+  FocusMainMotionProvider,
+  FocusViewportMotionBoundary,
+  useFocusMainMotion,
+  type FocusViewportMotionHandle,
+} from './focus-main-motion';
 
 const WEEK_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
-type WeekCell = {
-  key: string;
-  letter: string;
-  status: 'kept' | 'broken' | 'rest' | 'today';
-};
-
-function buildWeek(state: DayPlanState, now: Date): WeekCell[] {
+function buildWeek(state: DayPlanState, now: Date): MedalStreakWeekCell[] {
   const today = dateKey(now);
   const live = getLiveDayStatus(state, now);
   return Array.from({ length: 7 }).map((_, index) => {
@@ -86,14 +90,24 @@ function buildWeek(state: DayPlanState, now: Date): WeekCell[] {
   });
 }
 
-// Today's marker in the week strip. Active, it wears the shared radiant
-// pulse (a warm breathing bloom); banked, it is held to a single still
-// ashen ring — nothing on a resting card moves but the ember.
-function TodayRing({ banked = false }: { banked?: boolean }) {
-  if (banked) {
-    return <View pointerEvents="none" style={[s.todayRing, s.todayRingBanked, s.todayRingHeld]} />;
-  }
-  return <RadiantTodayPulse size={34} />;
+function FocusMainRibbonCard(props: RibbonCardProps) {
+  const motionEnabled = useFocusMainMotion();
+  return <RibbonSectionCard {...props} active={motionEnabled} />;
+}
+
+
+function QuietHourRemaining({ endsAt }: { endsAt: number }) {
+  const motionEnabled = useFocusMainMotion();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!motionEnabled) return;
+    setNowMs(Date.now());
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [motionEnabled]);
+
+  return <>{formatClockMs(endsAt - nowMs)} remaining · ends {formatEndsAt(endsAt)}</>;
 }
 
 // The two protection registers now wear the plan builder's Always Blocked
@@ -147,14 +161,18 @@ export default function FocusWatchView({
   onGuidedComplete?: () => void;
 } = {}) {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const routeParams = useLocalSearchParams<{ sheet?: string }>();
   const insets = useSafeAreaInsets();
-  const { height: guideScreenHeight } = useWindowDimensions();
+  const { height: guideScreenHeight, width: screenWidth } = useWindowDimensions();
   const state = useDayPlan();
   const { session, patchSession, setPresentation } = useGuidedSetup();
   const isGuided = guided && session?.active === true && session.activeStep === 'focusOverview';
   const guidePhase = isGuided ? session.phase : '';
   const guideScrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const focusHeroMotionRef = useRef<FocusViewportMotionHandle>(null);
+  const focusFooterMotionRef = useRef<FocusViewportMotionHandle>(null);
+  const focusToolsMotionRef = useRef<FocusViewportMotionHandle>(null);
   const protectionTarget = useGuideTarget('focus-overview-protection-status', isGuided);
   const quietTarget = useGuideTarget('focus-overview-quiet-hour', isGuided);
   const streakTarget = useGuideTarget('focus-overview-streak', isGuided);
@@ -172,6 +190,14 @@ export default function FocusWatchView({
   const [trophiesOpen, setTrophiesOpen] = useState(false);
   const handledQuietRouteRef = useRef(false);
 
+  const handleFocusScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const scrollY = event.nativeEvent.contentOffset.y;
+    focusHeroMotionRef.current?.updateViewport(scrollY);
+    focusFooterMotionRef.current?.updateViewport(scrollY);
+    focusToolsMotionRef.current?.updateViewport(scrollY);
+    if (isGuided) guideScrollY.current = scrollY;
+  }, [isGuided]);
+
   useEffect(() => {
     if (
       guided
@@ -184,13 +210,24 @@ export default function FocusWatchView({
   }, [guided, routeParams.sheet, router]);
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    if (!isFocused) return;
+    const tick = () => {
       const next = Date.now();
       tickDayPlanStore(next);
       setNowMs(next);
-    }, state.quiet ? 1000 : 30_000);
-    return () => clearInterval(timer);
-  }, [state.quiet]);
+    };
+    const timer = setInterval(tick, 30_000);
+    const quietEndDelay = state.quiet
+      ? Math.max(0, state.quiet.endsAt - Date.now() + 50)
+      : null;
+    const quietEndTimer = quietEndDelay != null && quietEndDelay <= 2_147_483_647
+      ? setTimeout(tick, quietEndDelay)
+      : null;
+    return () => {
+      clearInterval(timer);
+      if (quietEndTimer) clearTimeout(quietEndTimer);
+    };
+  }, [isFocused, state.quiet]);
 
   const now = useMemo(() => new Date(nowMs), [nowMs]);
   const plan = getEffectivePlan(state, now);
@@ -224,7 +261,7 @@ export default function FocusWatchView({
   const todayStanding = targetMinutes != null
     ? gaugeStanding(targetMinutes, toleranceEndMinutes, usedToday)
     : 'unknown';
-  // The Trophy Streak card banks whenever no trophy is on the table today:
+  // The Medal Streak card banks whenever no medal is on the table today:
   // no plan is scheduled, or the plan that is carries no daily limit. A day
   // already lost still counts as live — it has a verdict to show.
   const streakBanked = targetMinutes == null && liveStatus !== 'broken';
@@ -302,7 +339,7 @@ export default function FocusWatchView({
         ? 'Only global Essentials and this plan’s chosen apps are reachable today.'
         : 'Daily Essentials and iOS system access remain available until the local day ends.'
     : state.quiet && isProtected
-    ? `${formatClockMs(state.quiet.endsAt - nowMs)} remaining · ends ${formatEndsAt(state.quiet.endsAt)}`
+    ? <QuietHourRemaining endsAt={state.quiet.endsAt} />
     : planProtects
         ? webActive
           ? `${plan?.name} and Web Protection are standing guard.`
@@ -314,13 +351,17 @@ export default function FocusWatchView({
           : 'Choose a plan or begin a Quiet Hour.';
 
   const badgePulse = isProtected || (nativeApplying && protectionConfigured);
-  const screenTimeChip = plan?.essentialsOnly && isProtected
-    ? <FocusStatusChip text="Essentials only" color="#8F3544" pulse={false} />
-    : hardWallActive && isProtected
-    ? <FocusStatusChip text="Limit reached" color="#8F3544" pulse={false} />
-    : planProtects
-        ? <FocusStatusChip text="Active" color="#327153" pulse />
-        : undefined;
+  const screenTimeChip = useMemo(() => (
+    plan?.essentialsOnly && isProtected
+      ? <FocusStatusChip text="Essentials only" color="#8F3544" pulse={false} />
+      : hardWallActive && isProtected
+      ? <FocusStatusChip text="Limit reached" color="#8F3544" pulse={false} />
+      : planProtects
+          ? <FocusStatusChip text="Active" color="#327153" pulse />
+          : undefined
+  ), [hardWallActive, isProtected, plan?.essentialsOnly, planProtects]);
+  const openDayPlans = useCallback(() => router.push('/day-plans' as never), [router]);
+  const openCleanSight = useCallback(() => router.push('/clean-sight' as never), [router]);
 
   const clearGuideTimers = useCallback(() => {
     guideTimersRef.current.forEach(clearTimeout);
@@ -508,8 +549,8 @@ export default function FocusWatchView({
 
   const focusNavigationCards = (
     <>
-      <Animated.View entering={enter(210)} style={s.contentSection}>
-        <RibbonSectionCard
+      <View style={s.contentSection}>
+        <FocusMainRibbonCard
           label="APP BLOCKING"
           title="Screen Time"
           titleColor={FOCUS_TINTS.gold.title}
@@ -518,14 +559,15 @@ export default function FocusWatchView({
           decorColor={FOCUS_TINTS.gold.label}
           chip={screenTimeChip}
           description="Plan how much of the day the phone may have — goals, limits, and app rules."
-          onPress={() => router.push('/day-plans' as never)}
+          onPress={openDayPlans}
           index={0}
+          estimatedWidth={screenWidth - 32}
           style={s.navCard}
         />
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={enter(280)} style={s.contentSectionTight}>
-        <RibbonSectionCard
+      <View style={s.contentSectionTight}>
+        <FocusMainRibbonCard
           label="CLEAN SIGHT"
           title="Web Protection"
           titleColor={FOCUS_TINTS.green.title}
@@ -533,28 +575,35 @@ export default function FocusWatchView({
           Decor={Globe}
           decorColor={FOCUS_TINTS.green.label}
           description="Block gambling, adult content, and other harmful sites in browsers."
-          onPress={() => router.push('/clean-sight' as never)}
+          onPress={openCleanSight}
           index={1}
+          estimatedWidth={screenWidth - 32}
           style={s.navCard}
         />
-      </Animated.View>
+      </View>
     </>
   );
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView
-        ref={isGuided ? guideScrollRef : undefined}
-        contentContainerStyle={s.page}
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={isGuided ? 16 : undefined}
-        onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
-      >
+      <FocusMainMotionProvider>
+        <ScrollView
+          ref={isGuided ? guideScrollRef : undefined}
+          contentContainerStyle={s.page}
+          showsVerticalScrollIndicator={false}
+          scrollEventThrottle={isGuided ? 16 : 32}
+          onScroll={handleFocusScroll}
+        >
         <ScreenTitleBar title="FOCUS" />
         <Animated.View entering={enter(0)} style={s.quoteWrap}>
           <Text style={s.quote}>“Be sober, be vigilant.”</Text>
           <Text style={s.ref}>1 PETER 5:8</Text>
         </Animated.View>
 
+        <FocusViewportMotionBoundary
+          ref={focusHeroMotionRef}
+          viewportHeight={guideScreenHeight}
+          initiallyActive
+        >
         <Animated.View entering={enter(60)} style={s.protectionSurface}>
           <LinearGradient
             colors={displayProtected
@@ -659,7 +708,12 @@ export default function FocusWatchView({
               />
           )}
         </Animated.View>
+        </FocusViewportMotionBoundary>
 
+        <FocusViewportMotionBoundary
+          ref={focusFooterMotionRef}
+          viewportHeight={guideScreenHeight}
+        >
         <Animated.View entering={enter(140)} style={s.contentSection}>
           <View style={s.sectionTitleRow}>
             <Text style={s.sectionTitle}>TODAY’S PROGRESS</Text>
@@ -672,122 +726,31 @@ export default function FocusWatchView({
               <Text style={s.analyticsButtonText}>Analytics</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
+          <MedalStreakCard
             {...(isGuided ? streakTarget : {})}
-            style={[s.progressSurface, streakBanked && s.progressSurfaceBanked]}
-            activeOpacity={0.86}
+            streak={state.streak.current}
+            week={week}
+            banked={streakBanked}
+            restDay={restDay}
+            liveStatus={liveStatus}
+            hasPlan={!!plan}
+            targetMinutes={targetMinutes}
+            toleranceEndMinutes={toleranceEndMinutes}
+            usedMinutes={usedToday}
             onPress={openTrophyCalendar}
-          >
-            <LinearGradient
-              colors={streakBanked ? BANKED.surface : ['#F8E7BE', '#FFF8E9', '#FFFEFA']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <TrophyShineBackdrop muted={streakBanked} />
-            {/* A resting card still catches the light — a warm pass sweeps
-                over the parchment, the same glint the Home rest cards wear. */}
-            {streakBanked && <BankedGlint variant="ash" />}
-            <View style={s.progressHeaderRow}>
-              <Text style={[s.progressKicker, streakBanked && s.progressKickerBanked]}>TROPHY STREAK</Text>
-              <View style={s.calendarLink}>
-                <Text style={[s.calendarLinkText, streakBanked && s.calendarLinkTextBanked]}>Monthly calendar</Text>
-                <ChevronRight s={13} c={streakBanked ? BANKED.inkMuted : C.goldDark} w={2.2} />
-              </View>
-            </View>
-
-            <View style={s.progressHeroRow}>
-              <View style={s.progressMedallion}>
-                <StreakMedallion value={state.streak.current} banked={streakBanked} />
-              </View>
-              <RadiantTrophy size={76} banked={streakBanked} halo />
-            </View>
-
-            {streakBanked && (
-              <RestSeal
-                label={restDay ? 'REST DAY' : state.streak.current > 0 ? 'STREAK HELD' : 'NO TARGET'}
-                style={s.progressSeal}
-              />
-            )}
-
-            <Text style={[s.progressHeadline, streakBanked && s.progressHeadlineBanked]} numberOfLines={2}>
-              {liveStatus === 'broken'
-                ? 'Today’s trophy is resting.'
-                : targetMinutes != null
-                  ? state.streak.current === 0
-                    ? 'Hold today’s limit and day one is yours.'
-                    : 'Today’s trophy is within reach.'
-                  : restDay
-                    ? state.streak.current > 0
-                      ? 'A rest day — your streak is still active.'
-                      : 'A rest day. Your first trophy waits for a plan.'
-                    : state.streak.current > 0
-                      ? 'No target today — the streak keeps its place.'
-                      : 'No target today. Set a daily limit to strike day one.'}
-            </Text>
-
-            {/* A rest day has nothing to place across the week, so the strip
-                is dropped entirely — the crest and seal carry it alone. */}
-            {!restDay && (
-              <View style={[s.weekBand, streakBanked && s.weekBandBanked]}>
-                {week.map(cell => {
-                  // Today can only be won when a trophy is on the table; on a
-                  // banked day its cell rests with the others, keeping a warm
-                  // coal so it is still findable.
-                  const todayBanked = streakBanked && cell.status === 'today';
-                  return (
-                    <View key={cell.key} style={s.weekCell}>
-                      <Text style={[
-                        s.weekLetter,
-                        cell.status === 'today' && (todayBanked ? s.weekLetterTodayBanked : s.weekLetterToday),
-                      ]}>{cell.letter}</Text>
-                      <View style={[
-                        s.weekDot,
-                        cell.status === 'kept' && s.weekDotKept,
-                        cell.status === 'broken' && s.weekDotBroken,
-                        cell.status === 'today' && (todayBanked ? s.weekDotTodayBanked : s.weekDotToday),
-                        cell.status === 'rest' && s.weekDotRest,
-                      ]}>
-                        {cell.status === 'today' && <TodayRing banked={todayBanked} />}
-                        {cell.status === 'kept' && <StaticChallengeTrophy size={22} />}
-                        {cell.status === 'today' && (todayBanked ? (
-                          <View style={s.todayEmber} />
-                        ) : (
-                          <View style={s.todayTrophyFaint}>
-                            <StaticChallengeTrophy size={20} />
-                          </View>
-                        ))}
-                        {cell.status === 'broken' && <X s={11} c="#B45360" w={2.5} />}
-                        {cell.status === 'rest' && <View style={s.restDot} />}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-
-            {targetMinutes != null ? (
-              <DayGauge
-                goalMinutes={targetMinutes}
-                toleranceEndMinutes={toleranceEndMinutes}
-                usedMinutes={usedToday}
-                accent="#8A5A1A"
-                labelColor="#A9863F"
-                style={s.progressGauge}
-              />
-            ) : (
-              // The instrument's slot is kept, closed like a ledger line: a
-              // resting plan has no daily limit, a rest day has no plan at all.
-              <LedgerRail
-                label={plan ? 'NO DAILY LIMIT TODAY' : 'NO ACTIVE PLAN TODAY'}
-                style={restDay ? s.progressRailRestDay : s.progressRail}
-              />
-            )}
-          </TouchableOpacity>
+          />
         </Animated.View>
 
+        </FocusViewportMotionBoundary>
+
+        <FocusViewportMotionBoundary
+          ref={focusToolsMotionRef}
+          viewportHeight={guideScreenHeight}
+        >
         {isGuided ? <View {...toolsTarget}>{focusNavigationCards}</View> : focusNavigationCards}
-      </ScrollView>
+        </FocusViewportMotionBoundary>
+        </ScrollView>
+      </FocusMainMotionProvider>
 
       <QuietHourSheet visible={quietOpen} onClose={() => setQuietOpen(false)} editingSession={state.quiet} />
       <AlwaysBlockedSheet visible={alwaysBlockedOpen} onClose={() => setAlwaysBlockedOpen(false)} />
@@ -930,90 +893,4 @@ const s = StyleSheet.create({
     paddingVertical: 7,
   },
   analyticsButtonText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
-  progressSurface: {
-    position: 'relative',
-    overflow: 'hidden',
-    borderRadius: 24,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#E8D8B5',
-    padding: 16,
-    shadowColor: '#1C1917',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  progressSurfaceBanked: { borderColor: BANKED.border },
-  progressHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  progressKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: C.goldDark },
-  progressKickerBanked: { color: BANKED.inkMuted },
-  progressHeroRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 14, paddingRight: 22 },
-  progressMedallion: { alignItems: 'center' },
-  progressSeal: { marginTop: 12 },
-  progressHeadline: { marginTop: 11, fontFamily: F.serif, fontSize: 14.5, lineHeight: 19, color: C.textSecondary, textAlign: 'center' },
-  progressHeadlineBanked: { marginTop: 9, fontFamily: F.serifItalic, color: BANKED.ink },
-  weekBand: {
-    marginTop: 14,
-    paddingVertical: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#EADFC8',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  weekBandBanked: { borderColor: BANKED.rule },
-  weekCell: { alignItems: 'center', gap: 6, minWidth: 34 },
-  weekLetter: { fontFamily: F.sansBold, fontSize: 9.5, color: C.textMuted },
-  weekLetterToday: { color: C.goldDark },
-  weekLetterTodayBanked: { color: BANKED.inkMuted },
-  weekDot: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  weekDotKept: {
-    backgroundColor: '#FFF3D8',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.55)',
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  weekDotBroken: { backgroundColor: '#FBEDEF', borderWidth: 1, borderColor: '#EBC7CD' },
-  weekDotToday: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: '#FFFBEF' },
-  weekDotRest: { borderWidth: 1.5, borderColor: '#DDD8CC', borderStyle: 'dashed', backgroundColor: 'transparent' },
-  weekDotTodayBanked: {
-    borderWidth: 1.5,
-    borderColor: BANKED.ash,
-    borderStyle: 'dashed',
-    backgroundColor: '#FBF8F0',
-  },
-  todayTrophyFaint: { position: 'absolute', opacity: 0.34 },
-  todayEmber: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: BANKED.ember },
-  restDot: { width: 4.5, height: 4.5, borderRadius: 3, backgroundColor: '#D3CEC1' },
-  todayRing: {
-    position: 'absolute',
-    top: -5,
-    left: -5,
-    right: -5,
-    bottom: -5,
-    borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: C.gold,
-  },
-  todayRingBanked: { borderColor: BANKED.ashLine },
-  todayRingHeld: { opacity: 0.55 },
-  progressGauge: { marginTop: 14, paddingHorizontal: 2 },
-  progressRail: { marginTop: 16, paddingHorizontal: 2 },
-  // With the week strip gone, the rail needs a little more air under the
-  // headline so it reads as the card's quiet footer, not a crowded line.
-  progressRailRestDay: { marginTop: 20, marginBottom: 2, paddingHorizontal: 2 },
-  calendarLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  calendarLinkText: { fontFamily: F.serifSemiBold, fontSize: 13.5, color: C.goldDark },
-  calendarLinkTextBanked: { color: BANKED.inkMuted },
 });

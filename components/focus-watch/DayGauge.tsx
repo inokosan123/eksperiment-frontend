@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -8,14 +9,13 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { F } from '@/constants/tokens';
+import { FocusMedalCoin } from '@/components/focus-watch/FocusMedallion';
 import { formatMinutesShort } from './dayPlanStore';
-
-const TROPHY_EMBLEM = require('@/assets/animations/challenge-trophy-preview.png');
 
 // The Screen Time macro instrument: one bar that holds the whole day — the
 // goal span, the tolerance span after it, and the essentials-only cap at the
 // end. Each boundary is mapped above the bar: a tick with GOAL and a small
-// trophy, a quiet tag over the tolerance zone, and a red "no entry" mark over
+// medallion, a quiet tag over the tolerance zone, and a red "no entry" mark over
 // the essentials cap. A single fill glides to "where today stands", colored
 // like a calorie tracker: green inside the goal, amber in tolerance, red once
 // only essentials remain.
@@ -74,7 +74,11 @@ export default function DayGauge({
   const [trackWidth, setTrackWidth] = useState(0);
   const fillX = useSharedValue(0);
 
-  const capWidth = Math.max(10, height);
+  // The essentials cap is a SEGMENT of the day, not a bullet at the end of it:
+  // at the bar's own height it came out exactly round, and a lone pink dot
+  // floating past the track read as a stray mark rather than as the last stretch
+  // of the day. It keeps a segment's proportions at every bar height.
+  const capWidth = Math.max(16, height * 1.7);
   const gap = 2.5;
   const toleranceSpan = toleranceEndMinutes != null
     ? Math.max(0, toleranceEndMinutes - goalMinutes)
@@ -96,7 +100,7 @@ export default function DayGauge({
     : goalPx;
 
   // Anchor points for the floating labels, kept inside the card. The goal
-  // anchor carries the trophy's center axis, so it sits exactly on the tick.
+  // anchor carries the medallion's center axis, so it sits exactly on the tick.
   const goalAnchor = clamp(goalPx, 12, Math.max(12, trackWidth - 64));
   const toleranceAnchor = clamp(
     Math.max(toleranceCenterPx, goalAnchor + 58),
@@ -121,7 +125,11 @@ export default function DayGauge({
         <View style={s.markerLayer}>
           <View style={[s.goalTick, { left: goalPx - 0.75, backgroundColor: accent }]} />
           <View style={[s.markerAnchor, { left: goalAnchor }]}>
-            <Image source={TROPHY_EMBLEM} style={s.goalTrophy} resizeMode="contain" />
+            {/* The goal mark. It used to be the medallion itself at 15pt,
+                where five colours collapse into mud and the badge's numeral is
+                a single unreadable smudge — so it is the coin the day earns
+                instead, one violet edge round one gold face. */}
+            <FocusMedalCoin size={15} />
             <Text style={[s.goalLabelText, { color: labelColor }]}>GOAL</Text>
           </View>
           {toleranceSpan > 0 && (
@@ -138,7 +146,10 @@ export default function DayGauge({
       )}
       <View
         style={[s.track, { height, gap }]}
-        onLayout={event => setTrackWidth(event.nativeEvent.layout.width)}
+        onLayout={event => {
+          const width = event.nativeEvent.layout.width;
+          setTrackWidth(current => current === width ? current : width);
+        }}
       >
         {/* Translucent while the day is untouched; firm once real usage fills it. */}
         <View style={[s.zone, { flex: goalMinutes, borderRadius: height / 2, backgroundColor: usedMinutes != null ? '#FFFFFF' : goalTrackColor }]} />
@@ -158,7 +169,19 @@ export default function DayGauge({
         <Animated.View
           pointerEvents="none"
           style={[s.fill, { height, borderRadius: height / 2, backgroundColor: fillColor }, fillStyle]}
-        />
+        >
+          {/* The reading is struck, not printed: a light face over a deeper
+              ground, with a sheen caught along the top the way every other
+              filled surface in the app catches one. */}
+          <LinearGradient
+            colors={['rgba(255,255,255,0.34)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0.10)']}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[StyleSheet.absoluteFill, { borderRadius: height / 2 }]}
+          />
+          <View style={[s.fillSheen, { top: Math.max(1, height * 0.16), height: Math.max(1.5, height * 0.16) }]} />
+        </Animated.View>
       </View>
     </View>
   );
@@ -186,12 +209,6 @@ const s = StyleSheet.create({
     width: 0,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  // The trophy is the anchor's centered child — its axis lands on the tick;
-  // GOAL floats to its right without pulling the group off-center.
-  goalTrophy: {
-    width: 15,
-    height: 15,
   },
   goalLabelText: {
     position: 'absolute',
@@ -230,12 +247,26 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
   },
+  // A groove cut into the card takes its shade along the top inside edge —
+  // the inverse of the white hairline a raised surface catches. Without it the
+  // empty track reads as a white pill laid on the card rather than a channel
+  // the reading runs in.
   zone: {
     borderCurve: 'continuous',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(120,96,46,0.10)',
   },
   fill: {
     position: 'absolute',
     left: 0,
     top: 0,
+    overflow: 'hidden',
+  },
+  fillSheen: {
+    position: 'absolute',
+    left: 5,
+    right: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.42)',
   },
 });
