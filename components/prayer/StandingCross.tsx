@@ -1,6 +1,5 @@
-import { useMemo } from 'react';
-import { View, type StyleProp, type ViewStyle } from 'react-native';
-import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 
 /* ─────────────────────────────────────────────────────────────
  * THE CROSS — the other thing that can stand on the prayer screen.
@@ -12,83 +11,53 @@ import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
  * of them share.
  *
  * ⚠ SO IT IS MADE TO THE SAME STANDARD AS THE ICON, not to a lesser one.
- * Same gold, same height, same lamp behind it, same seat. The two
- * screens are one room with a different object in it — that is the whole
- * relationship, and it fails the moment the cross looks like the option
- * for people who could not have the good one.
+ * Same height, same lamp behind it, same seat. The two screens are one
+ * room with a different object in it — that is the whole relationship,
+ * and it fails the moment the cross looks like the option for people who
+ * could not have the good one.
  *
- * WHAT IT IS. A Latin cross with flared ends — the arms narrow at the
- * crossing and widen again at the tips, the way a struck or cast cross
- * does, because bars of even width read as two rectangles laid over each
- * other rather than as one object. It is a single outline, so the
- * flaring is continuous through the crossing and there is no seam where
- * the arms meet.
+ * ⚠ IT WAS A DRAWN VECTOR AND IS NOW A PHOTOGRAPHED OBJECT, which is the
+ * point of the change: a wooden cross with a mahogany frame and a pale
+ * maple inlay stands beside a sixth-century painted panel as an equal.
+ * A flat gold silhouette did not, however carefully its flare was cut.
  *
- * ⚠ NO ORNAMENT ON IT. No inscription, no rays, no jewelling. Half the
- * traditions this side exists for would find any of those to be the
- * thing they were avoiding, and the object is better for the restraint
- * anyway: what carries it is the gilding, the flare and the light.
+ * ⚠ THE SOURCE ARRIVED ON A GREEN SCREEN AND WAS KEYED IN THE REPO, not
+ * by eye in an editor. `assets/images/prayer/standing-cross.png` is the
+ * result, and the recipe is worth keeping because the naive version of
+ * it fails in two specific ways:
+ *
+ *   · Keying by DISTANCE to the key colour eats the wood's own warm
+ *     tones along the rim. The measure that works is how far GREEN
+ *     stands above the larger of the other two channels — wood scores at
+ *     or below zero, the key scores one, and the antialiased rim scores
+ *     in between, which is the alpha it should be given.
+ *   · Spill has to be suppressed in two passes. The first removes the
+ *     key in proportion to how much was there; the second flattens
+ *     anything still green-dominant, because the outline's own dark rim
+ *     is a blend of dark wood WITH green — olive, around (40, 78, 15) —
+ *     which the first pass barely touches and which reads against warm
+ *     paper as exactly the fringe all of this exists to prevent.
+ *
+ * And it is shipped at source resolution rather than downscaled:
+ * resampling straight-alpha RGBA averages the RGB of cleared pixels back
+ * into their neighbours, which put 581 green pixels along the rim on the
+ * first attempt. 1182 tall covers a 3x screen at the 380-point ceiling
+ * this is ever drawn at.
  * ───────────────────────────────────────────────────────────── */
 
-/**
- * The cross's proportions, all as shares of its height.
- *
- * A Latin cross puts the crossing above the middle — the upright below
- * the arms is roughly twice the length of the head. Everything else
- * follows from that so the figure keeps its proportion at any size.
- */
-const CROSS = {
-  /** Where the arms cross, measured down from the top. */
-  crossing: 0.335,
-  /** Half the span of the arms. */
-  arm: 0.3,
-  /** Half-thickness of the bars at the crossing. */
-  waist: 0.045,
-  /** Half-thickness at the tips — the flare. */
-  tip: 0.058,
-} as const;
+const CROSS_IMAGE = require('@/assets/images/prayer/standing-cross.png');
 
-/** The board's gilding, so the two objects are cut from one metal. */
-const GOLD = ['#EFD7A0', '#D3AE6B', '#A9803A'] as const;
+/**
+ * The keyed file's own proportion, 760 × 1182.
+ *
+ * Measured from the cropped asset rather than assumed, so the frame this
+ * is laid in is always exactly the shape of the object in it and the
+ * cross can never be stretched.
+ */
+export const CROSS_ASPECT = 760 / 1182;
 
 export function crossWidth(height: number) {
-  return height * CROSS.arm * 2;
-}
-
-/**
- * The outline, once, going clockwise from the head's top-left corner.
- *
- * Twelve points: each arm contributes its two tip corners and the two
- * waisted corners where it meets the crossing. Writing it as one path
- * rather than as two overlapping bars is what lets the flare run
- * continuously and leaves no join to catch the light wrongly.
- */
-function crossPath(width: number, height: number) {
-  const cx = width / 2;
-  const cy = height * CROSS.crossing;
-  const arm = height * CROSS.arm;
-  const w = height * CROSS.waist;
-  const t = height * CROSS.tip;
-  const top = 0;
-  const bottom = height;
-
-  const p = (x: number, y: number) => `${x.toFixed(2)} ${y.toFixed(2)}`;
-
-  return [
-    `M${p(cx - t, top)}`,
-    `L${p(cx + t, top)}`,
-    `L${p(cx + w, cy - w)}`,
-    `L${p(cx + arm, cy - t)}`,
-    `L${p(cx + arm, cy + t)}`,
-    `L${p(cx + w, cy + w)}`,
-    `L${p(cx + t, bottom)}`,
-    `L${p(cx - t, bottom)}`,
-    `L${p(cx - w, cy + w)}`,
-    `L${p(cx - arm, cy + t)}`,
-    `L${p(cx - arm, cy - t)}`,
-    `L${p(cx - w, cy - w)}`,
-    'Z',
-  ].join('');
+  return height * CROSS_ASPECT;
 }
 
 export default function StandingCross({
@@ -98,35 +67,18 @@ export default function StandingCross({
   height: number;
   style?: StyleProp<ViewStyle>;
 }) {
-  const width = crossWidth(height);
-  // The shadow is the same outline dropped a little and darkened, which
-  // is what gives the object weight. Drawn first, so it lies under.
-  const d = useMemo(() => crossPath(width, height), [height, width]);
-  const drop = Math.max(3, height * 0.014);
-
   return (
-    <View style={[{ width, height: height + drop }, style]}>
-      <Svg width={width} height={height + drop}>
-        <Defs>
-          <LinearGradient id="standingCrossFace" x1="0.1" y1="0" x2="0.9" y2="1">
-            <Stop offset="0" stopColor={GOLD[0]} />
-            <Stop offset="0.55" stopColor={GOLD[1]} />
-            <Stop offset="1" stopColor={GOLD[2]} />
-          </LinearGradient>
-          {/* The rim: light along the top-left edges, gone by the foot.
-              A rim of even weight all the way round reads as an outline
-              drawn on the shape; light only ever falls on one side. */}
-          <LinearGradient id="standingCrossRim" x1="0.1" y1="0" x2="0.9" y2="1">
-            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.72} />
-            <Stop offset="0.45" stopColor="#FFF6E2" stopOpacity={0.22} />
-            <Stop offset="1" stopColor="#8A6526" stopOpacity={0.34} />
-          </LinearGradient>
-        </Defs>
-
-        <Path d={d} fill="#3A2A10" opacity={0.16} translateY={drop} />
-        <Path d={d} fill="url(#standingCrossFace)" />
-        <Path d={d} fill="none" stroke="url(#standingCrossRim)" strokeWidth={1.2} />
-      </Svg>
+    <View style={[{ width: crossWidth(height), height }, style]}>
+      <ExpoImage
+        source={CROSS_IMAGE}
+        style={StyleSheet.absoluteFill}
+        // `contain`, not `cover`: the box is already the image's own
+        // proportion, so this only guards against a rounding difference
+        // cropping a millimetre off an arm.
+        contentFit="contain"
+        transition={220}
+        accessibilityLabel="A wooden cross"
+      />
     </View>
   );
 }

@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ORBIT_STEPS,
+  WIDEST_OBJECT_ASPECT,
   makeOrbitRing,
+  objectHeightFor,
   orbitGeometry,
   orbitPoint,
   orbitSpill,
@@ -32,8 +34,11 @@ import {
  * with the object's own size derived rather than guessed: the icon is
  * 45.5 by 84, and the cross is narrower still.
  */
+// ⚠ THE OBJECT'S SIZE COMES FROM THE GEOMETRY MODULE, not from a copy of
+// the screen's arithmetic. The screen calls the same function, so if the
+// object ever grows, these tests grow with it rather than quietly passing
+// against a stale idea of how big it is.
 const OBJECT_CAP = 380;
-const OBJECT_ASPECT = 45.5 / 84;
 
 const STAGES: { label: string; width: number; height: number }[] = [
   { label: 'small phone', width: 288, height: 300 },
@@ -45,8 +50,8 @@ const STAGES: { label: string; width: number; height: number }[] = [
 
 /** The standing object's own half-height and half-width, in the stage. */
 function objectHalf(stage: { width: number; height: number }) {
-  const height = Math.min(stage.height - 10, OBJECT_CAP);
-  return { y: height / 2, x: (height * OBJECT_ASPECT) / 2 };
+  const height = objectHeightFor(stage, OBJECT_CAP);
+  return { y: height / 2, x: (height * WIDEST_OBJECT_ASPECT) / 2 };
 }
 
 /** The arc's extremes, sampled finely enough to trust. */

@@ -26,6 +26,7 @@ import { PantocratorPanel, PrayerLamp, panelWidth } from '@/components/prayer/Pa
 import PrayerFocusSwitch, { type PrayerFocus } from '@/components/prayer/PrayerFocusSwitch';
 import StandingCross from '@/components/prayer/StandingCross';
 import PrayerOrbit, { useIgnition, useReadoutInk } from '@/components/prayer/PrayerOrbit';
+import { objectHeightFor } from '@/components/prayer/prayerOrbitGeometry';
 import { useAppSettings } from '@/components/settings/SettingsContext';
 import { ArrowLeft, CheckSmall, ChevronDown, OpenBook, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
@@ -186,9 +187,12 @@ export default function PersonalRuleTaskView({
   // The board is 84 by 45.5, so height is what constrains it. 380 is where
   // it stops growing on a tall phone: past that the controls start to look
   // like they fell off the bottom.
-  const panelHeight = iconRoom.height > 0
-    ? Math.max(150, Math.min(iconRoom.height - 10, 380))
-    : 0;
+  // ⚠ SIZED BY THE GEOMETRY MODULE, not here. The object has to leave the
+  // hoops room to pass round it, and on a narrow tall screen a height-only
+  // size grows it to nearly the full width — where the inner hoop ends up
+  // going through the cross's arms. `objectHeightFor` is what the tests
+  // check against, so the two can never drift.
+  const panelHeight = iconRoom.height > 0 ? objectHeightFor(iconRoom, 380) : 0;
   // The pool reaches well outside whatever is standing in it; a glow that
   // stops at the object's edge is a rectangle of light, which is not what
   // a lamp makes. Capped to the screen so it is never clipped.

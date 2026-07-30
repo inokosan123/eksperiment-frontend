@@ -95,7 +95,7 @@ export const ORBIT_PRESETS = {
     pad: { x: 0, y: 0 },
     rings: [
       { inset: 6, reach: 0.72, tiltShare: -0.42, phase: 0, beadR: 2.6, ink: { near: 0.24, far: 0.1 } },
-      { inset: 26, reach: 0.55, tiltShare: 0.5, phase: 0.37, beadR: 1.8, ink: { near: 0.14, far: 0.06 } },
+      { inset: 22, reach: 0.55, tiltShare: 0.5, phase: 0.37, beadR: 1.8, ink: { near: 0.14, far: 0.06 } },
     ],
   },
   readout: {
@@ -129,6 +129,30 @@ export const ORBIT_MIN = {
   stage: { width: 220, height: 260 },
   readout: { width: 120, height: 40 },
 } as const;
+
+/**
+ * How much of the stage's width the standing object may take.
+ *
+ * ⚠ THE OBJECT HAS TO LEAVE ROOM FOR THE HOOPS TO GO ROUND IT, and on a
+ * narrow tall screen it will not do that by itself: sized from height
+ * alone it grows to nearly the full width and the inner hoop ends up
+ * passing through the cross's arms. No amount of tuning the hoops fixes
+ * that — a hoop inside the object is a hoop inside the object.
+ *
+ * ⚠ AND IT IS THE CROSS THAT SETS THE LIMIT, not the icon: they share a
+ * seat, and the cross is 19% the wider of the two (760 × 1182 against
+ * 45.5 × 84). Sizing to whichever is showing would make the hoops jump
+ * as the two exchange.
+ */
+export const OBJECT_WIDTH_SHARE = 0.62;
+export const WIDEST_OBJECT_ASPECT = 760 / 1182;
+
+/** The tallest the standing object may be on a stage of this size. */
+export function objectHeightFor(stage: { width: number; height: number }, cap: number) {
+  const byHeight = stage.height - 10;
+  const byWidth = (stage.width * OBJECT_WIDTH_SHARE) / WIDEST_OBJECT_ASPECT;
+  return Math.max(150, Math.min(byHeight, byWidth, cap));
+}
 
 /**
  * A ring that reaches exactly as far as it is told to.
