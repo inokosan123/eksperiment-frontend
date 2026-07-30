@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { F } from '@/constants/tokens';
 import { FocusMedallionMark } from '@/components/focus-watch/FocusMedallion';
+import { gaugeMarkerLayout, GOAL_LABEL_OFFSET } from './dayGaugeMarkers';
 import { formatMinutesShort } from './dayPlanStore';
 
 // The Screen Time macro instrument: one bar that holds the whole day — the
@@ -45,10 +46,6 @@ export function gaugeStateColor(standing: DayGaugeStanding, fallback: string) {
   return fallback;
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
 export default function DayGauge({
   goalMinutes,
   toleranceEndMinutes,
@@ -77,8 +74,9 @@ export default function DayGauge({
   // The essentials cap is a SEGMENT of the day, not a bullet at the end of it:
   // at the bar's own height it came out exactly round, and a lone pink dot
   // floating past the track read as a stray mark rather than as the last stretch
-  // of the day. It keeps a segment's proportions at every bar height.
-  const capWidth = Math.max(16, height * 1.7);
+  // of the day. It keeps a segment's proportions at every bar height, and grows
+  // beyond them when the goal would otherwise land on top of it.
+  const baseCapWidth = Math.max(16, height * 1.7);
   const gap = 2.5;
   const toleranceSpan = toleranceEndMinutes != null
     ? Math.max(0, toleranceEndMinutes - goalMinutes)
@@ -87,40 +85,21 @@ export default function DayGauge({
   const standing = gaugeStanding(goalMinutes, toleranceEndMinutes, usedMinutes);
   const fillColor = gaugeStateColor(standing, accent);
 
-  // Pixels available to the goal + tolerance spans (the cap is fixed).
-  const flexWidth = Math.max(0, trackWidth - capWidth - gap - (toleranceSpan > 0 ? gap : 0));
+  const {
+    capWidth,
+    flexWidth,
+    goalPx,
+    goalAnchor,
+    essentialsAnchor,
+    goalLabelFlipped,
+    toleranceAnchor,
+    showTolerance,
+  } = gaugeMarkerLayout({ trackWidth, baseCapWidth, goalMinutes, toleranceSpan, gap });
+
   const fraction = usedMinutes == null
     ? 0
     : Math.min(1, Math.max(0, usedMinutes / plannedTotal));
   const targetPx = standing === 'essentials' ? trackWidth : fraction * flexWidth;
-
-  const goalPx = (goalMinutes / plannedTotal) * flexWidth;
-  const toleranceCenterPx = toleranceSpan > 0
-    ? goalPx + gap + ((flexWidth - goalPx) / 2)
-    : goalPx;
-
-  // Anchor points for the floating labels, kept inside the card. The goal
-  // anchor carries the mark's centre axis, so it sits on the tick — except
-  // where the card's edge, or the tolerance reading, will not allow it.
-  //
-  // The goal mark is a medallion with GOAL set to its right, and the tolerance
-  // reading floats after that: three things on one line. Clamping each to the
-  // card's edge INDEPENDENTLY is what let them collide — a plan whose goal
-  // sits near the end of its span pushed both labels against the same right
-  // margin and printed "GOAL+30m". So the goal anchor gives way first: it is
-  // held far enough left that the tolerance label always has its own room,
-  // which is the correct trade, since the tick still marks the true position
-  // and the label is only naming it.
-  const LABEL_GAP = 74;
-  const goalCeiling = toleranceSpan > 0
-    ? trackWidth - 34 - LABEL_GAP
-    : trackWidth - 64;
-  const goalAnchor = clamp(goalPx, 12, Math.max(12, goalCeiling));
-  const toleranceAnchor = clamp(
-    Math.max(toleranceCenterPx, goalAnchor + LABEL_GAP),
-    30,
-    Math.max(30, trackWidth - 34)
-  );
 
   useEffect(() => {
     if (trackWidth <= 0) return;
@@ -157,14 +136,22 @@ export default function DayGauge({
               <View style={s.goalMarkPool} />
               <FocusMedallionMark size={19} />
             </View>
-            <Text style={[s.goalLabelText, { color: labelColor }]}>GOAL</Text>
+            <Text
+              style={[
+                s.goalLabelText,
+                goalLabelFlipped ? s.goalLabelFlipped : s.goalLabelTrailing,
+                { color: labelColor },
+              ]}
+            >
+              GOAL
+            </Text>
           </View>
-          {toleranceSpan > 0 && (
+          {showTolerance && (
             <View style={[s.markerAnchor, { left: toleranceAnchor }]}>
               <Text style={s.toleranceText}>+{formatMinutesShort(toleranceSpan)}</Text>
             </View>
           )}
-          <View style={[s.markerAnchor, { left: trackWidth - capWidth / 2 }]}>
+          <View style={[s.markerAnchor, { left: essentialsAnchor }]}>
             <View style={s.essentialsMark}>
               <View style={s.essentialsSlash} />
             </View>
@@ -220,11 +207,14 @@ const s = StyleSheet.create({
     height: 22,
     marginBottom: 6,
   },
+  // Short, and it stops at the bar. It only has to say "here" — at nine it was
+  // a stem the medallion appeared to be standing on rather than a tick the
+  // medallion was standing over.
   goalTick: {
     position: 'absolute',
     bottom: -5,
     width: 1.5,
-    height: 9,
+    height: 6,
     borderRadius: 1,
     opacity: 0.9,
   },
@@ -250,12 +240,17 @@ const s = StyleSheet.create({
   },
   goalLabelText: {
     position: 'absolute',
-    left: 13,
     top: 3.5,
     fontFamily: F.sansBold,
     fontSize: 8.5,
     letterSpacing: 1.1,
   },
+  goalLabelTrailing: { left: GOAL_LABEL_OFFSET },
+  // Flipped: the caption reads to the LEFT of its mark when the essentials
+  // mark is too close for it to sit on the right. `right` is measured from the
+  // zero-width anchor, so the label's own end lands on the mark's centre and
+  // the offset holds it off the medallion's rim.
+  goalLabelFlipped: { right: GOAL_LABEL_OFFSET },
   toleranceText: {
     fontFamily: F.sansBold,
     fontSize: 8.5,
