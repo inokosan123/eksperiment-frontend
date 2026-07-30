@@ -229,7 +229,10 @@ function Slide({
     >
       {slide.figure === 'icon' && (
         <View style={s.figure}>
-          <PantocratorPanel height={panelHeight} />
+          {/* The icon fades into its page at the edges rather than wearing
+              a frame, so it is handed this room's parchment — the sheet's
+              middle stop, which is the colour at the height it stands. */}
+          <PantocratorPanel height={panelHeight} ground={PARCHMENT[1]} />
         </View>
       )}
 

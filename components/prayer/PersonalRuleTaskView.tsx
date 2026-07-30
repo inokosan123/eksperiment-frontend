@@ -401,7 +401,10 @@ export default function PersonalRuleTaskView({
               <StandingCross height={panelHeight} />
             </Reanimated.View>
             <Reanimated.View style={[s.stage, iconStyle]} pointerEvents="none">
-              <PantocratorPanel height={panelHeight} />
+              {/* The icon has no frame; it fades into the page at its own
+                  edges, so it has to be told which page. GROUND[1] is the
+                  screen's colour at the height the icon stands. */}
+              <PantocratorPanel height={panelHeight} ground={GROUND[1]} />
             </Reanimated.View>
           </>
         )}

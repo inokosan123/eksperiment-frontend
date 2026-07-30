@@ -102,69 +102,125 @@ export const FACE = {
 
 export type PantocratorFaceMode = 'whole' | 'mercy' | 'judgement';
 
-/* ── The board ───────────────────────────────────────────────────── */
+/* ── The icon ────────────────────────────────────────────────────── */
 
-const GOLD_FRAME = ['#E7CD93', '#C9A45C', '#A97F35'] as const;
-/** The sunken field's own ground, seen only while the image is missing. */
+/** The ground seen only while the image is missing. */
 const FIELD_EMPTY = ['#F3EADA', '#E4D6BD'] as const;
-
-/** How much of the board the raised border takes, as a share of its width. */
-const BORDER_RATIO = 0.055;
 
 export function panelWidth(height: number) {
   return height * PANEL_ASPECT;
 }
 
+/**
+ * THE ICON, UNFRAMED.
+ *
+ * ⚠ IT WORE A GILT BORDER AND THE BORDER IS GONE. A frame turns the icon
+ * into a picture hanging on the screen — an object with an edge, a thing
+ * displayed. What this screen wants is the face itself, present, with
+ * nothing announcing that it is a reproduction. The lamp behind it does
+ * all the framing that is wanted.
+ *
+ * ⚠ AND IT DOES NOT END IN A HARD LINE EITHER. Without a border, a
+ * rectangle of photograph cut off dead against warm paper is worse than
+ * a frame was — the frame at least explained the edge. So the image
+ * FADES OUT at its own edges into the page: four gradients, one per
+ * side, running from the screen's paper colour to transparent. The face
+ * is at the middle where they never reach, and what you see is an image
+ * emerging from the light rather than a picture placed on it.
+ *
+ * `ground` is the paper it fades into and must be the colour actually
+ * behind it, or the fade shows as a grey haze. The prayer screen hands
+ * over its own; the About sheet, which is parchment, hands over its.
+ */
 export function PantocratorPanel({
-  /** Total height of the board including its border. Width follows. */
+  /** The icon's height. Width follows the panel's real proportion. */
   height,
+  ground = '#FDF8EF',
   style,
 }: {
   height: number;
+  ground?: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const width = height * PANEL_ASPECT;
-  const border = Math.max(7, Math.round(width * BORDER_RATIO));
+  // Enough to lose the cut edge, little enough to leave the face whole:
+  // the head sits within the top third, so a fade of a twelfth never
+  // touches it.
+  const fade = Math.round(height * 0.085);
 
   return (
     <View style={[{ width, height }, s.panelWrap, style]}>
-      <View style={[s.board, { width, height, borderRadius: Math.max(6, border * 0.7) }]}>
-        <LinearGradient
-          colors={GOLD_FRAME}
-          locations={[0, 0.55, 1]}
-          start={{ x: 0.1, y: 0 }}
-          end={{ x: 0.9, y: 1 }}
+      {PANTOCRATOR_IMAGE ? (
+        <ExpoImage
+          source={PANTOCRATOR_IMAGE}
           style={StyleSheet.absoluteFill}
-          pointerEvents="none"
+          contentFit="cover"
+          transition={220}
+          accessibilityLabel="Christ Pantocrator, Saint Catherine's Monastery, Sinai, sixth century"
         />
-        <View pointerEvents="none" style={s.boardLit} />
+      ) : (
+        <LinearGradient
+          colors={FIELD_EMPTY}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
 
-        {/* The kovcheg: the field is cut INTO the board, so the step down
-            into it throws a hairline of shadow at its head and catches a
-            hairline of light at its foot. Without those two lines the
-            border is a coloured margin rather than a raised edge. */}
-        <View style={[s.field, { top: border, left: border, right: border, bottom: border }]}>
-          {PANTOCRATOR_IMAGE ? (
-            <ExpoImage
-              source={PANTOCRATOR_IMAGE}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={220}
-              accessibilityLabel="Christ Pantocrator, Saint Catherine's Monastery, Sinai, sixth century"
-            />
-          ) : (
-            <LinearGradient
-              colors={FIELD_EMPTY}
-              start={{ x: 0.2, y: 0 }}
-              end={{ x: 0.8, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-          )}
-          <View pointerEvents="none" style={s.fieldShadowTop} />
-          <View pointerEvents="none" style={s.fieldLightFoot} />
-        </View>
-      </View>
+      {/* The four edges dissolving into the page. Drawn over the image,
+          each one only as deep as it needs to be. */}
+      <EdgeFade ground={ground} depth={fade} side="top" />
+      <EdgeFade ground={ground} depth={fade} side="bottom" />
+      <EdgeFade ground={ground} depth={fade} side="left" />
+      <EdgeFade ground={ground} depth={fade} side="right" />
     </View>
+  );
+}
+
+function EdgeFade({
+  ground,
+  depth,
+  side,
+}: {
+  ground: string;
+  depth: number;
+  side: 'top' | 'bottom' | 'left' | 'right';
+}) {
+  const vertical = side === 'top' || side === 'bottom';
+  /**
+   * ⚠ THE FAR STOP IS THE SAME COLOUR AT ZERO ALPHA, NEVER 'transparent'.
+   * `transparent` is transparent BLACK, and Android interpolates through
+   * it — so a warm fade to `transparent` arrives as a dirty grey halo
+   * around the image, which is the single most common way an effect like
+   * this goes wrong. `ground` must therefore be a six-digit hex; anything
+   * else falls back rather than producing that halo silently.
+   */
+  const clear = /^#[0-9a-fA-F]{6}$/.test(ground) ? `${ground}00` : 'rgba(253,248,239,0)';
+
+  // Every fade runs FROM the paper INTO nothing, so the colour stop order
+  // is fixed and only the direction turns.
+  const start = side === 'top' ? { x: 0.5, y: 0 }
+    : side === 'bottom' ? { x: 0.5, y: 1 }
+      : side === 'left' ? { x: 0, y: 0.5 }
+        : { x: 1, y: 0.5 };
+  const end = side === 'top' ? { x: 0.5, y: 1 }
+    : side === 'bottom' ? { x: 0.5, y: 0 }
+      : side === 'left' ? { x: 1, y: 0.5 }
+        : { x: 0, y: 0.5 };
+
+  return (
+    <LinearGradient
+      pointerEvents="none"
+      colors={[ground, clear]}
+      start={start}
+      end={end}
+      style={[
+        s.edgeFade,
+        vertical
+          ? { [side]: 0, left: 0, right: 0, height: depth }
+          : { [side]: 0, top: 0, bottom: 0, width: depth },
+      ]}
+    />
   );
 }
 
@@ -358,44 +414,13 @@ function FaceSlab({
 }
 
 const s = StyleSheet.create({
-  panelWrap: { alignItems: 'center', justifyContent: 'center' },
+  // ⚠ No shadow on it any more. A drop shadow is what an object lying ON
+  // a surface casts, and the whole point of losing the frame is that the
+  // icon is not an object placed on the page — it comes out of the light.
+  // A shadow under a picture with no edges is a shadow cast by nothing.
+  panelWrap: { position: 'relative' },
   lamp: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  board: {
-    position: 'relative',
-    overflow: 'hidden',
-    borderCurve: 'continuous',
-    // A board is a heavy object and casts like one.
-    shadowColor: '#3A2A10',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.26,
-    shadowRadius: 22,
-    elevation: 8,
-  },
-  boardLit: {
-    position: 'absolute',
-    top: 1,
-    left: '18%',
-    right: '18%',
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-  },
-  field: { position: 'absolute', overflow: 'hidden', backgroundColor: '#EFE5D2' },
-  fieldShadowTop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 1.5,
-    backgroundColor: 'rgba(58,42,16,0.34)',
-  },
-  fieldLightFoot: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255,246,224,0.34)',
-  },
+  edgeFade: { position: 'absolute' },
 
   faceBox: {
     position: 'relative',

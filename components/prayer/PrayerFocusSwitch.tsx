@@ -45,11 +45,17 @@ import { MINE_ACCENT, MINE_BORDER, MINE_INK, MINE_TINT, mineAlpha } from '@/comp
  * never met.
  *
  * And as in every one of those, THE PLAQUE CHANGES INTO THE THING IT IS
- * SELECTING: sitting left it is cool stone lit from the shoulder,
- * sliding right it becomes the icon board — a gilt band around a pale
- * field. Both faces live on the plaque at once and cross-fade on the
- * very value that drives the slide, so pill, faces, emblems and ink all
- * move on the UI thread and no React state moves while it is moving.
+ * SELECTING — but by TEMPERATURE, not by ornament: cool stone on the
+ * left, warm parchment on the right. Both faces live on the plaque at
+ * once and cross-fade on the very value that drives the slide, so pill,
+ * faces, emblems and ink all move on the UI thread and no React state
+ * moves while it is moving.
+ *
+ * ⚠ THE JESUS FACE ONCE DREW A GILT BAND AROUND A CUT FIELD — a
+ * miniature of a framed board. The icon it selects has no frame any
+ * more; it stands unframed in the lamp and fades into the page at its
+ * edges. A plaque drawing a frame would promise an object the screen
+ * does not contain.
  *
  * ⚠ BOTH FACES ARE MADE OF THE APP'S PLATE MATERIAL, not of flat tint.
  * Each runs three stops on the diagonal from near-white at the shoulder
@@ -237,41 +243,31 @@ export default function PrayerFocusSwitch({
           </Reanimated.View>
 
           <Reanimated.View style={[StyleSheet.absoluteFill, iconFaceStyle]}>
-            {/* ⚠ IT IS A GILT BAND AROUND A PALE FIELD, NOT A GOLD SLAB.
-                Two reasons, and the second is the one that decided it.
+            {/* ⚠ NO GILT BAND, NO FIELD CUT INTO IT. This face was built as
+                a miniature of a framed board, and the icon it selects no
+                longer has a frame — it stands unframed in the lamp and
+                fades into the page at its edges. A plaque that draws a
+                frame would be promising an object the screen does not
+                contain.
 
-                It is what the object actually is: an icon board is a
-                raised gold border with the painted field cut down inside
-                it — the kovcheg — so a solid gold rectangle is a less
-                accurate miniature of the panel than this is, not a more
-                striking one.
-
-                And a full gold plaque put dark-gold letters and a gold
-                emblem on a gold ground, which is the exact fault this app
-                has had to fix twice already. On the pale field the ink has
-                something to be gold against. */}
+                What carries the side now is TEMPERATURE, which is all it
+                ever needed: cool stone on the left, warm parchment here,
+                struck from exactly the same material as its opposite so
+                neither reads as the decorated one. */}
             <LinearGradient
-              colors={['#F1DEB2', '#DDBF86', '#C09C5E']}
-              locations={[0, 0.55, 1]}
+              colors={['#FFFFFF', '#FBF3E0', '#F3E6CB']}
+              locations={[0, 0.48, 1]}
               start={{ x: 0.1, y: 0 }}
               end={{ x: 0.9, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
-            <View style={s.plaqueField}>
-              <LinearGradient
-                colors={['#FFFDF6', '#FBF4E2', '#F6EBD2']}
-                locations={[0, 0.5, 1]}
-                start={{ x: 0.1, y: 0 }}
-                end={{ x: 0.9, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              {/* The step down into the field: a hairline of shadow at its
-                  head, a hairline of light at its foot. Without those two
-                  the band is a coloured margin rather than a raised edge,
-                  and this stops being a board. */}
-              <View style={s.fieldStepTop} />
-              <View style={s.fieldStepFoot} />
-            </View>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.6)', 'rgba(255,255,255,0)']}
+              locations={[0, 0.55]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
             <View style={[s.face, { borderColor: ICON_BORDER }]} />
             <View style={s.faceLit} />
           </Reanimated.View>
@@ -348,34 +344,6 @@ const s = StyleSheet.create({
     borderRadius: 16,
     borderCurve: 'continuous',
     borderWidth: 1,
-  },
-  // The gilt band's width, and therefore the field's inset. 5 against a
-  // 52-high plaque is the panel's own proportion, near enough.
-  plaqueField: {
-    position: 'absolute',
-    top: 5,
-    left: 5,
-    right: 5,
-    bottom: 5,
-    borderRadius: 11,
-    borderCurve: 'continuous',
-    overflow: 'hidden',
-  },
-  fieldStepTop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(92,68,24,0.26)',
-  },
-  fieldStepFoot: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255,250,235,0.5)',
   },
   // The hairline of light every lifted plate in this app catches along its
   // top edge. Both faces wear it, so the plaque keeps it through the slide.
