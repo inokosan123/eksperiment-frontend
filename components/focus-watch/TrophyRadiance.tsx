@@ -9,7 +9,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useFocusMainMotion } from './focus-main-motion';
-import { FocusMedalCoin, FocusMedallion, FOCUS_MEDALLION_RATIO, MEDALLION } from '@/components/focus-watch/FocusMedallion';
+import { FocusMedallion, FOCUS_MEDALLION_RATIO, MEDALLION } from '@/components/focus-watch/FocusMedallion';
 import {
   pingPongPhase,
   useContinuousAnimationClock,
@@ -118,8 +118,9 @@ const MEDAL_DUST: MoteSpec[] = [
 
   /* The wedge between the plaque and the mount — the emptiest gutter on the
      card, and the one the eye crosses on its way from the count to the medal. */
-  { kind: 'star', size: 7, style: { left: 196, top: 96 }, cycle: 3400, delay: 900, peak: 0.32 },
-  { kind: 'dot', size: 2, style: { left: 214, top: 118 }, still: true, peak: 0.2 },
+  // Held above the seal, which now hangs into the lower half of this gutter.
+  { kind: 'star', size: 7, style: { left: 200, top: 82 }, cycle: 3400, delay: 900, peak: 0.32 },
+  { kind: 'dot', size: 2, style: { left: 222, top: 104 }, still: true, peak: 0.2 },
 
   /* The left margin, running down past the plaque to the strip. Deep gold:
      this flank is where the plate is palest below the plaque. */
@@ -158,21 +159,45 @@ const MEDAL_DUST: MoteSpec[] = [
 // instrument at its foot. Ornament was never the missing thing; contrast was.
 const RAKE_STEP = 30;
 
+// A real glint is not one shape, it is three things at once: a hot core, the
+// needle-armed star it throws, and a second, shorter cross turned 45° behind
+// it — which is what stops a four-point star from reading as a plus sign and
+// gives it the eight-rayed shimmer light actually makes. The bigger stars get
+// all three; below 6pt the extra cross is under a pixel per arm, so the small
+// ones stay a single clean star and cost nothing.
 function MoteShape({ kind, size, color }: { kind: MoteKind; size: number; color: string }) {
-  return kind === 'star' ? (
+  if (kind !== 'star') {
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: kind === 'dot' ? size / 2 : size * 0.16,
+          backgroundColor: color,
+          transform: kind === 'diamond' ? [{ rotate: '45deg' }] : undefined,
+        }}
+      />
+    );
+  }
+
+  const full = size >= 6;
+  // The whole mark is drawn in one 24-unit box so the box stays the size the
+  // layout asked for; the secondary cross is scaled about the centre.
+  return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
+      {full && (
+        <>
+          <Path
+            d={SPARKLE_PATH}
+            fill={color}
+            opacity={0.5}
+            transform="rotate(45 12 12) scale(0.54) translate(10.2 10.2)"
+          />
+          <Circle cx={12} cy={12} r={size >= 8 ? 1.5 : 1.15} fill={color} opacity={0.5} />
+        </>
+      )}
       <Path d={SPARKLE_PATH} fill={color} />
     </Svg>
-  ) : (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: kind === 'dot' ? size / 2 : size * 0.16,
-        backgroundColor: color,
-        transform: kind === 'diamond' ? [{ rotate: '45deg' }] : undefined,
-      }}
-    />
   );
 }
 
@@ -451,8 +476,29 @@ export function StreakMedallion({
     r: 20,
   };
 
-  /** The stud's whole field — coin, its seat of light, and its cast shadow. */
-  const studBox = size * 0.5;
+  /* THE SEAL'S GEOMETRY, stated rather than nudged.
+
+     The medallion is measured by its DISC, because the disc is what has to
+     land on the plaque's corner — the tails hang below it and must fall into
+     open card. `sealDisc` is that disc's diameter; the artwork is 297 wide by
+     384 tall with the disc filling the width, so the whole object is the disc
+     over again in height, plus tails.
+
+     Its centre is then placed a fixed inset in from the plaque's right edge
+     and up from its bottom, which is the only way to keep it off the caption:
+     the first attempt sized a box and let alignment decide, and the seal
+     walked left into the word STREAK. */
+  const sealDisc = size * 0.44;
+  const sealW = sealDisc;
+  const sealH = sealDisc / FOCUS_MEDALLION_RATIO;
+  // In the signature's own coordinates: the plaque is drawn on a canvas that
+  // starts 0.15 of a width left and 0.45 of a height above this view.
+  const plaqueRight = plaque.x - width * 0.15 + plaque.w;
+  const plaqueBottom = plaque.y - height * 0.45 + plaque.h;
+  // A third of the disc hangs past the corner — enough to read as hung ON the
+  // plate, not so much that it floats beside it.
+  const sealCx = plaqueRight - sealDisc * 0.24;
+  const sealCy = plaqueBottom - sealDisc * 0.34;
 
   return (
     <View style={{ width, height }}>
@@ -669,55 +715,53 @@ export function StreakMedallion({
         <View style={[medallionStyles.copyRule, banked && medallionStyles.copyRuleBanked]} />
       </View>
 
-      {/* THE STUD — the plaque's own maker's mark, pinned through its
-          bottom-right corner.
+      {/* THE SEAL — the plaque's own award, hung off its bottom-right corner.
 
-          A second FULL medallion used to hang here, tilted, forty points from
-          the hero: the same five-colour object printed twice on one card, and
-          the single thing that most made this surface look cheap. That is not
-          what this is. It is the COIN — one violet rim round one gold face,
-          the same currency the week strip is paid in — struck small, set at an
-          angle, and pinned half over the plaque's edge so it reads as hardware
-          holding the plate down rather than as a picture printed on it. The
-          angle is what sells it: something laid ON the plaque rather than laid
-          OUT with it.
+          This began as a plain coin, on the reasoning that a second FULL
+          medallion beside the hero is the same five-colour object printed
+          twice. That reasoning held while the two were the same SIZE and both
+          stood on open card; it does not hold now. The hero is mounted on a
+          roundel and drawn at 76 — this is a third of it, tilted, hung off an
+          edge, and reading at a glance as a seal rather than as a second
+          emblem. And a seal wants the whole object: the ribbons are what say
+          "awarded", and a bare disc at the corner of a plaque is a rivet.
 
-          Everything under it is drawn as one Svg so the shadow follows the
-          coin's round edge instead of the square View that carries it. */}
+          So it is the medallion entire — scalloped rim, struck rings, numeral
+          and both tails — set at an angle, with a third of it hanging past the
+          plaque's edge so it reads as something hung ON the plate rather than
+          printed in it. */}
       {!banked && (
         <View
           pointerEvents="none"
           style={[
             medallionStyles.stud,
             {
-              // Pinned to the plaque's own bottom-right corner, in the
-              // signature's coordinates. The plaque is drawn on a canvas that
-              // begins 0.15 of a width to the LEFT of this view and 0.45 of a
-              // height above it, so its corner has to be brought back into
-              // these coordinates or the stud floats in open card — which is
-              // exactly what it did on the first pass. Half the coin hangs
-              // past the edge, which is what makes it read as pinned THROUGH
-              // the plate rather than resting on it.
-              left: plaque.x - width * 0.15 + plaque.w - studBox * 0.62,
-              top: plaque.y - height * 0.45 + plaque.h - studBox * 0.56,
-              width: studBox,
-              height: studBox,
+              // The disc's centre lands on the placed point; the tails follow
+              // below it, which is why the box is anchored by the disc's own
+              // half-height rather than by the artwork's.
+              left: sealCx - sealW / 2,
+              top: sealCy - sealDisc / 2,
+              width: sealW,
+              height: sealH,
             },
           ]}
         >
-          <Svg width={studBox} height={studBox} viewBox="0 0 100 100">
-            {/* Cast, not haloed. The stud first got a wide pool of light
-                behind it, which on a card whose plaque is ALREADY near-white
-                simply bleached the coin into it — a white ring round a pale
-                object on a pale plate. What a pinned mark actually needs is
-                the opposite: a soft violet shadow thrown down and to the
-                right, and nothing else. Drawn as vector so the shadow follows
-                the coin's round edge rather than the square view carrying it. */}
-            <Circle cx={56} cy={58} r={30} fill={VIOLET} opacity={0.16} />
-            <Circle cx={53} cy={55} r={28} fill={VIOLET} opacity={0.14} />
+          {/* Cast, not haloed. It first got a wide pool of light behind it,
+              which on a plaque that is ALREADY near-white simply bleached the
+              mark into it. What a hung seal needs is the opposite: a soft
+              violet shadow thrown down and right, following the disc's round
+              edge — drawn as vector, since a View shadow would square it off. */}
+          <Svg
+            width={sealDisc * 1.5}
+            height={sealDisc * 1.5}
+            style={{ position: 'absolute', left: -sealDisc * 0.25, top: -sealDisc * 0.25 }}
+            viewBox="0 0 100 100"
+          >
+            <Circle cx={54} cy={54} r={32} fill={VIOLET} opacity={0.16} />
+            <Circle cx={52} cy={52} r={30} fill={VIOLET} opacity={0.12} />
           </Svg>
-          <View style={medallionStyles.studTilt}>
-            <FocusMedalCoin size={studBox * 0.66} />
+          <View style={medallionStyles.sealTilt}>
+            <FocusMedallion size={sealW} />
           </View>
         </View>
       )}
@@ -791,9 +835,11 @@ const medallionStyles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 2,
   },
-  // Struck at an angle, the way a mark is set by hand. Rotation is safe on a
-  // vector; it is SCALE that resamples a small Android view.
-  studTilt: { position: 'absolute', transform: [{ rotate: '-14deg' }] },
+  // Hung at an angle, the way a seal is set by hand — turned about the DISC,
+  // not about the artwork's centre, so tilting swings the tails rather than
+  // sliding the disc off its placed point. Rotation is safe on a vector; it is
+  // SCALE that resamples a small Android view.
+  sealTilt: { position: 'absolute', top: 0, transform: [{ rotate: '-13deg' }] },
   glintBanked: {
     backgroundColor: BANKED.ashLine,
   },

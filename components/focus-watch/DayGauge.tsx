@@ -9,7 +9,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { F } from '@/constants/tokens';
-import { FocusMedalCoin } from '@/components/focus-watch/FocusMedallion';
+import { FocusMedallionMark } from '@/components/focus-watch/FocusMedallion';
 import { formatMinutesShort } from './dayPlanStore';
 
 // The Screen Time macro instrument: one bar that holds the whole day — the
@@ -100,12 +100,24 @@ export default function DayGauge({
     : goalPx;
 
   // Anchor points for the floating labels, kept inside the card. The goal
-  // anchor carries the coin's centre axis, so it sits exactly on the tick.
-  const goalAnchor = clamp(goalPx, 12, Math.max(12, trackWidth - 64));
-  // The goal mark is a coin with GOAL set to its right, so the tolerance
-  // reading has to clear BOTH — at 58 the two ran together into "GOAL+30m".
+  // anchor carries the mark's centre axis, so it sits on the tick — except
+  // where the card's edge, or the tolerance reading, will not allow it.
+  //
+  // The goal mark is a medallion with GOAL set to its right, and the tolerance
+  // reading floats after that: three things on one line. Clamping each to the
+  // card's edge INDEPENDENTLY is what let them collide — a plan whose goal
+  // sits near the end of its span pushed both labels against the same right
+  // margin and printed "GOAL+30m". So the goal anchor gives way first: it is
+  // held far enough left that the tolerance label always has its own room,
+  // which is the correct trade, since the tick still marks the true position
+  // and the label is only naming it.
+  const LABEL_GAP = 74;
+  const goalCeiling = toleranceSpan > 0
+    ? trackWidth - 34 - LABEL_GAP
+    : trackWidth - 64;
+  const goalAnchor = clamp(goalPx, 12, Math.max(12, goalCeiling));
   const toleranceAnchor = clamp(
-    Math.max(toleranceCenterPx, goalAnchor + 74),
+    Math.max(toleranceCenterPx, goalAnchor + LABEL_GAP),
     30,
     Math.max(30, trackWidth - 34)
   );
@@ -128,17 +140,22 @@ export default function DayGauge({
           <View style={[s.goalTick, { left: goalPx - 0.75, backgroundColor: accent }]} />
           <View style={[s.markerAnchor, { left: goalAnchor }]}>
             {/* THE GOAL MARK — the one place on the bar where the day's prize
-                is named, so it has to be a coin you can actually see.
+                is named, so it has to be a mark you can actually read.
 
-                It was the medallion at 15pt, where five colours collapse into
-                mud; then the coin at 15pt, which on a pale plate is a small
-                pale disc on a small pale card. It is 19 now, seated in its own
-                white pool so it stands off whatever it crosses, and its label
-                is set in the app's gold rather than the gauge's grey — the
-                same weight the coin has. */}
+                It is the medallion's DISC: rim, struck rings and numeral, with
+                the ribbons left off — the same simplified cut the streak sheet
+                wears in its hero and its counters, so the prize is drawn the
+                same way wherever it is being counted rather than being claimed.
+                (The whole medallion with its tails belongs to the two places
+                that AWARD it: the card's hero and the plaque's seal.)
+
+                It was the full medallion at 15pt, where the tails collapse into
+                mud; then the plain coin, which reads as currency rather than as
+                the medal itself. It is 19 now, seated in a faint pool so it
+                stands off whatever it crosses. */}
             <View style={s.goalMark}>
               <View style={s.goalMarkPool} />
-              <FocusMedalCoin size={19} />
+              <FocusMedallionMark size={19} />
             </View>
             <Text style={[s.goalLabelText, { color: labelColor }]}>GOAL</Text>
           </View>

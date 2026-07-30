@@ -130,6 +130,19 @@ export const FocusMedallionMark = React.memo(function FocusMedallionMark({
  * top-light, and a hairline of white where the light lands. No numeral — the
  * face says "a medal was won here", and a "1" printed on seven consecutive
  * days says nothing at all.
+ *
+ * This is the third cut of the same artwork, and the three divide the app's
+ * medal grammar cleanly by what the mark is DOING:
+ *
+ *   `FocusMedallion`     — the whole object, tails and all. For the two places
+ *                          that AWARD it: the streak card's hero, and the seal
+ *                          hung off its plaque.
+ *   `FocusMedallionMark` — the disc: rim, rings and numeral, no tails. For
+ *                          wherever the prize is being NAMED or counted — the
+ *                          streak sheet's hero and counters, the gauge's goal.
+ *   `FocusMedalCoin`     — the disc struck flat in one tone. For a ROW of
+ *                          them, where five full medallions become wallpaper
+ *                          and five numerals all reading "1" say nothing.
  */
 export const FocusMedalCoin = React.memo(function FocusMedalCoin({
   size = 26,
