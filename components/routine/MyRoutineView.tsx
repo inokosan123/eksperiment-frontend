@@ -77,6 +77,10 @@ import {
 import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
 import RoutinePhonePlanCard from '@/components/focus-watch/RoutinePhonePlanCard';
 import WeekDaySelector, { DayHead, type WeekDayGeometry } from '@/components/routine/WeekDaySelector';
+import SpiritualTypeDoor, { type DoorFlourish } from '@/components/routine/SpiritualTypeDoor';
+import BeadLoop from '@/components/prayer/BeadLoop';
+import ScriptureBook from '@/components/icons/ScriptureBook';
+import ChurchDome from '@/components/icons/ChurchDome';
 import { weekdayMondayFirst } from '@/components/focus-watch/dayPlanStore';
 import { C, F } from '@/constants/tokens';
 import type { HabitItem, HabitStep } from '@/components/habits/habitDb';
@@ -229,17 +233,22 @@ const DAY_TABS = [
 
 const DAY_TAB_LABELS = DAY_TABS.map(day => day.label);
 
+// Each kind wears its own subject's colour and its own drawn mark — the rope,
+// the Gospel and the church are the emblems the app already stands on, not
+// icon-set stand-ins. See `SpiritualTypeDoor` for why the four hues are set
+// this far apart.
 const SPIRITUAL_TYPES: {
   id: SpiritualType;
   label: string;
   desc: string;
   accent: string;
+  flourish: DoorFlourish;
   Icon: React.ComponentType<{ s?: number; c?: string; w?: number }>;
 }[] = [
-  { id: 'prayer', label: 'Prayer', desc: 'Morning, evening, and meal prayer tasks', accent: '#C5A059', Icon: Sun },
-  { id: 'reading', label: 'Scripture', desc: 'Bible, Psalter, and reading rhythms', accent: '#B54155', Icon: Book },
-  { id: 'church', label: 'Church', desc: 'Liturgy and church attendance reminders', accent: '#7C3AED', Icon: Cross },
-  { id: 'custom', label: 'Custom', desc: 'Create your own spiritual activity', accent: '#374151', Icon: Sparkles },
+  { id: 'prayer', label: 'Prayer', desc: 'Morning, evening, and meal prayer tasks', accent: '#6D5AAE', flourish: 'counter-lean', Icon: BeadLoop },
+  { id: 'reading', label: 'Scripture', desc: 'Bible, Psalter, and reading rhythms', accent: '#B54155', flourish: 'ruled', Icon: ScriptureBook },
+  { id: 'church', label: 'Church', desc: 'Liturgy and church attendance reminders', accent: '#B08A3E', flourish: 'lean', Icon: ChurchDome },
+  { id: 'custom', label: 'Custom', desc: 'Write a rule of your own', accent: '#5F7D8A', flourish: 'counter-lean', Icon: Sparkles },
 ];
 
 const GRATITUDE_ACCENT = '#F43F5E';
@@ -1984,31 +1993,39 @@ function SpiritualTypePickerSheet({
       overlayChildren={isGuided ? <GuidedOverlayHost /> : undefined}
     >
           <View style={s.sheetHandle} />
-          <View style={s.sheetHeader}>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.sheetHeaderIcon}>
+          <View style={s.typeSheetCloseRow}>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.typeSheetClose}>
               <X s={20} c="#9CA3AF" />
             </TouchableOpacity>
-            <Text style={s.sheetHeaderTitle}>Choose Type</Text>
-            <View style={s.sheetHeaderSpacer} />
+          </View>
+          <View style={s.typeSheetHead}>
+            {/* The same ornament head the day wears upstairs, so the sheet
+                reads as a room of the screen it opened from. */}
+            <View style={s.typeSheetTitleRow}>
+              <View style={s.typeSheetWing}>
+                <View style={s.typeSheetRule} />
+                <View style={s.typeSheetDiamond} />
+              </View>
+              <Text style={s.typeSheetTitle}>A Spiritual Task</Text>
+              <View style={s.typeSheetWing}>
+                <View style={s.typeSheetDiamond} />
+                <View style={s.typeSheetRule} />
+              </View>
+            </View>
+            <Text style={s.typeSheetMeta}>CHOOSE WHAT KIND</Text>
           </View>
           <ScrollView contentContainerStyle={s.typeSheetContent} showsVerticalScrollIndicator={false}>
             {SPIRITUAL_TYPES.map(item => (
-              <TouchableOpacity
-                {...(isGuided && item.id === 'custom' ? spiritualTypeTarget : {})}
+              <SpiritualTypeDoor
                 key={item.id}
+                tint={item.accent}
+                flourish={item.flourish}
+                title={item.label}
+                body={item.desc}
+                Emblem={item.Icon}
                 onPress={() => onSelect(item.id)}
-                activeOpacity={0.84}
-                style={s.typeOptionCard}
-              >
-                <View style={[s.typeOptionIcon, { backgroundColor: `${item.accent}14` }]}>
-                  <item.Icon s={20} c={item.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.typeOptionTitle}>{item.label}</Text>
-                  <Text style={s.typeOptionBody}>{item.desc}</Text>
-                </View>
-                <ChevronRight s={16} c="#D1D5DB" />
-              </TouchableOpacity>
+                anchor={isGuided && item.id === 'custom' ? spiritualTypeTarget : undefined}
+              />
             ))}
           </ScrollView>
     </SmoothBottomSheet>
@@ -2990,11 +3007,16 @@ const s = StyleSheet.create({
   sheetHeaderIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   sheetHeaderSpacer: { width: 38 },
   challengeEditorSheetContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 24 },
-  typeSheetContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 20, gap: 10 },
-  typeOptionCard: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 22, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F3F4F6', padding: 16 },
-  typeOptionIcon: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  typeOptionTitle: { fontFamily: F.serifMedium, fontSize: 16, color: '#111827' },
-  typeOptionBody: { marginTop: 4, fontFamily: F.sans, fontSize: 12, color: '#A8A29E' },
+  typeSheetContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 22, gap: 10 },
+  typeSheetCloseRow: { paddingHorizontal: 12 },
+  typeSheetClose: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  typeSheetHead: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 2, rowGap: 3 },
+  typeSheetTitleRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', columnGap: 10 },
+  typeSheetWing: { flex: 1, flexDirection: 'row', alignItems: 'center', columnGap: 7 },
+  typeSheetRule: { flex: 1, height: 1, backgroundColor: 'rgba(197,160,89,0.32)' },
+  typeSheetDiamond: { width: 5, height: 5, borderRadius: 1, backgroundColor: 'rgba(197,160,89,0.72)', transform: [{ rotate: '45deg' }] },
+  typeSheetTitle: { fontFamily: F.serifSemiBold, fontSize: 23, lineHeight: 27, letterSpacing: 0.3, color: C.text, textAlign: 'center', flexShrink: 1 },
+  typeSheetMeta: { fontFamily: F.sansBold, fontSize: 8.5, lineHeight: 11, letterSpacing: 1.8, color: '#B89A5A' },
   editorHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   editorHeaderTitle: { fontFamily: F.serifMedium, fontSize: 20, color: '#111827' },
   saveCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
