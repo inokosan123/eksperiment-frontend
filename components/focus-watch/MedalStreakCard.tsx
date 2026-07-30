@@ -6,7 +6,7 @@ import { ChevronRight, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { BANKED, BankedGlint, LedgerRail, RestSeal } from '@/components/shared/BankedEmber';
 import RadiantTodayPulse from '@/components/shared/RadiantTodayPulse';
-import { FocusMedalCoin } from './FocusMedallion';
+import { FocusMedalCoin, FocusMedallionMark } from './FocusMedallion';
 import DayGauge from './DayGauge';
 import { RadiantTrophy, StreakMedallion, TrophyShineBackdrop } from './TrophyRadiance';
 import { fuseMedalStreakWeek, type MedalStreakWeekCell } from './medalStreakWeek';
@@ -83,7 +83,8 @@ function TodayRing({ banked = false }: { banked?: boolean }) {
   }
   // Sized to the mark it surrounds: at 34 its rings stood a clear 6pt off the
   // coin they were waiting for, which read as a target rather than as a seat.
-  return <RadiantTodayPulse size={MARK} />;
+  // Seated, because the cell it rings now wears a gold rim of its own.
+  return <RadiantTodayPulse size={MARK} seated />;
 }
 
 /**
@@ -296,11 +297,32 @@ const MedalStreakCard = forwardRef<ComponentRef<typeof TouchableOpacity>, MedalS
                           <View style={s.todayEmber} />
                         ) : (
                           <View style={s.todayMedalWaiting}>
-                            {/* Struck in ash, not faded. The coin at a third
-                                opacity read as a rendering fault; the same
-                                coin unstruck reads as a die waiting for the
-                                day to be won. */}
-                            <FocusMedalCoin size={MARK} muted />
+                            {/* THE DAY IN PROGRESS.
+
+                                This was the plain coin struck in ash, filling
+                                its whole cell — and with the seat under it
+                                gone, an ash disc on a gold plate is simply a
+                                blank. Nothing about it said "today"; it said
+                                "image failed to load".
+
+                                The sheet has had the right answer since its own
+                                redesign, so today is drawn the sheet's way
+                                here: the medallion's DISC — rim, struck rings
+                                and numeral, all of it in ash — sitting SMALLER
+                                than its cell inside a lit seat with a gold rim.
+                                The seat is what makes it read as a die waiting
+                                to be struck rather than as a hole in the row,
+                                and the numeral is what makes it recognisably
+                                the same medal the other days already won.
+
+                                Sized to sit just inside the seat's rim rather
+                                than to some fraction of the cell. In the sheet
+                                a won day and today are 28 and 24 in the same
+                                36 seat — barely a step apart — and the first
+                                port here made today two thirds of its
+                                neighbours, which reads as a day that matters
+                                less rather than as one not finished yet. */}
+                            <FocusMedallionMark size={MARK - 4} muted />
                           </View>
                         ))}
                         {cell.status === 'broken' && (
@@ -511,10 +533,17 @@ const s = StyleSheet.create({
     borderColor: 'rgba(186,146,72,0.62)',
     borderStyle: 'dashed',
   },
-  // Today's seat carries no border of its own: the living pulse already draws
-  // two rings round it, and a third concentric circle turned the cell into a
-  // target. What is left under the pulse is the pale seat the coin will land in.
-  weekDotToday: { backgroundColor: 'rgba(255,253,246,0.8)' },
+  // Today's seat, lifted from the sheet's calendar so the day in progress
+  // reads the same in both rooms: a lit cream face inside a solid gold rim.
+  // The rim was dropped once, on the reasoning that the living pulse already
+  // draws rings round the cell — but the pulse breathes, and a mark whose only
+  // edge comes and goes has no edge. The rim is what the ash medallion sits
+  // IN; the pulse is the light around it.
+  weekDotToday: {
+    backgroundColor: '#FFFBEF',
+    borderWidth: 1.5,
+    borderColor: C.gold,
+  },
   weekDotTodayBanked: {
     borderWidth: 1.5,
     borderColor: BANKED.ash,

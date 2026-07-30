@@ -1,15 +1,14 @@
-import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Reanimated, {
-  cancelAnimation,
-  Easing,
   useAnimatedStyle,
   useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
 } from 'react-native-reanimated';
+import {
+  continuousPhase,
+  pingPongPhase,
+  useContinuousAnimationClock,
+} from '@/components/shared/use-continuous-animation-clock';
 
 // The living marker for "today" in a streak week band — a warm radiant
 // pulse that breathes around the current day's token. Shared by Home
@@ -33,51 +32,48 @@ const SPARKLE_PATH =
 export default function RadiantTodayPulse({
   size,
   color = '#C5A059',
+  active = true,
+  seated = false,
 }: {
   size: number;
   color?: string;
+  active?: boolean;
+  /**
+   * The token this surrounds already wears a rim of its own, so the mark keeps
+   * only its outer hairline: a seated token plus two pulse rings is three
+   * concentric gold circles on one small cell, which reads as a target rather
+   * than as a day in progress.
+   */
+  seated?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
-  const breath = useSharedValue(0);
-  const spin = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      breath.value = 0.5;
-      spin.value = 0;
-      return;
-    }
-    breath.value = 0;
-    breath.value = withRepeat(
-      withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-    // One slow, graceful revolution — the spark makes its round in ~4.6s.
-    spin.value = 0;
-    spin.value = withRepeat(
-      withTiming(1, { duration: 4600, easing: Easing.linear }),
-      -1,
-      false,
-    );
-    return () => {
-      cancelAnimation(breath);
-      cancelAnimation(spin);
-    };
-  }, [breath, reduceMotion, spin]);
+  const running = active && !reduceMotion;
+  const clock = useContinuousAnimationClock(running);
 
   // The halo leads; the crisp ring counter-breathes so the mark never sits
   // still; the outer hairline trails soft behind the halo.
-  const haloStyle = useAnimatedStyle(() => ({ opacity: 0.4 + breath.value * 0.6 }));
-  const innerStyle = useAnimatedStyle(() => ({ opacity: 0.9 - breath.value * 0.4 }));
-  const outerStyle = useAnimatedStyle(() => ({ opacity: 0.12 + breath.value * 0.3 }));
+  const haloStyle = useAnimatedStyle(() => {
+    const breath = running ? pingPongPhase(clock.value, 2000) : 0.5;
+    return { opacity: 0.4 + breath * 0.6 };
+  });
+  const innerStyle = useAnimatedStyle(() => {
+    const breath = running ? pingPongPhase(clock.value, 2000) : 0.5;
+    return { opacity: 0.9 - breath * 0.4 };
+  });
+  const outerStyle = useAnimatedStyle(() => {
+    const breath = running ? pingPongPhase(clock.value, 2000) : 0.5;
+    return { opacity: 0.12 + breath * 0.3 };
+  });
 
   // The sparkle rides the ring, brightest at the far side of its orbit.
   const orbitStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${spin.value * 360}deg` }],
+    transform: [{ rotate: `${(running ? continuousPhase(clock.value, 4600) : 0) * 360}deg` }],
   }));
   const sparkleStyle = useAnimatedStyle(() => ({
-    opacity: 0.35 + (0.5 + 0.5 * Math.sin(spin.value * Math.PI * 2)) * 0.6,
+    opacity: (() => {
+      const spin = running ? continuousPhase(clock.value, 4600) : 0;
+      return 0.35 + (0.5 + 0.5 * Math.sin(spin * Math.PI * 2)) * 0.6;
+    })(),
   }));
 
   const haloOuter = size + 15;
@@ -115,21 +111,30 @@ export default function RadiantTodayPulse({
         />
       </Reanimated.View>
 
-      {/* Outer hairline, then the crisp marker ring. */}
+      {/* Outer hairline, then the crisp marker ring — one ring only where the
+          token already carries its own. */}
       <Reanimated.View
         style={[
           pulse.ring,
-          { width: ringOuter, height: ringOuter, borderRadius: ringOuter / 2, borderColor: color, borderWidth: 1 },
-          outerStyle,
+          {
+            width: ringOuter,
+            height: ringOuter,
+            borderRadius: ringOuter / 2,
+            borderColor: color,
+            borderWidth: seated ? 1.4 : 1,
+          },
+          seated ? innerStyle : outerStyle,
         ]}
       />
-      <Reanimated.View
-        style={[
-          pulse.ring,
-          { width: ringInner, height: ringInner, borderRadius: ringInner / 2, borderColor: color, borderWidth: 1.75 },
-          innerStyle,
-        ]}
-      />
+      {!seated && (
+        <Reanimated.View
+          style={[
+            pulse.ring,
+            { width: ringInner, height: ringInner, borderRadius: ringInner / 2, borderColor: color, borderWidth: 1.75 },
+            innerStyle,
+          ]}
+        />
+      )}
 
       {/* The orbiting spark — a four-point sparkle riding the ring. The
           container is centred and rotates; the spark is a centred child
