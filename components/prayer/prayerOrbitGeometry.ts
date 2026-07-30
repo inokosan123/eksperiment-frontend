@@ -55,8 +55,17 @@ export type OrbitRingSpec = {
   ink: { near: number; far: number };
 };
 
-/** How wide and tall the orbit's own box is, around a reading of that size. */
-export const ORBIT_BOX = { padX: 76, padY: 34 } as const;
+/**
+ * How wide and tall the orbit's own box is, around a reading of that size.
+ *
+ * ⚠ `padX` has to clear the widest ring's spread PLUS the blush around its
+ * bead — react-native-svg clips to the surface, so a blush that runs past
+ * the edge is not merely off-layout, it is cut off with a straight edge,
+ * which is the one thing a glow must never have. `padY` stays small on
+ * purpose: the rings live inside the reading's own band, and every point
+ * this box takes vertically is a point off the icon above it.
+ */
+export const ORBIT_BOX = { padX: 128, padY: 34 } as const;
 
 /**
  * How far each ring reaches, as a share of the reading's half-height, and
@@ -67,8 +76,8 @@ export const ORBIT_BOX = { padX: 76, padY: 34 } as const;
  * than as one thick line.
  */
 export const ORBIT_RINGS = {
-  outer: { spread: 26, reach: 0.62, tiltShare: -0.55, phase: 0, beadR: 2.1, ink: { near: 0.52, far: 0.2 } },
-  inner: { spread: 12, reach: 0.40, tiltShare: 0.62, phase: 0.37, beadR: 1.5, ink: { near: 0.3, far: 0.12 } },
+  outer: { spread: 42, reach: 0.62, tiltShare: -0.55, phase: 0, beadR: 2.3, ink: { near: 0.52, far: 0.2 } },
+  inner: { spread: 24, reach: 0.40, tiltShare: 0.62, phase: 0.37, beadR: 1.6, ink: { near: 0.3, far: 0.12 } },
 } as const;
 
 /** The smallest reading the geometry will build for, so an unmeasured
@@ -168,7 +177,17 @@ export function orbitGeometry(readout: { width: number; height: number }) {
   };
 }
 
-/** How far a bead's halo spills past the ring it rides. */
+/** How far a bead's gold halo spills past the ring it rides. */
 export function orbitHaloReach(ring: OrbitRing) {
   return ring.beadR * 3.4;
+}
+
+/**
+ * How far the red blush around the bead spills — the outermost thing the
+ * figure draws, and therefore the one the box has to be measured against.
+ */
+export const ORBIT_BLUSH_MUL = 6.2;
+
+export function orbitBlushReach(ring: OrbitRing) {
+  return ring.beadR * ORBIT_BLUSH_MUL;
 }

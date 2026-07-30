@@ -338,11 +338,14 @@ export default function PersonalRuleTaskView({
         {/* The reading, inside its orbit. The orbit's two layers sit either
             side of these digits in the tree, which is the whole trick —
             see PrayerOrbit's header. */}
+        {/* ⚠ The orbit takes no tint. It is drawn in its own cinnabar,
+            deliberately not in the hour's colour — a gold ring over gold
+            digits was the fault, and theming it could only move that
+            collision to another hour. */}
         <PrayerOrbit
           readout={readoutSize}
           running={running}
           ignition={ignition}
-          tint={theme.accent}
         >
           <View style={s.readout} onLayout={onReadoutLayout}>
             <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>

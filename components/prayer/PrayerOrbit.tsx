@@ -14,6 +14,7 @@ import Reanimated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import {
+  ORBIT_BLUSH_MUL,
   orbitGeometry,
   orbitPoint,
   type OrbitRing,
@@ -91,18 +92,94 @@ export function useIgnition(running: boolean): SharedValue<number> {
   return ignition;
 }
 
+/**
+ * WHAT THE ORBIT IS DRAWN IN — its own colours, never the hour's.
+ *
+ * ⚠ THIS IS THE FIX FOR GOLD ON GOLD. The orbit used to take the same
+ * accent the reading warms into, so on the default hour a gold ring sat
+ * over gold digits and the two dissolved into each other. Tying it to
+ * the theme could only ever move that collision to another hour.
+ *
+ * So the orbit owns a colour and keeps it: CINNABAR, the red a
+ * rubricator reddens a manuscript with. It has stood beside gold for a
+ * thousand years, it is the pairing the icon at the top of this very
+ * screen is painted in, and it separates cleanly from all three hours —
+ * gold, morning's amber and evening's violet.
+ *
+ * ⚠ It is deliberately NOT the app's `C.red` (#BE123C), which means
+ * destructive — the Exit dialog on this screen is drawn in it — nor its
+ * oxblood (#A24351), which is reserved for a day you struck out. A
+ * third red, for a third meaning.
+ *
+ * The planet takes gold for its glow and near-white for its core, so
+ * what travels the ring reads as a lit body rather than a red dot: a
+ * red blush at the outside, gold light within it, the body, and a white
+ * heart that only kindles as it swings to the front.
+ */
+const ORBIT = {
+  ring: '#A63A2E',
+  body: '#B8422F',
+  blush: '#C4553F',
+  halo: '#E8BE79',
+  core: '#FFF4E2',
+} as const;
+
+/** One circle riding the ring, and where in the stack it sits. */
+type DotSpec = {
+  /** How far behind the bead it rides, in laps. 0 is the bead itself. */
+  lag: number;
+  /** Radius, as a multiple of the ring's own bead radius. */
+  rMul: number;
+  peak: number;
+  fill: string;
+  /**
+   * True for light rather than substance: it kindles sharply as the bead
+   * comes to the front and is all but out at the back, the way a
+   * highlight behaves. False fades gently, the way an object does.
+   */
+  hot?: boolean;
+};
+
+/* Painted in order, so the first is furthest back. The blush is the
+ * outermost layer, and `orbitBlushReach` is what the box is measured
+ * against — see the geometry module. */
+const HERO_NEAR: DotSpec[] = [
+  { lag: 0, rMul: ORBIT_BLUSH_MUL, peak: 0.20, fill: ORBIT.blush },
+  // Two dots trailing a fraction of a lap behind. Not decoration: it is
+  // what makes a travelling point read as travelling rather than as
+  // jumping between frames. Kept to two — each one is a worklet and an
+  // SVG property update on every frame.
+  { lag: 0.022, rMul: 0.62, peak: 0.22, fill: ORBIT.body },
+  { lag: 0.011, rMul: 0.86, peak: 0.38, fill: ORBIT.body },
+  { lag: 0, rMul: 3.2, peak: 0.34, fill: ORBIT.halo },
+  { lag: 0, rMul: 1, peak: 0.95, fill: ORBIT.body },
+  { lag: 0, rMul: 0.44, peak: 1, fill: ORBIT.core, hot: true },
+];
+
+const QUIET_NEAR: DotSpec[] = [
+  { lag: 0, rMul: 2.6, peak: 0.22, fill: ORBIT.halo },
+  { lag: 0, rMul: 1, peak: 0.8, fill: ORBIT.body },
+  { lag: 0, rMul: 0.42, peak: 0.9, fill: ORBIT.core, hot: true },
+];
+
+/* Behind the numbers there is no glow at all: light spilling off
+ * something that is BEHIND the digits would be light coming through
+ * them, which is the one thing that would break the illusion the whole
+ * figure exists for. Just the body, dim. */
+const FAR: DotSpec[] = [
+  { lag: 0, rMul: 0.9, peak: 0.34, fill: ORBIT.ring },
+];
+
 export default function PrayerOrbit({
   /** The measured size of the reading this orbits. */
   readout,
   running,
   ignition,
-  tint,
   children,
 }: {
   readout: { width: number; height: number };
   running: boolean;
   ignition: SharedValue<number>;
-  tint: string;
   children: ReactNode;
 }) {
   const reduceMotion = useReducedMotion();
@@ -130,12 +207,9 @@ export default function PrayerOrbit({
     };
   }, [reduceMotion, running, spin, spinInner]);
 
-  const geometry = useMemo(
-    () => orbitGeometry(readout),
-    [readout],
-  );
-
+  const geometry = useMemo(() => orbitGeometry(readout), [readout]);
   const spins = [spin, spinInner];
+  const nearDots = [HERO_NEAR, QUIET_NEAR];
 
   return (
     <View style={[s.box, { width: geometry.boxW, height: geometry.boxH }]}>
@@ -148,13 +222,15 @@ export default function PrayerOrbit({
       >
         <Defs>
           <RadialGradient id="prayerOrbitBloom" cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor={tint} stopOpacity={0.22} />
-            <Stop offset="0.55" stopColor={tint} stopOpacity={0.08} />
-            <Stop offset="1" stopColor={tint} stopOpacity={0} />
+            <Stop offset="0" stopColor={ORBIT.blush} stopOpacity={0.19} />
+            <Stop offset="0.55" stopColor={ORBIT.blush} stopOpacity={0.07} />
+            <Stop offset="1" stopColor={ORBIT.blush} stopOpacity={0} />
           </RadialGradient>
         </Defs>
 
-        {/* The light the reading stands in once it is running. */}
+        {/* The warmth the reading stands in once it runs. Red, so the
+            gold of the digits has something to be gold AGAINST — a gold
+            reading in a gold pool was half of the original fault. */}
         <Bloom
           cx={geometry.cx}
           cy={geometry.cy}
@@ -164,14 +240,7 @@ export default function PrayerOrbit({
         />
 
         {geometry.rings.map((ring, index) => (
-          <Arc
-            key={`far-${index}`}
-            d={geometry.paths[index].far}
-            tint={tint}
-            base={ring.ink.far}
-            width={1}
-            life={life}
-          />
+          <Arc key={`far-${index}`} d={geometry.paths[index].far} base={ring.ink.far} width={1} life={life} />
         ))}
         {geometry.rings.map((ring, index) => (
           <Bead
@@ -181,8 +250,8 @@ export default function PrayerOrbit({
             cy={geometry.cy}
             spin={spins[index]}
             life={life}
-            tint={tint}
             side="far"
+            specs={FAR}
           />
         ))}
       </Svg>
@@ -197,14 +266,7 @@ export default function PrayerOrbit({
         style={StyleSheet.absoluteFill}
       >
         {geometry.rings.map((ring, index) => (
-          <Arc
-            key={`near-${index}`}
-            d={geometry.paths[index].near}
-            tint={tint}
-            base={ring.ink.near}
-            width={1.2}
-            life={life}
-          />
+          <Arc key={`near-${index}`} d={geometry.paths[index].near} base={ring.ink.near} width={1.2} life={life} />
         ))}
         {geometry.rings.map((ring, index) => (
           <Bead
@@ -214,8 +276,8 @@ export default function PrayerOrbit({
             cy={geometry.cy}
             spin={spins[index]}
             life={life}
-            tint={tint}
             side="near"
+            specs={nearDots[index]}
           />
         ))}
       </Svg>
@@ -232,10 +294,9 @@ export default function PrayerOrbit({
  * figure out of nothing.
  */
 function Arc({
-  d, tint, base, width, life,
+  d, base, width, life,
 }: {
   d: string;
-  tint: string;
   base: number;
   width: number;
   life: SharedValue<number>;
@@ -248,7 +309,7 @@ function Arc({
     <AnimatedPath
       d={d}
       fill="none"
-      stroke={tint}
+      stroke={ORBIT.ring}
       strokeWidth={width}
       strokeLinecap="round"
       animatedProps={animatedProps}
@@ -289,7 +350,7 @@ function Bloom({
 }
 
 /**
- * The travelling light.
+ * The travelling light, in as many layers as its side deserves.
  *
  * Both layers hold a copy and each shows only while the bead is on its
  * own side. The handover is a short fade rather than a switch: over a
@@ -298,58 +359,75 @@ function Bloom({
  * seen — a hard swap would flicker for a frame at each end.
  */
 function Bead({
-  ring, cx, cy, spin, life, tint, side,
+  ring, cx, cy, spin, life, side, specs,
 }: {
   ring: OrbitRing;
   cx: number;
   cy: number;
   spin: SharedValue<number>;
   life: SharedValue<number>;
-  tint: string;
   side: 'near' | 'far';
+  specs: DotSpec[];
 }) {
-  // ⚠ Both worklets call `orbitPoint` — the same function the paths and the
-  // tests are built on — rather than keeping the ellipse's formula inline.
-  // Two copies of a formula become two different formulas the first time
-  // one of them is tuned.
+  return (
+    <>
+      {specs.map((spec, index) => (
+        <Dot
+          key={index}
+          ring={ring}
+          cx={cx}
+          cy={cy}
+          spin={spin}
+          life={life}
+          side={side}
+          spec={spec}
+        />
+      ))}
+    </>
+  );
+}
+
+function Dot({
+  ring, cx, cy, spin, life, side, spec,
+}: {
+  ring: OrbitRing;
+  cx: number;
+  cy: number;
+  spin: SharedValue<number>;
+  life: SharedValue<number>;
+  side: 'near' | 'far';
+  spec: DotSpec;
+}) {
+  // ⚠ This calls `orbitPoint` — the same function the paths and the tests
+  // are built on — rather than keeping the ellipse's formula inline. Two
+  // copies of a formula become two different formulas the first time one
+  // of them is tuned.
   const animatedProps = useAnimatedProps(() => {
-    const p = orbitPoint(ring, ((spin.value + ring.phase) % 1) * TAU, cx, cy);
+    // The lag can carry the phase below zero, and a negative modulo in
+    // JavaScript stays negative; the extra turn is what keeps a trailing
+    // dot on the ring instead of flinging it to the far side.
+    const turn = (((spin.value + ring.phase - spec.lag) % 1) + 1) % 1;
+    const p = orbitPoint(ring, turn * TAU, cx, cy);
     // 0 at the far pole, 1 at the near one.
     const near = (p.depth + 1) / 2;
     const facing = side === 'near' ? p.depth : -p.depth;
     const shown = Math.min(1, Math.max(0, facing / 0.09));
+    const bright = side === 'far'
+      ? 0.35 + near * 0.4
+      : spec.hot ? near * near : 0.45 + near * 0.55;
 
     return {
       cx: p.x,
       cy: p.y,
-      r: ring.beadR * (0.68 + near * 0.62),
-      opacity: shown * life.value * (side === 'near' ? 0.45 + near * 0.55 : 0.2 + near * 0.3),
+      // Nearer is bigger, which is the other half of the depth cue the
+      // occlusion begins. ⚠ As an SVG radius, never a view scale: scaling
+      // a small view on Android resamples its bitmap.
+      r: ring.beadR * spec.rMul * (0.68 + near * 0.62),
+      opacity: shown * life.value * spec.peak * bright,
     };
   });
 
-  const haloProps = useAnimatedProps(() => {
-    const p = orbitPoint(ring, ((spin.value + ring.phase) % 1) * TAU, cx, cy);
-    const near = (p.depth + 1) / 2;
-    const shown = Math.min(1, Math.max(0, p.depth / 0.09));
-
-    return {
-      cx: p.x,
-      cy: p.y,
-      r: ring.beadR * 3.4,
-      opacity: shown * life.value * near * 0.22,
-    };
-  });
-
-  return (
-    <>
-      {/* Only the near copy carries a halo: light spilling off something
-          that is behind the numbers would be light coming through them. */}
-      {side === 'near' && (
-        <AnimatedCircle fill={tint} animatedProps={haloProps} cx={cx} cy={cy} r={1} />
-      )}
-      <AnimatedCircle fill={tint} animatedProps={animatedProps} cx={cx} cy={cy} r={1} />
-    </>
-  );
+  return <AnimatedCircle fill={spec.fill} animatedProps={animatedProps} cx={cx} cy={cy} r={1} />;
 }
 
 const s = StyleSheet.create({

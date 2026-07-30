@@ -4,6 +4,7 @@ import {
   ORBIT_BOX,
   makeOrbitRing,
   orbitGeometry,
+  orbitBlushReach,
   orbitHaloReach,
   orbitPoint,
   type OrbitRing,
@@ -114,21 +115,24 @@ test('the rings still encircle the type rather than sitting inside it', () => {
   }
 });
 
-test('nothing, including a bead at full halo, escapes the box', () => {
+test('nothing, out to the bead\'s outermost blush, escapes the box', () => {
   // react-native-svg clips to the surface, so anything past the box is not
-  // merely off-layout — it is cut, with a visible straight edge.
+  // merely off-layout — it is cut, with a visible straight edge, which is
+  // the one thing a glow must never have. The blush is the widest thing
+  // the figure draws, so it is what the box has to be measured against.
   for (const reading of READINGS) {
     const g = orbitGeometry(reading);
     for (const ring of g.rings) {
       const { maxAbsX, maxAbsY } = survey(ring);
-      const halo = orbitHaloReach(ring);
+      const spill = orbitBlushReach(ring);
+      assert.ok(spill > orbitHaloReach(ring), 'the blush must be the outermost layer');
       assert.ok(
-        maxAbsX + halo <= g.boxW / 2,
-        `${reading.label}: needs ${(maxAbsX + halo).toFixed(1)} across, box gives ${(g.boxW / 2).toFixed(1)}`,
+        maxAbsX + spill <= g.boxW / 2,
+        `${reading.label}: needs ${(maxAbsX + spill).toFixed(1)} across, box gives ${(g.boxW / 2).toFixed(1)}`,
       );
       assert.ok(
-        maxAbsY + halo <= g.boxH / 2,
-        `${reading.label}: needs ${(maxAbsY + halo).toFixed(1)} down, box gives ${(g.boxH / 2).toFixed(1)}`,
+        maxAbsY + spill <= g.boxH / 2,
+        `${reading.label}: needs ${(maxAbsY + spill).toFixed(1)} down, box gives ${(g.boxH / 2).toFixed(1)}`,
       );
     }
   }
