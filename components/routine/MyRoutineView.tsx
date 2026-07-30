@@ -1992,13 +1992,22 @@ function SpiritualTypePickerSheet({
       overlayChildren={isGuided ? <GuidedOverlayHost /> : undefined}
     >
           <View style={s.sheetHandle} />
-          {/* The head IS the title bar: the close button rides the same row as
-              the title rather than sitting on a strip of its own, and an equal
-              spacer on the right keeps the ornament centred on the sheet. */}
+          {/* The close sits in the sheet's own top-right curve, struck as a
+              small gold-rimmed parchment stud so it belongs to the ornament
+              rather than to a settings row. The head keeps equal padding on
+              both sides, so the rules stop clear of it and the title stays
+              centred on the sheet. */}
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.84}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            hitSlop={8}
+            style={s.typeSheetClose}
+          >
+            <X s={15} c="#B08A3E" w={2} />
+          </TouchableOpacity>
           <View style={s.typeSheetBar}>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.typeSheetClose}>
-              <X s={20} c="#9CA3AF" />
-            </TouchableOpacity>
             <View style={s.typeSheetHead}>
               {/* The same ornament the day wears upstairs, so the sheet reads
                   as a room of the screen it opened from. */}
@@ -2015,7 +2024,6 @@ function SpiritualTypePickerSheet({
               </View>
               <Text style={s.typeSheetMeta}>CHOOSE WHAT KIND</Text>
             </View>
-            <View style={s.typeSheetClose} pointerEvents="none" />
           </View>
           <ScrollView contentContainerStyle={s.typeSheetContent} showsVerticalScrollIndicator={false}>
             {SPIRITUAL_TYPES.map(item => (
@@ -3010,8 +3018,26 @@ const s = StyleSheet.create({
   sheetHeaderSpacer: { width: 38 },
   challengeEditorSheetContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 24 },
   typeSheetContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 22, gap: 10 },
-  typeSheetBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingTop: 2, columnGap: 6 },
-  typeSheetClose: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  typeSheetBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 48, paddingTop: 2 },
+  typeSheetClose: {
+    position: 'absolute',
+    right: 12,
+    top: 6,
+    zIndex: 5,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFDF6',
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.34)',
+    shadowColor: '#8B6B2F',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 2,
+  },
   typeSheetHead: { flex: 1, alignItems: 'center', rowGap: 3 },
   typeSheetTitleRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', columnGap: 10 },
   typeSheetWing: { flex: 1, flexDirection: 'row', alignItems: 'center', columnGap: 7 },
