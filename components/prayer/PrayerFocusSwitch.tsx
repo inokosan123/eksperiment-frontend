@@ -39,10 +39,17 @@ import { MINE_ACCENT, MINE_BORDER, MINE_INK, MINE_TINT, mineAlpha } from '@/comp
  * between traditions, which is the one thing it must never look like.
  *
  * THE GRAMMAR IS THE APP'S OWN two-kinds plaque — the one Set as Task
- * and the Prayer Book switch are struck from, down to the same recessed
- * track, the same 32/28/22 emblem and the same selection spring. A
- * choice this consequential should not arrive in a control the user has
- * never met.
+ * and the Prayer Book switch are struck from, down to the recessed
+ * track, the emblem's 32 / 28 / 22 proportions and the one selection
+ * spring. A choice this consequential should not arrive in a control the
+ * user has never met.
+ *
+ * ⚠ IT IS DRAWN SMALLER THAN ITS SIBLINGS, AND AS ONE PIECE. This plaque
+ * stands directly above the object the whole screen is for, and at the
+ * shared 52-point band it took the height of a section card. So the band
+ * is 44 and the emblem, the discs, the halo, the glyphs and both radii
+ * are scaled with it — a band shortened without its contents is not a
+ * smaller plaque, it is a squashed one.
  *
  * And as in every one of those, THE PLAQUE CHANGES INTO THE THING IT IS
  * SELECTING — but by TEMPERATURE, not by ornament: cool stone on the
@@ -104,7 +111,7 @@ const SELECT_SPRING = { damping: 18, stiffness: 235, mass: 0.72 };
  * other, the same cross inside a circle of glory.
  */
 function CruciformHalo({ tone }: { tone: string }) {
-  const box = 18;
+  const box = 16;
   const c = box / 2;
   const r = c - 1.1;
   // The bars stop just inside the ring rather than crossing it: a cross
@@ -158,7 +165,7 @@ function Emblem({
       <View style={[s.emblemHeart, { backgroundColor: tone.heart }]} />
       {kind === 'icon'
         ? <CruciformHalo tone={tone.glyph} />
-        : <Cross s={17} c={tone.glyph} w={1.7} />}
+        : <Cross s={15} c={tone.glyph} w={1.7} />}
     </Reanimated.View>
   );
 }
@@ -289,7 +296,7 @@ export default function PrayerFocusSwitch({
           motion={motion}
           restingAt={0}
         />
-        <Reanimated.Text style={[s.label, crossInkStyle]}>CROSS</Reanimated.Text>
+        <Reanimated.Text style={[s.label, crossInkStyle]}>Cross</Reanimated.Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -307,7 +314,7 @@ export default function PrayerFocusSwitch({
           motion={motion}
           restingAt={1}
         />
-        <Reanimated.Text style={[s.label, iconInkStyle]}>JESUS</Reanimated.Text>
+        <Reanimated.Text style={[s.label, iconInkStyle]}>Jesus</Reanimated.Text>
       </TouchableOpacity>
     </Reanimated.View>
   );
@@ -319,7 +326,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     gap: TRACK_GAP,
     padding: TRACK_PAD,
-    borderRadius: 20,
+    borderRadius: 17,
     borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: '#E8E3D9',
@@ -331,7 +338,7 @@ const s = StyleSheet.create({
     left: TRACK_PAD,
     top: TRACK_PAD,
     bottom: TRACK_PAD,
-    borderRadius: 16,
+    borderRadius: 13,
     borderCurve: 'continuous',
     overflow: 'hidden',
     shadowOpacity: 0.22,
@@ -341,7 +348,7 @@ const s = StyleSheet.create({
   },
   face: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 16,
+    borderRadius: 13,
     borderCurve: 'continuous',
     borderWidth: 1,
   },
@@ -350,36 +357,61 @@ const s = StyleSheet.create({
   faceLit: {
     position: 'absolute',
     top: 1,
-    left: 14,
-    right: 14,
+    left: 12,
+    right: 12,
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.9)',
   },
 
+  /**
+   * ⚠ 44, DOWN FROM 52, AND EVERY OTHER FIGURE HERE FOLLOWS IT.
+   *
+   * The plaque is a control standing above the one thing this screen is
+   * for, and at 52 it took the height of a section card. Narrowing it is
+   * not only a smaller number: a 32pt emblem in a 44pt band leaves six
+   * points of air top and bottom, which reads as crammed, so the emblem,
+   * the discs, the halo and both radii are all drawn down with it. A band
+   * shortened without its contents is a squashed band.
+   */
   half: {
     flex: 1,
-    minHeight: 52,
-    borderRadius: 16,
+    minHeight: 44,
+    borderRadius: 13,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 9,
+    gap: 8,
     zIndex: 1,
   },
+  /**
+   * ⚠ THE SERIF, IN SENTENCE CASE — not tracked sans capitals.
+   *
+   * CROSS and JESUS were set the way this app sets a LABEL, and these are
+   * not labels: MORNING and MEALS name a category, while these two name
+   * the cross of Christ and Christ Himself. Capitals shout them, and a
+   * name shouted at 11 points beside an emblem is the one register this
+   * screen has no room for.
+   *
+   * The tracking goes with the capitals. Letter-spacing is what makes a
+   * short word in caps legible; in a serif at reading size it only pulls
+   * the word apart.
+   */
   label: {
-    fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 1.6,
+    fontFamily: F.serifMedium,
+    fontSize: 16.5,
+    lineHeight: 21,
   },
 
-  emblemSeat: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  emblemDisc: { position: 'absolute', width: 28, height: 28, borderRadius: 14 },
-  emblemHeart: { position: 'absolute', width: 22, height: 22, borderRadius: 11 },
+  // The same 32 / 28 / 22 pattern the app's other plaques are struck to,
+  // scaled as one so the proportions survive the narrower band.
+  emblemSeat: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
+  emblemDisc: { position: 'absolute', width: 23, height: 23, borderRadius: 11.5 },
+  emblemHeart: { position: 'absolute', width: 18, height: 18, borderRadius: 9 },
   emblemGlow: {
     position: 'absolute',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 33,
+    height: 33,
+    borderRadius: 16.5,
     backgroundColor: 'rgba(255,255,255,0.75)',
   },
 

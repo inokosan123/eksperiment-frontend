@@ -430,7 +430,13 @@ export default function PersonalRuleTaskView({
       </View>
 
       {/* ── The reading, the controls, the door ─────────────────────── */}
-      <View style={[s.deck, { paddingBottom: Math.max(insets.bottom, 10) + 6 }]}>
+      {/* ⚠ THE DECK SITS AS LOW AS THE PHONE ALLOWS. Every point it gives
+          back goes to the flexible room above it, and since the object up
+          there is capped by width rather than by height on every phone
+          the app runs on, the room does not make it bigger — it re-centres
+          it lower, which is the point. Nothing is added under the safe
+          area: the home indicator's own inset is the floor. */}
+      <View style={[s.deck, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         {/* The reading, inside its orbit. The orbit's two layers sit either
             side of these digits in the tree, which is the whole trick —
             see PrayerOrbit's header. */}
@@ -713,7 +719,12 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 18,
-    marginTop: 14,
+    // ⚠ Nothing, deliberately. The orbit's box already holds 17 points of
+    // clear air under the digits for its hoops to swing through, and a
+    // margin here was stacking a second gap on top of one that was
+    // already there — 31 points of nothing between the reading and the
+    // controls, on the screen with the least to spare.
+    marginTop: 0,
     backgroundColor: '#FFFFFF',
     padding: 9,
     paddingHorizontal: 13,
@@ -726,7 +737,7 @@ const s = StyleSheet.create({
     shadowRadius: 26,
     elevation: 9,
   },
-  controlsDeckCompact: { gap: 15, marginTop: 10, padding: 7, paddingHorizontal: 11 },
+  controlsDeckCompact: { gap: 15, marginTop: 0, padding: 7, paddingHorizontal: 11 },
   mainWrap: { alignItems: 'center', justifyContent: 'center' },
   mainHit: { width: 66, height: 66, borderRadius: 33 },
   mainHitCompact: { width: 58, height: 58, borderRadius: 29 },
@@ -759,7 +770,7 @@ const s = StyleSheet.create({
   smallLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(28,25,23,0.32)', marginTop: 2, textTransform: 'uppercase' },
 
   about: {
-    marginTop: 12,
+    marginTop: 8,
     minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
