@@ -28,7 +28,9 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import { Sun, Utensils, Moon, Sparkles, Heart, X, Settings, CheckSmall, ChevronLeft, OrthodoxCross } from '@/components/icons/Icons';
+import { X, Settings, CheckSmall, ChevronLeft, OrthodoxCross } from '@/components/icons/Icons';
+import BeadLoop from '@/components/prayer/BeadLoop';
+import { EveningMoon, MealBowl, MorningSun, PrayerCandle } from '@/components/icons/PrayerHours';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import MyRulePage from '@/components/prayer/MyRulePage';
 import MyRuleStartDock, { MY_RULE_DOCK_SCRIM } from '@/components/prayer/MyRuleStartDock';
@@ -115,12 +117,24 @@ const CAT_THEMES: Record<PrayerCategory, CatTheme> = {
 // "MORNING" needs 53.8pt and the button gave 52.0, so it was cut to fit.
 // Easing the type to 8.5 over 1.3 and reclaiming the button's dead side
 // padding leaves 6.4pt to spare; the row's gutters and colours never move.
+/*
+ * The hours, and what each wears. See `components/icons/PrayerHours` for why
+ * these are drawn in a different register from the card emblems — 21pt across
+ * five buttons is the opposite problem from a 79pt watermark.
+ *
+ * JESUS takes the prayer rope the app already owns rather than the `Sparkles`
+ * it used to: that hour is the one prayer needing no book, and a rope is the
+ * thing you actually hold while saying it. OTHER takes a candle — it holds the
+ * prayers for particular occasions, and a candle is what one lights for a
+ * particular need. It used to wear a heart, which said nothing about it and is
+ * now Gratitude's mark two screens away.
+ */
 const CATEGORIES: { id: PrayerCategory; label: string; Icon: React.ComponentType<any> }[] = [
-  { id: 'morning', label: 'MORNING', Icon: Sun },
-  { id: 'meal', label: 'MEALS', Icon: Utensils },
-  { id: 'evening', label: 'EVENING', Icon: Moon },
-  { id: 'jesus', label: 'JESUS', Icon: Sparkles },
-  { id: 'other', label: 'OTHER', Icon: Heart },
+  { id: 'morning', label: 'MORNING', Icon: MorningSun },
+  { id: 'meal', label: 'MEALS', Icon: MealBowl },
+  { id: 'evening', label: 'EVENING', Icon: EveningMoon },
+  { id: 'jesus', label: 'JESUS', Icon: BeadLoop },
+  { id: 'other', label: 'OTHER', Icon: PrayerCandle },
 ];
 
 const PREVIEW_CATEGORY_TITLES: Record<PrayerLanguage, Partial<Record<PrayerCategory, string>>> = {

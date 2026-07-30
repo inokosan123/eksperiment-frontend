@@ -12,10 +12,13 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
+  cancelAnimation,
   Easing,
   interpolateColor,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -24,9 +27,9 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import PantocratorAboutSheet from '@/components/prayer/PantocratorAboutSheet';
 import { PantocratorPanel, PrayerLamp, panelWidth } from '@/components/prayer/PantocratorIcon';
 import PrayerFocusSwitch, { type PrayerFocus } from '@/components/prayer/PrayerFocusSwitch';
-import StandingCross from '@/components/prayer/StandingCross';
-import PrayerOrbit, { useIgnition, useReadoutInk } from '@/components/prayer/PrayerOrbit';
-import { objectHeightFor } from '@/components/prayer/prayerOrbitGeometry';
+import StandingCross, { CROSS_ASPECT } from '@/components/prayer/StandingCross';
+import { useIgnition, useReadoutInk } from '@/components/prayer/prayerMotion';
+import PrayerRoom from '@/components/prayer/PrayerRoom';
 import { useAppSettings } from '@/components/settings/SettingsContext';
 import { ArrowLeft, CheckSmall, ChevronDown, OpenBook, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
@@ -50,20 +53,38 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  *
  * THE ORDER OF THE SCREEN, AND WHY
  *
- *   the icon      the hero, given whatever height the screen has left
- *   the reading   the elapsed time, under it and quieter than it
+ *   the object    the hero — the cross or the icon, given whatever
+ *                 height the screen has left
+ *   the switch    which of the two, directly under the thing it changes
+ *   the reading   the elapsed time, quieter than the object
  *   the controls  reset · start/pause · finish, unchanged in behaviour
  *   About         the door to the seven pages
  *
- * THE LAMP. A lamp burns before an icon, and that is the whole
- * animation: running, the light lives; paused, it banks rather than
- * dies, because a prayer that is paused is still a prayer that was
- * begun. The pulse rings, the glow disc and the meru-book Lottie are
- * gone — they were the dial's dress, and there is no dial.
+ * ⚠ WHAT PRESSING START DOES, AND WHAT IT NO LONGER DOES.
+ *
+ * It used to draw LINES: hoops turning round the object and round the
+ * clock, near halves in front and far halves behind. They were the best
+ * drawing on the screen and they were the wrong instinct — a thing that
+ * moves asks to be watched, and this is a screen you are meant to be
+ * looking THROUGH rather than at. Every one of them is gone.
+ *
+ * What happens instead is light and scale, on one shared ignition:
+ *
+ *   the object    grows into its full size
+ *   the room      darkens at its edges, so the object is the only lit
+ *                 part of the page (see PrayerRoom)
+ *   the lamp      comes up behind it
+ *   the reading   warms into the hour's colour
+ *   the switch    withdraws — you are not choosing what to pray in
+ *                 front of any more, you are praying
+ *   the button    takes a slow breath of its own light
+ *
+ * Nothing counts, nothing ticks, nothing travels.
  *
  * ⚠ THE GROUND IS WARM, NOT WHITE. A low warm glow over pure white
- * reads as a stain; over warm paper it reads as light. That is the
- * only reason the background changed.
+ * reads as a stain; over warm paper it reads as light. And the room's
+ * shadow is warm for the same reason — a neutral darkening reads as the
+ * phone dimming, which is a fault rather than a mood.
  * ───────────────────────────────────────────────────────────── */
 
 const QUOTE = '"Pray without ceasing."';
@@ -71,6 +92,20 @@ const QUOTE_REF = '1 Thessalonians 5:17';
 
 /** Warm paper, so the lamp has something to be light against. */
 const GROUND = ['#FFFDF9', '#FDF8EF', '#FAF3E6'] as const;
+
+/**
+ * How small the cross or the icon stands before the prayer begins.
+ *
+ * ⚠ IT IS A DOWNSCALE, NOT AN UPSCALE, and the direction is the whole
+ * decision. The object is rendered at its RUNNING size, so at rest it is
+ * being sampled down — which is crisp — and the running state lands on
+ * exactly 1, the image's own resolution. Drawn small and grown instead,
+ * the state you actually pray in would be the blurred one.
+ *
+ * 0.88 rather than something more dramatic: this is a prayer beginning,
+ * not a card flipping. The change has to be felt more than watched.
+ */
+const REST_SCALE = 0.88;
 
 export type PersonalPrayerRuleChoice = 'personal' | 'standard' | 'short' | 'seraphim';
 
@@ -147,6 +182,7 @@ export default function PersonalRuleTaskView({
   onRuleChange,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   const { height, width: screenWidth } = useWindowDimensions();
   const { settings, updateSettings } = useAppSettings();
   const focus: PrayerFocus = settings.prayerFocus === 'icon' ? 'icon' : 'cross';
@@ -161,17 +197,15 @@ export default function PersonalRuleTaskView({
   // readout, a control deck and a door, and no constant survives all the
   // combinations of those across every phone.
   const [iconRoom, setIconRoom] = useState({ width: 0, height: 0 });
-  // The orbit is built around the reading, so it has to know how big the
-  // reading came out — which changes with the font, the language and
-  // whether an hour has passed.
-  const [readoutSize, setReadoutSize] = useState({ width: 0, height: 0 });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finishLockRef = useRef(false);
-  // One value lights the orbit, the reading and the button. See useIgnition.
+  // One value lights the object, the room, the reading and the button.
   const ignition = useIgnition(running);
   // 0 = the cross is standing, 1 = the icon is. The exchange between them
   // is the one animation on this screen that has to be worth watching.
   const swap = useSharedValue(focus === 'icon' ? 1 : 0);
+  // The slow breath in the button's light. See mainHaloStyle.
+  const breath = useSharedValue(0);
 
   const isCompactHeight = height < 720;
   const hasHours = elapsedSecs >= 3600;
@@ -184,19 +218,27 @@ export default function PersonalRuleTaskView({
       ? PERSONAL_RULE_THEMES.morning
       : PERSONAL_RULE_THEMES.default;
   const selectedRuleOption = RULE_OPTIONS.find(rule => rule.id === selectedRule) ?? RULE_OPTIONS[0];
-  // The board is 84 by 45.5, so height is what constrains it. 380 is where
-  // it stops growing on a tall phone: past that the controls start to look
-  // like they fell off the bottom.
-  // ⚠ SIZED BY THE GEOMETRY MODULE, not here. The object has to leave the
-  // hoops room to pass round it, and on a narrow tall screen a height-only
-  // size grows it to nearly the full width — where the inner hoop ends up
-  // going through the cross's arms. `objectHeightFor` is what the tests
-  // check against, so the two can never drift.
-  const panelHeight = iconRoom.height > 0 ? objectHeightFor(iconRoom, 380) : 0;
+  /* THE OBJECT'S SIZE.
+   *
+   * ⚠ THIS IS THE SIZE IT TAKES WHILE THE PRAYER RUNS, and it is drawn at
+   * this size always. At rest it is SCALED DOWN to `REST_SCALE`, never up
+   * from a smaller one — which is the right way round for an image:
+   * downsampling is crisp, upsampling is soft, and the running state is
+   * the one that has to be perfect. Growing into full size is therefore
+   * growing into the image's native resolution.
+   *
+   * The cross is 19% wider than the icon and they share this seat, so the
+   * width budget is figured from the wider of the two. 380 is where the
+   * height stops mattering: past it the controls look like they fell off
+   * the bottom of a tall phone.
+   */
+  const panelHeight = iconRoom.height > 0
+    ? Math.max(150, Math.min(iconRoom.height - 8, (iconRoom.width * 0.66) / CROSS_ASPECT, 380))
+    : 0;
   // The pool reaches well outside whatever is standing in it; a glow that
   // stops at the object's edge is a rectangle of light, which is not what
-  // a lamp makes. Capped to the screen so it is never clipped.
-  const lampSize = Math.min(screenWidth, Math.round(panelWidth(panelHeight) * 2.1));
+  // a lamp makes.
+  const lampSize = Math.min(screenWidth * 1.15, Math.round(panelWidth(panelHeight) * 2.4));
 
   useEffect(() => {
     if (!running) return;
@@ -210,6 +252,22 @@ export default function PersonalRuleTaskView({
       timerRef.current = null;
     };
   }, [running]);
+
+  useEffect(() => {
+    if (!running || reduceMotion) {
+      cancelAnimation(breath);
+      breath.value = withTiming(0, { duration: 400 });
+      return;
+    }
+    breath.value = withRepeat(
+      withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      // Reversing rather than restarting: a breath that snaps back to
+      // empty and swells again is a blink, not a breath.
+      true,
+    );
+    return () => cancelAnimation(breath);
+  }, [breath, reduceMotion, running]);
 
   useEffect(() => {
     // Long and even. A spring here would overshoot the exchange and snap
@@ -241,15 +299,6 @@ export default function PersonalRuleTaskView({
   const onIconRoomLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     setIconRoom(current => (
-      Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
-        ? current
-        : { width, height }
-    ));
-  }, []);
-
-  const onReadoutLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setReadoutSize(current => (
       Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
         ? current
         : { width, height }
@@ -300,7 +349,23 @@ export default function PersonalRuleTaskView({
   const mainControlStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(ignition.value, [0, 1], [C.text, theme.accent]),
   }), [theme.accent]);
-  const mainHaloStyle = useAnimatedStyle(() => ({ opacity: ignition.value * 0.3 }));
+  /**
+   * The button's own light, and the one thing on this screen that keeps
+   * moving while the prayer runs.
+   *
+   * ⚠ IT BREATHES; IT DOES NOT TICK. A pulse on the second would make the
+   * button a clock, and the whole redesign is the argument that this
+   * screen is not one. Six seconds a cycle is about the pace of a slow
+   * breath, and the swing is small — 0.24 to 0.34 — so it is felt at the
+   * edge of vision rather than watched.
+   *
+   * ⚠ Opacity only, no scale. This is a small view, and scaling small
+   * views on Android resamples their bitmaps every frame; here that would
+   * be every frame for as long as somebody prays.
+   */
+  const mainHaloStyle = useAnimatedStyle(() => ({
+    opacity: ignition.value * (0.24 + breath.value * 0.1),
+  }));
   // The two glyphs cross-fade in place and pass each other vertically.
   // ⚠ No scale on the swap: this is a small view, and scaling small views
   // on Android resamples their bitmaps.
@@ -347,6 +412,39 @@ export default function PersonalRuleTaskView({
     opacity: Math.max(0, (swap.value - 0.45) / 0.55),
   }));
 
+  /* ── What the start of a prayer does to the screen ──────────────────
+   *
+   * One value, four faces, and no line anywhere. The object GROWS into
+   * its full size, the room darkens at its edges so the object is the
+   * only lit thing on the page, the reading warms into the hour's colour
+   * and the switch withdraws — you are not choosing what to pray in
+   * front of any more, you are praying.
+   */
+
+  // ⚠ SCALED DOWN AT REST, NEVER UP WHILE RUNNING. The object is drawn at
+  // its running size, so this only ever downsamples — which is crisp —
+  // and the state that matters lands on exactly 1, the image's own
+  // resolution. Growing from a smaller render would have meant praying in
+  // front of an upscaled one.
+  const objectStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: REST_SCALE + (1 - REST_SCALE) * ignition.value }],
+  }));
+
+  // The switch withdraws rather than vanishing: it fades and settles a
+  // few points, so it reads as stepping back. ⚠ Its strip keeps its
+  // height either way — collapsing it would jump the whole screen at the
+  // exact moment the prayer begins.
+  const switchStyle = useAnimatedStyle(() => ({
+    opacity: 1 - ignition.value,
+    transform: [{ translateY: ignition.value * 6 }],
+  }));
+
+  // And the epigraph steps back with it, to a half-light. It is the
+  // instruction; once you are following it, it has said its piece.
+  const epigraphStyle = useAnimatedStyle(() => ({
+    opacity: 1 - ignition.value * 0.55,
+  }));
+
   return (
     <View style={s.screen}>
       <LinearGradient
@@ -357,6 +455,9 @@ export default function PersonalRuleTaskView({
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
+      {/* The room closing in — see PrayerRoom. It sits over the paper and
+          under everything else, so nothing legible is ever shadowed. */}
+      <PrayerRoom ignition={ignition} />
 
       <ScreenTitleBar
         title={screenTitle}
@@ -380,86 +481,72 @@ export default function PersonalRuleTaskView({
         </TouchableOpacity>
       )}
 
-      {/* What stands in front of you. The choice is stored, so nobody has
-          to make it again every time they sit down to pray. */}
-      <View style={s.focusWrap}>
-        <PrayerFocusSwitch
-          value={focus}
-          onChange={next => updateSettings({ prayerFocus: next })}
-        />
-      </View>
-
-      {/* The epigraph steps aside on a short phone. It is the one thing
-          here that can go without breaking anything, and it costs the
-          object eighty points it needs more. */}
+      {/* The epigraph steps aside entirely on a short phone. It is the one
+          thing here that can go without breaking anything, and it costs
+          the object fifty points it needs more. */}
       {!isCompactHeight && (
-        <>
+        <Reanimated.View style={epigraphStyle} pointerEvents="none">
           <Text style={s.quote}>{QUOTE}</Text>
           <Text style={s.quoteRef}>{QUOTE_REF}</Text>
-        </>
+        </Reanimated.View>
       )}
 
       {/* ── The object, in its light ────────────────────────────────── */}
       <View style={s.iconRoom} onLayout={onIconRoomLayout}>
         {panelHeight > 0 && (
-          <>
+          <Reanimated.View style={[s.stage, objectStyle]} pointerEvents="none">
             {/* One lamp, behind both. It does not belong to either object
                 — see PrayerLamp — because the whole point of the change
                 is that the light stays lit and the thing in it changes. */}
             <PrayerLamp size={lampSize} light={ignition} swap={swap} />
 
-            {/* THE GREAT HOOPS, round whatever is standing here.
-                ⚠ The object goes INSIDE the orbit, not beside it: the
-                component draws the far arcs, then its children, then the
-                near arcs, and that sandwich IS the occlusion. Two
-                separate orbits stacked around it would also have two
-                separate clocks, and their beads would drift apart. */}
-            <PrayerOrbit content={iconRoom} running={running} ignition={ignition}>
-              <Reanimated.View style={[s.stage, crossStyle]} pointerEvents="none">
-                <StandingCross height={panelHeight} />
-              </Reanimated.View>
-              <Reanimated.View style={[s.stage, iconStyle]} pointerEvents="none">
-                {/* The icon has no frame; it fades into the page at its own
-                    edges, so it has to be told which page. GROUND[1] is the
-                    screen's colour at the height the icon stands. */}
-                <PantocratorPanel height={panelHeight} ground={GROUND[1]} />
-              </Reanimated.View>
-            </PrayerOrbit>
-          </>
+            <Reanimated.View style={[s.stage, crossStyle]}>
+              <StandingCross height={panelHeight} />
+            </Reanimated.View>
+            <Reanimated.View style={[s.stage, iconStyle]}>
+              {/* The icon has no frame; it fades into the page at its own
+                  edges, so it has to be told which page. GROUND[1] is the
+                  screen's colour at the height the icon stands. */}
+              <PantocratorPanel height={panelHeight} ground={GROUND[1]} />
+            </Reanimated.View>
+          </Reanimated.View>
         )}
+      </View>
+
+      {/* ── What stands in front of you ──────────────────────────────
+          ⚠ BELOW THE OBJECT, NOT ABOVE IT. Above, it was the first thing
+          on the page and the thing keeping the deck from dropping; here
+          it sits directly under what it changes, which is also where a
+          control belongs. The strip is a fixed height so the screen
+          never jumps as it withdraws. */}
+      <View style={s.focusWrap} pointerEvents={running ? 'none' : 'auto'}>
+        <Reanimated.View style={switchStyle}>
+          <PrayerFocusSwitch
+            value={focus}
+            onChange={next => updateSettings({ prayerFocus: next })}
+          />
+        </Reanimated.View>
       </View>
 
       {/* ── The reading, the controls, the door ─────────────────────── */}
       {/* ⚠ THE DECK SITS AS LOW AS THE PHONE ALLOWS. Every point it gives
-          back goes to the flexible room above it, and since the object up
-          there is capped by width rather than by height on every phone
-          the app runs on, the room does not make it bigger — it re-centres
-          it lower, which is the point. Nothing is added under the safe
-          area: the home indicator's own inset is the floor. */}
+          back goes to the flexible room above it. Nothing is added under
+          the safe area: the home indicator's own inset is the floor. */}
       <View style={[s.deck, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        {/* The reading, inside its orbit. The orbit's two layers sit either
-            side of these digits in the tree, which is the whole trick —
-            see PrayerOrbit's header. */}
-        {/* ⚠ The orbit takes no tint. It is drawn in its own cinnabar,
-            deliberately not in the hour's colour — a gold ring over gold
-            digits was the fault, and theming it could only move that
-            collision to another hour. */}
-        <PrayerOrbit
-          content={readoutSize}
-          preset="readout"
-          running={running}
-          ignition={ignition}
-        >
-          <View style={s.readout} onLayout={onReadoutLayout}>
-            <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-              {display.main}
-            </Reanimated.Text>
-            <Reanimated.Text style={[s.colonText, readoutInk, { fontSize: colonFont }]}>:</Reanimated.Text>
-            <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-              {display.tail}
-            </Reanimated.Text>
-          </View>
-        </PrayerOrbit>
+        <View style={s.readout}>
+          <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+            {display.main}
+          </Reanimated.Text>
+          <Reanimated.Text style={[s.colonText, readoutInk, { fontSize: colonFont }]}>:</Reanimated.Text>
+          {/* ⚠ THE SECONDS ARE SET LIGHTER THAN THE MINUTES, not smaller.
+              A clock face distinguishes the figure you read from the one
+              that is merely running, and doing it by weight keeps the
+              reading on one baseline at one size — where doing it by size
+              would make the pair jump every time an hour appeared. */}
+          <Reanimated.Text style={[s.timeText, s.timeTail, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+            {display.tail}
+          </Reanimated.Text>
+        </View>
 
         <View style={[s.controlsDeck, isCompactHeight && s.controlsDeckCompact]}>
           <TouchableOpacity
@@ -675,7 +762,16 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  focusWrap: { paddingHorizontal: 34, paddingTop: 12 },
+  /**
+   * The switch's strip, under the object.
+   *
+   * ⚠ IT KEEPS ITS ROOM WHETHER THE SWITCH IS SHOWING OR NOT. The switch
+   * withdraws when the prayer starts, and if the strip collapsed with it
+   * the reading and the controls would leap upward at the exact moment
+   * you pressed start — which is the one moment on this screen that has
+   * to be calm.
+   */
+  focusWrap: { paddingHorizontal: 40, paddingTop: 10, paddingBottom: 4 },
 
   // The object takes what is left, and it is the only thing on this
   // screen that flexes — everything else is worth exactly what it
@@ -714,6 +810,19 @@ const s = StyleSheet.create({
     marginHorizontal: 3,
     includeFontPadding: false,
   },
+  /**
+   * The seconds, lighter than the minutes.
+   *
+   * A clock face distinguishes the figure you READ from the one that is
+   * merely running, and this reading had them at identical weight — two
+   * pairs of numerals with a dim colon between, which is a stopwatch.
+   *
+   * ⚠ BY OPACITY, NOT BY SIZE. Setting the seconds smaller would put the
+   * pair on two optical baselines and make the whole reading resize the
+   * moment an hour appeared and the minutes moved left. Same size, same
+   * baseline, less ink.
+   */
+  timeTail: { opacity: 0.58 },
 
   controlsDeck: {
     flexDirection: 'row',
