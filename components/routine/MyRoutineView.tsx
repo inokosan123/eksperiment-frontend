@@ -76,6 +76,7 @@ import {
 } from '@/components/icons/Icons';
 import { AnyTaskCard, TaskData } from '@/components/shared/TaskCards';
 import RoutinePhonePlanCard from '@/components/focus-watch/RoutinePhonePlanCard';
+import WeekDaySelector, { DayHead, type WeekDayGeometry } from '@/components/routine/WeekDaySelector';
 import { weekdayMondayFirst } from '@/components/focus-watch/dayPlanStore';
 import { C, F } from '@/constants/tokens';
 import type { HabitItem, HabitStep } from '@/components/habits/habitDb';
@@ -145,6 +146,12 @@ type RoutineIconName =
   | 'Waves'
   | 'Wind';
 
+const ROUTINE_EDITOR_EXIT_MS = 200;
+
+function waitForRoutineEditorExit(duration = ROUTINE_EDITOR_EXIT_MS): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, duration + 24));
+}
+
 type DayOverride = {
   jsDay: number;
   time: string;
@@ -211,14 +218,16 @@ export type RoutineTask = {
 };
 
 const DAY_TABS = [
-  { label: 'Mon', short: 'M', jsDay: 1 },
-  { label: 'Tue', short: 'T', jsDay: 2 },
-  { label: 'Wed', short: 'W', jsDay: 3 },
-  { label: 'Thu', short: 'T', jsDay: 4 },
-  { label: 'Fri', short: 'F', jsDay: 5 },
-  { label: 'Sat', short: 'S', jsDay: 6 },
-  { label: 'Sun', short: 'S', jsDay: 0 },
+  { label: 'Mon', short: 'M', full: 'Monday', jsDay: 1 },
+  { label: 'Tue', short: 'T', full: 'Tuesday', jsDay: 2 },
+  { label: 'Wed', short: 'W', full: 'Wednesday', jsDay: 3 },
+  { label: 'Thu', short: 'T', full: 'Thursday', jsDay: 4 },
+  { label: 'Fri', short: 'F', full: 'Friday', jsDay: 5 },
+  { label: 'Sat', short: 'S', full: 'Saturday', jsDay: 6 },
+  { label: 'Sun', short: 'S', full: 'Sunday', jsDay: 0 },
 ] as const;
+
+const DAY_TAB_LABELS = DAY_TABS.map(day => day.label);
 
 const SPIRITUAL_TYPES: {
   id: SpiritualType;
@@ -761,9 +770,14 @@ function challengeScheduleFromRecord(challenge: ChallengeRecord): ChallengeSched
 }
 
 function churchScheduleFromRecord(challenge: ChallengeRecord): ChallengeChurchScheduleDraft {
+  const frequency = challenge.churchConfig?.frequency === 'monthly'
+    ? 'specific_days'
+    : challenge.churchConfig?.frequency ?? 'specific_days';
   return {
-    frequency: challenge.churchConfig?.frequency ?? 'specific_days',
-    selectedDays: challenge.churchConfig?.selectedDays?.length ? challenge.churchConfig.selectedDays : [6],
+    frequency,
+    selectedDays: frequency === 'specific_days' && challenge.churchConfig?.selectedDays?.length
+      ? challenge.churchConfig.selectedDays
+      : [6],
     monthlyDays: challenge.churchConfig?.monthlyDays?.length ? challenge.churchConfig.monthlyDays : [1],
     time: challenge.churchConfig?.time ?? challenge.time ?? '09:00',
     sameTimeEveryDay: challenge.churchConfig?.sameTimeEveryDay ?? true,
@@ -806,15 +820,24 @@ export default function MyRoutineView({
   } = useTasks();
   const { updateBook } = useReadingList();
   const { setGratitudeTaskEnabled } = useInnerTools();
+  const [optimisticTaskEdits, setOptimisticTaskEdits] = useState<Record<string, RoutineTask>>({});
   const tasks = useMemo(
     () => backendTasks
       .filter(task => task.source !== 'quick' && task.status === 'active')
-      .map(taskDefinitionToRoutineTask),
-    [backendTasks],
+      .map(taskDefinitionToRoutineTask)
+      .map(task => optimisticTaskEdits[task.id] ?? task),
+    [backendTasks, optimisticTaskEdits],
   );
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => (
     guided ? 0 : weekdayMondayFirst(new Date())
   ));
+  const todayDayIndex = weekdayMondayFirst(new Date());
+  // The guided tour points a hand at Tuesday; the plate reports its measured
+  // cell width so that hint stays on the right day at any screen size.
+  const dayGeometryRef = useRef<WeekDayGeometry>({ cellWidth: 0, inset: 0 });
+  const handleDayGeometry = useCallback((geometry: WeekDayGeometry) => {
+    dayGeometryRef.current = geometry;
+  }, []);
   const [showSpiritualTypePicker, setShowSpiritualTypePicker] = useState(false);
   const [spiritualTaskContext, setSpiritualTaskContext] = useState<RoutineTaskSheetContext | null>(null);
   const [editorVisible, setEditorVisible] = useState(false);
@@ -916,6 +939,13 @@ export default function MyRoutineView({
   const selectedDay = DAY_TABS[selectedDayIndex];
 
   const showTourWeekPresentation = useCallback((showTuesdayHint: boolean) => {
+    // The tap hint is anchored to the cutout's left edge and its 76pt box is
+    // laid out from there, so the dot lands at (targetLeft - cutoutPadding 7
+    // + halfBox 38 + offset). Solve that for Tuesday's measured centre.
+    const { cellWidth, inset } = dayGeometryRef.current;
+    const tuesdayHintX = cellWidth > 0
+      ? Math.round(inset + cellWidth * 1.5 - 31)
+      : 48;
     setPresentation({
       key: showTuesdayHint ? 'my-routine-tour-week-choose' : 'my-routine-tour-week-explore',
       targetId: showTuesdayHint ? MY_ROUTINE_GUIDE_TARGETS.dayTabs : MY_ROUTINE_GUIDE_TARGETS.weekPlan,
@@ -931,7 +961,7 @@ export default function MyRoutineView({
       hint: showTuesdayHint ? 'tap' : undefined,
       hintTargetId: showTuesdayHint ? MY_ROUTINE_GUIDE_TARGETS.dayTabs : undefined,
       hintAnchor: 'left',
-      hintOffset: showTuesdayHint ? { x: 62 } : undefined,
+      hintOffset: showTuesdayHint ? { x: tuesdayHintX } : undefined,
       ctaLabel: showTuesdayHint ? undefined : 'Continue',
       ctaBottomOffset: 8,
       onCta: showTuesdayHint ? undefined : () => patchSession({ phase: 'tourAdd' }),
@@ -960,6 +990,15 @@ export default function MyRoutineView({
       .filter(task => matchesTaskForDay(task, selectedDay.jsDay))
       .sort((left, right) => getTaskTimeForDay(left, selectedDay.jsDay).localeCompare(getTaskTimeForDay(right, selectedDay.jsDay)))
   ), [selectedDay.jsDay, tasks]);
+
+  // The day's shape in one line: how much is planned, and how far it reaches.
+  const dayHeadMeta = useMemo(() => {
+    if (tasksForDay.length === 0) return 'A FREE DAY';
+    const first = getTaskTimeForDay(tasksForDay[0], selectedDay.jsDay);
+    const last = getTaskTimeForDay(tasksForDay[tasksForDay.length - 1], selectedDay.jsDay);
+    const count = tasksForDay.length === 1 ? '1 ACTIVITY' : `${tasksForDay.length} ACTIVITIES`;
+    return first === last ? `${count} · ${first}` : `${count} · ${first} – ${last}`;
+  }, [selectedDay.jsDay, tasksForDay]);
 
   const refreshHabits = useCallback(async () => {
     const nextHabits = await listHabitsWithStats();
@@ -1443,25 +1482,38 @@ export default function MyRoutineView({
   const handleTaskSave = async (task: RoutineTask) => {
     const isGuidedEditLesson = isGuided && guidePhase === 'editSave';
 
+    // Close optimistically so persistence and provider refreshes never sit on
+    // the critical tap-to-motion path. SmoothBottomSheet keeps the editor
+    // mounted until its UI-thread exit is complete.
+    setOptimisticTaskEdits(current => ({ ...current, [task.id]: task }));
+    setEditorVisible(false);
+
     if (isGuidedEditLesson) {
-      // Start the UI-thread exit immediately. SQL persistence still runs below,
-      // but it no longer holds the sheet visibly in place after Continue.
       setPresentation(null);
-      setEditorVisible(false);
       scheduleGuide(() => patchSession({ phase: 'tourHabits' }), 280);
     }
 
+    await waitForRoutineEditorExit(isGuidedEditLesson ? 240 : ROUTINE_EDITOR_EXIT_MS);
+
     let savedTask: TaskDefinition | undefined;
-    if (task.source === 'habit') {
-      await saveHabitBackedTask(task);
-    } else {
-      savedTask = await createOrUpdateTask(routineTaskToDraft(task));
+    try {
+      if (task.source === 'habit') {
+        await saveHabitBackedTask(task);
+      } else {
+        savedTask = await createOrUpdateTask(routineTaskToDraft(task));
+      }
+      await refreshHabits();
+    } catch (error) {
+      console.warn('Routine activity save failed:', error);
+      return;
+    } finally {
+      setOptimisticTaskEdits(current => {
+        if (!current[task.id]) return current;
+        const next = { ...current };
+        delete next[task.id];
+        return next;
+      });
     }
-    await refreshHabits();
-    if (!isGuidedEditLesson) setEditorVisible(false);
-    setEditorTask(null);
-    setEditorDefaultLevel(undefined);
-    setEditorDefaultType(undefined);
     if (!isGuided) return;
 
     // This transition was already scheduled before persistence so the save
@@ -1522,7 +1574,6 @@ export default function MyRoutineView({
     await removeTask(taskId);
     await refreshHabits();
     setEditorVisible(false);
-    setEditorTask(null);
   };
 
   const progressForHabit = (habit: HabitItem) => {
@@ -1552,39 +1603,16 @@ export default function MyRoutineView({
 
           <View {...weekPlanTarget}>
           <View {...dayTabsTarget}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dayTabsRow}>
-              {DAY_TABS.map((day, index) => {
-                const active = index === selectedDayIndex;
-                return (
-                  <TouchableOpacity
-                    key={day.label}
-                    onPress={() => selectDay(index)}
-                    activeOpacity={0.84}
-                    style={s.dayTabPress}
-                  >
-                    {active ? (
-                      <LinearGradient
-                        colors={['#E2BD75', '#C5A059', '#A87E33']}
-                        locations={[0, 0.55, 1]}
-                        start={{ x: 0.15, y: 0 }}
-                        end={{ x: 0.85, y: 1 }}
-                        style={[s.dayTab, s.dayTabActive]}
-                      >
-                        <View pointerEvents="none" style={s.dayTabSheen} />
-                        <View pointerEvents="none" style={s.dayTabRim} />
-                        <Text style={[s.dayTabLabel, s.dayTabLabelActive]}>{day.label}</Text>
-                        <View style={s.dayTabMarker} />
-                      </LinearGradient>
-                    ) : (
-                      <View style={s.dayTab}>
-                        <Text style={s.dayTabLabel}>{day.label}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            <WeekDaySelector
+              labels={DAY_TAB_LABELS}
+              selectedIndex={selectedDayIndex}
+              todayIndex={todayDayIndex}
+              onSelect={selectDay}
+              onGeometryChange={handleDayGeometry}
+            />
           </View>
+
+          <DayHead title={selectedDay.full} meta={dayHeadMeta} />
 
           <View
             {...addRowTarget}
@@ -1656,7 +1684,7 @@ export default function MyRoutineView({
 
             {tasksForDay.length === 0 && (
               <View style={s.emptyBlock}>
-                <Text style={s.emptyTitle}>No activities for {selectedDay.label}</Text>
+                <Text style={s.emptyTitle}>Nothing is planned yet</Text>
               </View>
             )}
           </View>
@@ -1874,15 +1902,17 @@ export default function MyRoutineView({
         defaultType={editorDefaultType}
         onClose={() => {
           setEditorVisible(false);
-          setEditorTask(null);
-          setEditorDefaultLevel(undefined);
-          setEditorDefaultType(undefined);
           // If the user leaves the editor with the X during the tour lesson,
           // the walkthrough still moves on instead of stranding them.
           if (isGuided && guidePhase === 'editSave') {
             setPresentation(null);
             scheduleGuide(() => patchSession({ phase: 'tourHabits' }), 280);
           }
+        }}
+        onExited={() => {
+          setEditorTask(null);
+          setEditorDefaultLevel(undefined);
+          setEditorDefaultType(undefined);
         }}
         onSave={handleTaskSave}
         onDelete={handleTaskDelete}
@@ -2249,6 +2279,7 @@ export function RoutineTaskEditorSheet({
   defaultLevel,
   defaultType,
   onClose,
+  onExited,
   onSave,
   onDelete,
 }: {
@@ -2260,6 +2291,7 @@ export function RoutineTaskEditorSheet({
   defaultLevel?: RoutineLevel;
   defaultType?: SpiritualType;
   onClose: () => void;
+  onExited?: () => void;
   onSave: (task: RoutineTask) => void;
   onDelete: (taskId: string) => void | Promise<void>;
 }) {
@@ -2292,7 +2324,10 @@ export function RoutineTaskEditorSheet({
   const titleTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.title, isGuided);
   const saveTarget = useGuideTarget(MY_ROUTINE_GUIDE_TARGETS.save, isGuided);
   const guidedSaveRef = useRef<() => void>(() => {});
-  const formTask = task ?? initialTask;
+  const incomingFormTask = task ?? initialTask;
+  const exitingFormTaskRef = useRef<RoutineTask | null>(incomingFormTask);
+  if (visible) exitingFormTaskRef.current = incomingFormTask;
+  const formTask = visible ? incomingFormTask : exitingFormTaskRef.current;
 
   const advanceTitleGuide = useCallback(() => {
     if (!isGuided || !title.trim()) return;
@@ -2533,10 +2568,6 @@ export function RoutineTaskEditorSheet({
     return () => clearTimeout(timer);
   }, [guidePhase, isGuided, setPresentation, visible]);
 
-  // Preserve the editor's existing instant unmount everywhere else; only the
-  // onboarding edit lesson keeps it mounted long enough to animate its exit.
-  if (!visible && !(isGuided && guidePhase === 'editSave')) return null;
-
   const deleteConfirmOverlay = (
     <>
       {isGuided && <GuidedOverlayHost />}
@@ -2569,10 +2600,11 @@ export function RoutineTaskEditorSheet({
     <SmoothBottomSheet
       visible={visible}
       onClose={onClose}
+      onExited={onExited}
       sheetStyle={s.sheetShell}
       keyboardAware
       durationIn={isGuided && guidePhase === 'editSave' ? 360 : 280}
-      durationOut={isGuided && guidePhase === 'editSave' ? 240 : 200}
+      durationOut={isGuided && guidePhase === 'editSave' ? 240 : ROUTINE_EDITOR_EXIT_MS}
       overlayChildren={deleteConfirmOverlay}
     >
           <View style={[s.sheetHandle, editorAccent && { backgroundColor: hexToRgba(editorAccent, 0.28) }]} />
@@ -2828,46 +2860,6 @@ const s = StyleSheet.create({
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, paddingHorizontal: 4 },
   sectionBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingHorizontal: 4 },
   sectionKicker: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 1.8, color: C.gold, textTransform: 'uppercase' },
-  dayTabsRow: { gap: 7, paddingBottom: 2, paddingHorizontal: 1 },
-  dayTabPress: { borderRadius: 16 },
-  dayTab: {
-    minWidth: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  dayTabActive: {
-    borderWidth: 0,
-    shadowColor: '#A87E33',
-    shadowOpacity: 0.28,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 14,
-    elevation: 4,
-  },
-  dayTabSheen: {
-    position: 'absolute',
-    top: 1, left: 1, right: 1,
-    height: '46%',
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-  },
-  dayTabRim: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(150,108,40,0.32)',
-  },
-  dayTabLabel: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.4, color: '#A8A29E', textTransform: 'uppercase' },
-  dayTabLabelActive: { color: '#FFFFFF', letterSpacing: 1.6 },
-  dayTabMarker: { position: 'absolute', bottom: 5, width: 14, height: 1.5, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
   taskStack: { paddingTop: 4 },
   gapRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 1 },
   gapLine: { width: 34, borderTopWidth: 1, borderStyle: 'dashed', borderColor: '#D6D3D1' },
