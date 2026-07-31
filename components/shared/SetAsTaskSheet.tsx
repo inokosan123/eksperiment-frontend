@@ -11,7 +11,6 @@ import {
   UIManager,
   useWindowDimensions,
   View,
-  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -1808,8 +1807,7 @@ const PrayerTypeChoice = React.memo(function PrayerTypeChoice({
  * Seraphim -- say these are four peers. They are not. The real question
  * is a fork with two branches: pray this in your OWN way, or pray an
  * ORTHODOX rule; and only if you take the second branch does it matter
- * which one. A flat list makes you read three Orthodox options to find
- * out that the first line was the other half of the app.
+ * which one.
  *
  * So: two cards. My Rule is a choice and is chosen the moment it is
  * tapped. Orthodox is a DOOR -- tapping it opens the rules underneath
@@ -1819,8 +1817,25 @@ const PrayerTypeChoice = React.memo(function PrayerTypeChoice({
  *
  * THE HEADER DOUBLES AS THE ANSWER. Once something inside is chosen, the
  * card's second line is that rule's name -- so the group can be shut
- * again without hiding what it holds. A disclosure that closes over its
- * own answer makes you open it to remember what you picked.
+ * again without hiding what it holds.
+ *
+ * THE CARD IS THE SHEET'S OWN, NOT A NEW ONE. It is struck from
+ * `FrequencyChoice` -- the chip you meet one block further down when you
+ * pick Daily -- down to the 58 floor, the 20 radius, the gold that grows
+ * in the shadow and the ring at 30. This block should read as the same
+ * design in a different register, which is only possible if it is
+ * literally the same construction.
+ *
+ * WHAT IT VARIES, DELIBERATELY:
+ *   - THE RING SITS ON THE TITLE'S LINE, not centred on the card. These
+ *     rows carry a longer second line than a frequency chip does, and a
+ *     ring centred against two lines of unequal weight floats between
+ *     them belonging to neither.
+ *   - THE COPY STARTS AT THE CARD'S EDGE. It was in a second column with
+ *     the mark in the first, which indented the description past the
+ *     ring and left a hole under it. Nothing is gained by that column;
+ *     the ring has moved to the right and the words start where the card
+ *     does.
  * ------------------------------------------------------------- */
 
 /** The Orthodox group's title, per hour. Meals is not asking about rules. */
@@ -1829,16 +1844,6 @@ const ORTHODOX_GROUP: Record<Exclude<PrayerType, 'jesus' | 'custom'>, { label: s
   evening: { label: 'Orthodox Prayer Rule', hint: 'Choose a rule' },
   meal: { label: 'Orthodox Meal Prayer', hint: 'Choose a meal' },
 };
-
-/**
- * How the drawer opens.
- *
- * SLOWER OPENING THAN CLOSING, which is this app's own asymmetry: a
- * thing arriving should feel like it settles, a thing leaving should
- * simply be gone. One duration both ways makes the close feel reluctant.
- */
-const FOLD_OPEN = { duration: 260, easing: Easing.out(Easing.cubic) } as const;
-const FOLD_SHUT = { duration: 190, easing: Easing.in(Easing.cubic) } as const;
 
 function PrayerRuleChooser({
   type,
@@ -1849,63 +1854,38 @@ function PrayerRuleChooser({
   value: PrayerRuleChoice;
   onChange: (next: PrayerRuleChoice) => void;
 }) {
-  const reduceMotion = useReducedMotion();
   const all = PRAYER_RULES[type];
   const mine = useMemo(() => all.find(item => item.key === 'personal'), [all]);
   const orthodox = useMemo(() => all.filter(item => isOrthodoxRuleChoice(item.key)), [all]);
   const group = ORTHODOX_GROUP[type];
 
   const chosenOrthodox = isOrthodoxRuleChoice(value);
-  // Open if it is already holding the answer; otherwise shut.
   const [open, setOpen] = useState(chosenOrthodox);
+
   /**
-   * MEASURED, NOT COUNTED. The rows carry two lines of type whose height
-   * depends on the copy, the font scale and the width, so a height worked
-   * out from rows x 64 is right on the phone it was written on and wrong
-   * on the next one. The inner view is laid out at its natural height
-   * whatever the animated container is doing -- the container only CLIPS
-   * it -- so this is always the true figure.
+   * THE DRAWER IS MOUNTED AND UNMOUNTED, NOT MEASURED AND CLIPPED.
+   *
+   * It was built the other way first -- the rows always mounted inside a
+   * box whose height was animated to a figure taken from onLayout -- and
+   * ON A DEVICE IT OPENED ONTO NOTHING. The measurement never arrives:
+   * the inner view spends its whole life inside a parent pinned to zero
+   * height, and what the layout pass reports back from in there is not
+   * the height the rows would take if anything ever let them have it. A
+   * height animation multiplied by a measurement of zero is zero for
+   * every frame of a perfectly good animation.
+   *
+   * `animateSoftLayoutChange` is what the rest of this sheet already
+   * uses for exactly this -- every other block that grows or collapses
+   * here goes through it -- so the drawer now opens with the same easing
+   * as the frequency block, the notification block and the challenge
+   * cards, and there is no figure to measure and nothing to clip.
    */
-  const [foldHeight, setFoldHeight] = useState(0);
-  const progress = useSharedValue(chosenOrthodox ? 1 : 0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      progress.value = open ? 1 : 0;
-      return;
-    }
-    progress.value = withTiming(open ? 1 : 0, open ? FOLD_OPEN : FOLD_SHUT);
-  }, [open, progress, reduceMotion]);
-
-  const onFoldLayout = useCallback((event: LayoutChangeEvent) => {
-    const next = Math.round(event.nativeEvent.layout.height);
-    setFoldHeight(current => (current === next ? current : next));
+  const toggle = useCallback(() => {
+    animateSoftLayoutChange();
+    setOpen(current => !current);
   }, []);
 
-  const toggle = useCallback(() => setOpen(current => !current), []);
   const chooseMine = useCallback(() => onChange('personal'), [onChange]);
-
-  /**
-   * ONE ANIMATED HEIGHT ON ONE CONTAINER, and nothing else here animates
-   * layout. Height is the expensive property -- it drives a layout pass
-   * per frame where a transform does not -- so it is spent once, on the
-   * only thing that genuinely has to grow. Everything else in the drawer
-   * rides opacity and translation.
-   */
-  const foldStyle = useAnimatedStyle(() => ({
-    height: foldHeight * progress.value,
-    opacity: progress.value,
-  }), [foldHeight]);
-
-  // The rows slide down out of the header rather than simply appearing
-  // inside it -- the clip plus a short rise reads as something drawn out.
-  const foldInnerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: (progress.value - 1) * 10 }],
-  }));
-
-  const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${progress.value * 180}deg` }],
-  }));
 
   const summary = chosenOrthodox
     ? (orthodox.find(item => item.key === value)?.label ?? group.hint)
@@ -1921,33 +1901,17 @@ function PrayerRuleChooser({
         />
       )}
 
-      <View style={[s.ruleGroup, chosenOrthodox && s.ruleGroupActive]}>
-        <TouchableOpacity
+      <View>
+        <PrayerRuleGroupHead
+          label={group.label}
+          summary={summary}
+          chosen={chosenOrthodox}
+          open={open}
           onPress={toggle}
-          activeOpacity={0.9}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: open }}
-          accessibilityLabel={group.label}
-          style={s.ruleGroupHead}
-        >
-          <View style={s.orthodoxRuleBadge}>
-            <OrthodoxCross s={11} c={C.gold} w={1.35} />
-            <Text style={s.orthodoxRuleBadgeText}>ORTH.</Text>
-          </View>
-          <View style={s.ruleGroupCopy}>
-            <Text style={[s.optionTitle, chosenOrthodox && s.optionTitleActive]}>{group.label}</Text>
-            <Text style={[s.optionBody, chosenOrthodox && s.ruleGroupAnswer]} numberOfLines={1}>
-              {summary}
-            </Text>
-          </View>
-          <Reanimated.View style={chevronStyle}>
-            <ChevronDown s={16} c={chosenOrthodox ? C.gold : '#9CA3AF'} w={2} />
-          </Reanimated.View>
-        </TouchableOpacity>
+        />
 
-        <Reanimated.View style={[s.ruleFold, foldStyle]} pointerEvents={open ? 'auto' : 'none'}>
-          <Reanimated.View style={foldInnerStyle} onLayout={onFoldLayout}>
-            <View style={s.ruleFoldRule} />
+        {open && (
+          <View style={s.ruleFold}>
             {orthodox.map(item => (
               <PrayerRuleRow
                 key={item.key}
@@ -1956,10 +1920,73 @@ function PrayerRuleChooser({
                 onSelect={onChange}
               />
             ))}
-          </Reanimated.View>
-        </Reanimated.View>
+          </View>
+        )}
       </View>
     </View>
+  );
+}
+
+/**
+ * The door. The sheet's own chip, with a chevron where a chip would
+ * carry its ring -- it is not a choice, and a ring would say it was.
+ */
+function PrayerRuleGroupHead({
+  label,
+  summary,
+  chosen,
+  open,
+  onPress,
+}: {
+  label: string;
+  summary: string;
+  /** Something inside it has been picked. */
+  chosen: boolean;
+  /** The drawer is showing. */
+  open: boolean;
+  onPress: () => void;
+}) {
+  /**
+   * TWO STATES, AND THEY ARE NOT THE SAME STATE. A group can be open
+   * with nothing chosen in it (you have just looked inside) and shut
+   * with something chosen (you looked, chose, and closed it). The card's
+   * colour follows CHOSEN; the chevron follows OPEN.
+   */
+  const progress = useSelectionMotion(chosen);
+  const turn = useSelectionMotion(open);
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${turn.value * 180}deg` }],
+  }));
+  const motionStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFF9EE']),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', '#D6B067']),
+    shadowOpacity: 0.015 + progress.value * 0.085,
+    transform: [{ scale: 1 + progress.value * 0.01 }],
+  }));
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.9}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Reanimated.View style={[s.ruleCard, motionStyle]}>
+        <View style={s.ruleCopy}>
+          <View style={s.ruleHeadLine}>
+            <View style={s.orthodoxRuleBadge}>
+              <OrthodoxCross s={11} c={C.gold} w={1.35} />
+              <Text style={s.orthodoxRuleBadgeText}>ORTH.</Text>
+            </View>
+            <Text style={[s.ruleTitle, chosen && s.ruleTitleActive]} numberOfLines={1}>{label}</Text>
+          </View>
+          <Text style={[s.ruleSub, chosen && s.ruleAnswer]} numberOfLines={1}>{summary}</Text>
+        </View>
+        <Reanimated.View style={[s.ruleMark, chevronStyle]}>
+          <ChevronDown s={16} c={chosen ? C.gold : '#9CA3AF'} w={2} />
+        </Reanimated.View>
+      </Reanimated.View>
+    </TouchableOpacity>
   );
 }
 
@@ -1968,7 +1995,10 @@ function PrayerRuleChooser({
  *
  * A ROW, NOT A CARD. Plating each of these would be three cards inside a
  * card, which is the one thing this app's list grammar forbids: the
- * group is the object, and its contents are lines in it.
+ * group is the object, and its contents are lines in it. It keeps the
+ * card's copy shape exactly -- title line, sub beneath it, mark on the
+ * right -- so opening the drawer does not change the grammar, only the
+ * surface the rows are drawn on.
  */
 const PrayerRuleRow = React.memo(function PrayerRuleRow({
   item,
@@ -1980,6 +2010,11 @@ const PrayerRuleRow = React.memo(function PrayerRuleRow({
   onSelect: (next: PrayerRuleChoice) => void;
 }) {
   const press = useCallback(() => onSelect(item.key), [item.key, onSelect]);
+  const progress = useSelectionMotion(active);
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.55 + progress.value * 0.45 }],
+  }));
 
   return (
     <TouchableOpacity
@@ -1989,14 +2024,13 @@ const PrayerRuleRow = React.memo(function PrayerRuleRow({
       accessibilityState={{ checked: active }}
       style={s.ruleRow}
     >
-      <View style={[s.optionRadio, active && s.optionRadioActive]}>
-        {active && <View style={s.optionRadioInner} />}
+      <View style={s.ruleCopy}>
+        <Text style={[s.ruleTitle, active && s.ruleTitleActive]}>{item.label}</Text>
+        <Text style={s.ruleSub}>{item.desc}</Text>
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[s.optionTitle, active && s.optionTitleActive]}>{item.label}</Text>
-        <Text style={s.optionBody}>{item.desc}</Text>
+      <View style={[s.ruleRing, active && s.ruleRingActive, s.ruleMark]}>
+        <Reanimated.View style={[s.ruleDot, dotStyle]} />
       </View>
-      {active && <CheckSmall s={16} c={C.gold} />}
     </TouchableOpacity>
   );
 });
@@ -2004,8 +2038,8 @@ const PrayerRuleRow = React.memo(function PrayerRuleRow({
 /**
  * MY RULE -- the other branch, and a plain choice.
  *
- * It keeps the card it always had: it is a peer of the Orthodox group,
- * not a member of it, and the two have to sit at the same level.
+ * It is a peer of the Orthodox group, not a member of it, so it takes
+ * the same card at the same level.
  */
 function PrayerRuleOption({
   item,
@@ -2019,8 +2053,13 @@ function PrayerRuleOption({
   const progress = useSelectionMotion(active);
   const motionStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', '#FFF9EE']),
-    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', '#D8B56E']),
-    transform: [{ scale: 1 + progress.value * 0.008 }],
+    borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', '#D6B067']),
+    shadowOpacity: 0.015 + progress.value * 0.085,
+    transform: [{ scale: 1 + progress.value * 0.01 }],
+  }));
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.55 + progress.value * 0.45 }],
   }));
 
   return (
@@ -2030,15 +2069,14 @@ function PrayerRuleOption({
       accessibilityRole="radio"
       accessibilityState={{ checked: active }}
     >
-      <Reanimated.View style={[s.optionCard, motionStyle]}>
-        <View style={[s.optionRadio, active && s.optionRadioActive]}>
-          {active && <View style={s.optionRadioInner} />}
+      <Reanimated.View style={[s.ruleCard, motionStyle]}>
+        <View style={s.ruleCopy}>
+          <Text style={[s.ruleTitle, active && s.ruleTitleActive]}>{item.label}</Text>
+          <Text style={s.ruleSub}>{item.desc}</Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.optionTitle, active && s.optionTitleActive]}>{item.label}</Text>
-          <Text style={s.optionBody}>{item.desc}</Text>
+        <View style={[s.ruleRing, active && s.ruleRingActive, s.ruleMark]}>
+          <Reanimated.View style={[s.ruleDot, dotStyle]} />
         </View>
-        {active && <CheckSmall s={16} c={C.gold} />}
       </Reanimated.View>
     </TouchableOpacity>
   );
@@ -4802,55 +4840,90 @@ const s = StyleSheet.create({
     backgroundColor: '#FFF9EE',
   },
   /**
-   * THE ORTHODOX GROUP -- one plate holding a head and a drawer.
+   * THE PRAYER RULE CARD -- the sheet's own chip, in another register.
    *
-   * It is the same card as My Rule beside it, because the two are peers:
-   * same radius, same hairline, same paper. What it does NOT take is the
-   * chosen card's cream fill, because the group is not chosen -- one of
-   * its contents is, and the fill would be claiming the selection its own
-   * rows carry.
+   * Every figure here is `frequencyChip`'s: the 58 floor, the 20 radius,
+   * the 15/11 padding, the gold shadow at 0/8/18. It is not a new card
+   * and must not become one; a block that looks ALMOST like the one
+   * below it is worse than either looking different or looking the same.
    */
-  ruleGroup: {
-    borderRadius: 18,
+  ruleCard: {
+    minHeight: 58,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#F0EDE6',
+    paddingHorizontal: 15,
+    paddingVertical: 11,
     backgroundColor: '#FFFFFF',
-    overflow: 'hidden',
-  },
-  // Chosen inside: the plate takes the gold edge that says so, and only
-  // the edge.
-  ruleGroupActive: { borderColor: '#D8B56E' },
-  ruleGroupHead: {
-    minHeight: 64,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    shadowColor: C.gold,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 1,
   },
-  ruleGroupCopy: { flex: 1 },
-  // The second line stops being a hint and becomes the answer.
-  ruleGroupAnswer: { color: '#8B6B2F' },
   /**
-   * The drawer. Height is animated -- see PrayerRuleChooser -- so this
-   * must CLIP, and it must never carry padding of its own: padding on a
-   * box whose height is being interpolated is padding that survives at
-   * height zero and leaves a shut drawer holding a gap.
+   * The words, starting at the card's own edge.
+   *
+   * They used to sit in a second column with the mark in the first,
+   * which pushed the description in past the ring and left a hole
+   * underneath it. The mark is on the right now and this begins where
+   * the card does.
    */
-  ruleFold: { overflow: 'hidden' },
-  // The fold between the head and what it opens onto. Inside the drawer
-  // rather than above it, so it is drawn only while the drawer is open.
-  ruleFoldRule: {
-    height: 1,
-    marginHorizontal: 14,
-    backgroundColor: '#F0EDE6',
+  ruleCopy: { flex: 1, minWidth: 0 },
+  ruleHeadLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ruleTitle: {
+    fontFamily: F.serifMedium,
+    fontSize: 17,
+    color: '#4B5563',
+    flexShrink: 1,
   },
-  ruleRow: {
-    minHeight: 58,
-    flexDirection: 'row',
+  ruleTitleActive: { color: '#8B6B2F' },
+  ruleSub: {
+    marginTop: 2,
+    fontFamily: F.sans,
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#9CA3AF',
+  },
+  // The second line stops being a hint and becomes the answer.
+  ruleAnswer: { color: '#B08A47' },
+  /**
+   * The mark, ON THE TITLE'S LINE rather than centred on the card.
+   *
+   * The card is top-aligned, so this is nudged down by the difference
+   * between the ring and the title's own line height -- (30 - 22) / 2 --
+   * which lands it on the title's optical centre at every text size
+   * instead of floating between two lines of unequal weight.
+   */
+  ruleMark: { marginTop: -4 },
+  ruleRing: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#EEE7D8',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ruleRingActive: { borderColor: '#D6B067', backgroundColor: '#FFF9EE' },
+  ruleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.gold },
+  /**
+   * The drawer. It is INDENTED and unplated: the rows belong to the card
+   * above them, and a step in from its edge says so without drawing
+   * three more cards inside one.
+   */
+  ruleFold: { paddingLeft: 12, paddingTop: 2 },
+  ruleRow: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 15,
     paddingVertical: 10,
   },
   optionRadio: {
