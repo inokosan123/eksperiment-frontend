@@ -38,7 +38,7 @@ import {
 } from '@/data/prayers/pantocratorContent';
 
 /* ─────────────────────────────────────────────────────────────
- * ABOUT THE ICON — seven pages on the Sinai Pantocrator.
+ * ABOUT THE ICON — five pages on the Sinai Pantocrator.
  *
  * THE REGISTER IS THE LITURGICAL ONE. Scripture is the most serious
  * part of this app and it is drawn quieter than the coin grammar, not
@@ -171,7 +171,7 @@ export default function PantocratorAboutSheet({
           ))}
         </ScrollView>
 
-        {/* ── The foot: seven diamonds on a gold thread ────────────── */}
+        {/* ── The foot: one diamond per page, on a gold thread ─────── */}
         <View style={[s.foot, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
           <View style={s.threadRow}>
             {/* The thread is drawn INSIDE the row and centred on it with a
