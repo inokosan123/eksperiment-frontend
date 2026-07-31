@@ -38,7 +38,6 @@ import {
   ChevronDown,
   Cross,
   Feather,
-  Moon,
   Notebook,
   OpenBook,
   OrthodoxCross,
@@ -47,9 +46,7 @@ import {
   Plus,
   RotateCcw,
   Sparkles,
-  Sun,
   Trash2,
-  Utensils,
   X,
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
@@ -66,6 +63,9 @@ import {
 } from '@/components/challenges/challengeData';
 import type { TaskDraft, TaskSchedule } from '@/components/tasks/taskTypes';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import { EveningMoon, MealBowl, MorningSun, PrayerCandle } from '@/components/icons/PrayerHours';
+import BeadLoop from '@/components/prayer/BeadLoop';
+import { useSelectionHop } from '@/components/shared/selectionHop';
 
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -358,6 +358,22 @@ function ensureSelectedWeekdays(days: number[]) {
   return days.length ? days : [currentWeekdayIndex()];
 }
 
+/**
+ * ⚠ THE MARKS ARE THE PRAYER BOOK'S OWN HOURS, not the app's general icon
+ * set. This sheet is opened FROM that book, on the hour you were just
+ * looking at, and it was answering with a different drawing of the same
+ * thing — a generic sun where the book has its own sun, a knife and fork
+ * where the book has a steaming bowl. Two marks for one hour is how a
+ * user learns that the app has two ideas about what they picked.
+ *
+ * They are also built for this size. `components/icons/PrayerHours`
+ * exists because the app's watermark emblems are drawn at 74pt with
+ * hairlines and a dozen members, and at 20pt that method turns to
+ * smudge; these are few strokes, one weight, bold shapes.
+ *
+ * CUSTOM takes the book's OTHER hour — a candle, what one lights for a
+ * particular need — for the same reason the book gave it one.
+ */
 const PRAYER_TYPES: {
   key: PrayerType;
   label: string;
@@ -369,10 +385,10 @@ const PRAYER_TYPES: {
   defaultTitle: string;
   defaultTime: string;
 }[] = [
-  { key: 'morning', label: 'Morning', short: 'MORN', Icon: Sun, accent: '#D59D2C', tint: '#FFF7E7', border: '#F0D8A8', defaultTitle: 'Morning Prayer', defaultTime: '07:00' },
-  { key: 'evening', label: 'Evening', short: 'EVE', Icon: Moon, accent: '#7867C6', tint: '#F3F0FF', border: '#DDD5FF', defaultTitle: 'Evening Prayer', defaultTime: '21:00' },
-  { key: 'meal', label: 'Meals', short: 'MEALS', Icon: Utensils, accent: '#7D8FC9', tint: '#F1F5FF', border: '#D9E1F7', defaultTitle: 'Meal Prayer', defaultTime: '12:00' },
-  { key: 'jesus', label: 'Jesus', short: 'JESUS', Icon: Cross, accent: '#B98228', tint: '#FFF3E2', border: '#E9C98E', defaultTitle: 'Jesus Prayer', defaultTime: '13:00' },
+  { key: 'morning', label: 'Morning', short: 'MORN', Icon: MorningSun, accent: '#D59D2C', tint: '#FFF7E7', border: '#F0D8A8', defaultTitle: 'Morning Prayer', defaultTime: '07:00' },
+  { key: 'evening', label: 'Evening', short: 'EVE', Icon: EveningMoon, accent: '#7867C6', tint: '#F3F0FF', border: '#DDD5FF', defaultTitle: 'Evening Prayer', defaultTime: '21:00' },
+  { key: 'meal', label: 'Meals', short: 'MEALS', Icon: MealBowl, accent: '#7D8FC9', tint: '#F1F5FF', border: '#D9E1F7', defaultTitle: 'Meal Prayer', defaultTime: '12:00' },
+  { key: 'jesus', label: 'Jesus', short: 'JESUS', Icon: BeadLoop, accent: '#B98228', tint: '#FFF3E2', border: '#E9C98E', defaultTitle: 'Jesus Prayer', defaultTime: '13:00' },
   // ⚠ 'Prayer', not 'Custom Prayer'. "Custom" is the name of the CHOICE in
   // this sheet — the tile you tapped to get here — and it does not belong
   // in the name of the task that choice produces. Every other type seeds a
@@ -380,7 +396,7 @@ const PRAYER_TYPES: {
   // Prayer"); this one was seeding the name of a button. It shows on the
   // Home card, in My Routine and in the task list, where nothing explains
   // what "custom" was ever in contrast to.
-  { key: 'custom', label: 'Custom', short: 'CUSTOM', Icon: Feather, accent: '#5F9F97', tint: '#EDF8F6', border: '#CBE7E3', defaultTitle: 'Prayer', defaultTime: '08:00' },
+  { key: 'custom', label: 'Custom', short: 'CUSTOM', Icon: PrayerCandle, accent: '#5F9F97', tint: '#EDF8F6', border: '#CBE7E3', defaultTitle: 'Prayer', defaultTime: '08:00' },
 ];
 
 /**
@@ -1648,7 +1664,7 @@ function PrayerSpiritualPanel({
                 key={item.key}
                 item={item}
                 active={active}
-                onPress={() => onSelectPrayerType(item.key)}
+                onSelect={onSelectPrayerType}
               />
             );
           })}
@@ -1711,40 +1727,80 @@ function PrayerSpiritualPanel({
   );
 }
 
-function PrayerTypeChoice({
+/**
+ * ONE HOUR, AS A CHOICE.
+ *
+ * ⚠ THE MARK IS DRAWN TWICE AND CROSS-FADED, which is the only reason
+ * its colour can change smoothly at all. These are SVG paths, and a
+ * stroke colour handed to react-native-svg is a native prop update per
+ * frame; the marks were therefore switching from accent to white the
+ * instant React re-rendered, on a tile whose background was easing over
+ * a quarter of a second. Two copies at fixed colours, one fading over
+ * the other, costs two static subtrees and no per-frame prop traffic.
+ *
+ * ⚠ AND BOTH COPIES ARE MEMOISED. They depend on nothing but the hour,
+ * so choosing a tile must not rebuild its vector tree — and choosing
+ * changes `active`, which re-renders exactly two of these five.
+ *
+ * ⚠ THE PRESS IS A `Pressable`, NOT A GESTURE. See `useSelectionHop`:
+ * this sheet is a Modal, and RNGH inside a Modal takes Android down
+ * without its own GestureHandlerRootView. The hop is identical; only
+ * what starts it differs.
+ */
+const PrayerTypeChoice = React.memo(function PrayerTypeChoice({
   item,
   active,
-  onPress,
+  onSelect,
 }: {
   item: typeof PRAYER_TYPES[number];
   active: boolean;
-  onPress: () => void;
+  onSelect: (key: PrayerType) => void;
 }) {
-  const progress = useSelectionMotion(active);
-  const motionStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], [item.tint, item.accent]),
-    borderColor: interpolateColor(progress.value, [0, 1], [item.border, item.accent]),
-    shadowOpacity: 0.015 + progress.value * 0.145,
-    transform: [{ scale: 1 + progress.value * 0.014 }],
+  const { on, lift, onPressIn, onPressOut } = useSelectionHop(active);
+  const press = useCallback(() => onSelect(item.key), [item.key, onSelect]);
+
+  const seatStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(on.value, [0, 1], [item.tint, item.accent]),
+    borderColor: interpolateColor(on.value, [0, 1], [item.border, item.accent]),
+    shadowOpacity: 0.015 + on.value * 0.145,
+  }));
+  const litStyle = useAnimatedStyle(() => ({ opacity: on.value }));
+  const restStyle = useAnimatedStyle(() => ({ opacity: 1 - on.value }));
+  const labelStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(on.value, [0, 1], [item.accent, '#FFFFFF']),
   }));
 
+  const restMark = useMemo(() => <item.Icon s={20} c={item.accent} w={1.8} />, [item]);
+  const litMark = useMemo(() => <item.Icon s={20} c="#FFFFFF" w={2.2} />, [item]);
+
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.prayerTypeTouch}>
+    <Pressable
+      onPress={press}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={s.prayerTypeTouch}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={item.label}
+    >
       <Reanimated.View
-        style={[
-          s.prayerTypeBtn,
-          motionStyle,
-          {
-            shadowColor: item.accent,
-          },
-        ]}
+        style={[s.prayerTypeBtn, { shadowColor: item.accent }, seatStyle]}
       >
-        <item.Icon s={20} c={active ? '#FFFFFF' : item.accent} w={active ? 2.2 : 1.8} />
-        <Text style={[s.prayerTypeText, { color: active ? '#FFFFFF' : item.accent }]}>{item.short}</Text>
+        {/* ⚠ The hop moves the CONTENTS, not the tile. A tile that rose
+            would carry its own shadow and border up with it and read as
+            the row coming apart; the mark and its name lifting inside a
+            seat that stays put reads as the choice landing in it. */}
+        <Reanimated.View style={[s.prayerTypeLift, lift]}>
+          <View style={s.prayerTypeMark}>
+            <Reanimated.View style={restStyle}>{restMark}</Reanimated.View>
+            <Reanimated.View style={[s.prayerTypeMarkLit, litStyle]}>{litMark}</Reanimated.View>
+          </View>
+          <Reanimated.Text style={[s.prayerTypeText, labelStyle]}>{item.short}</Reanimated.Text>
+        </Reanimated.View>
       </Reanimated.View>
-    </TouchableOpacity>
+    </Pressable>
   );
-}
+});
 
 function PrayerRuleOption({
   item,
@@ -4210,12 +4266,33 @@ const s = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     paddingHorizontal: 4,
     paddingVertical: 9,
     shadowOffset: { width: 0, height: 8 },
     shadowRadius: 14,
     elevation: 2,
+  },
+  /**
+   * The mark's box, holding both copies of it — see PrayerTypeChoice.
+   * ⚠ It has a FIXED SIZE. The lit copy is absolute over the resting one,
+   * so without a box of its own the row would be laid out by whichever
+   * copy happens to be in flow and the tile would resize as the two
+   * traded places.
+   */
+  // ⚠ The lift wrapper centres its own children. It is the only thing
+  // between the tile (which centres) and the mark, so without this the
+  // 20pt mark box would sit left-aligned against the width of the label.
+  prayerTypeLift: { alignItems: 'center' },
+  prayerTypeMark: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  prayerTypeMarkLit: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   prayerTypeText: {
     fontFamily: F.sansBold,
@@ -4224,6 +4301,7 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     textAlign: 'center',
     lineHeight: 11,
+    marginTop: 8,
   },
   typeGridTwo: {
     flexDirection: 'row',
