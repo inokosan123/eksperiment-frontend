@@ -10,9 +10,8 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { Cross } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { C, F } from '@/constants/tokens';
+import { F } from '@/constants/tokens';
 
 /* ─────────────────────────────────────────────────────────────
  * CROSS or JESUS — what stands in front of you while you pray.
@@ -153,42 +152,70 @@ const SELECT_SPRING = { damping: 18, stiffness: 235, mass: 0.72 };
 const FOCUS_COMMIT_DELAY_MS = 580;
 
 /**
- * The Jesus side's emblem: the cruciform halo.
+ * The Jesus side's emblem: the CRUCIFORM NIMBUS.
  *
- * The nimbus with a cross inscribed in it is the one mark Christian art
+ * The halo with a cross inscribed in it is the one mark Christian art
  * puts on Christ and on no one else — every other saint's halo is plain
- * — and it is the mark carried by the icon this side opens, painted
- * around His head in the sixth century.
+ * — and it is the mark the icon this side opens actually carries. That
+ * is checkable rather than assumed: zoom the shipped file into the gold
+ * band above the head and the arms are there, painted in fine red lines,
+ * each one closed at its outer end by a short bar across it.
  *
- * ⚠ IT REPLACED A MINIATURE OF THE BOARD, which was the wrong idea twice
- * over: at seventeen points a tiny panel outline is unreadable, and it
- * named the MEDIUM rather than the person, which is exactly what
- * renaming this side away from "Icon" was meant to stop.
+ * ⚠ AND IT IS THOSE BARS THAT MAKE THIS A NIMBUS RATHER THAN A CROSSHAIR.
+ * A ring with a bare plus in it — which is what stood here — is the
+ * symbol every map and camera uses for "target", and at sixteen points
+ * that is the only thing it says. The four terminals cost almost nothing
+ * in ink and they change what the mark IS, because they are the detail no
+ * crosshair has and every painted nimbus does.
+ *
+ * ⚠ ONE RING, NOT TWO. A second finer ring inside the first is closer to
+ * the painting and is genuinely handsomer at four times this size; at
+ * actual size it closes the gap the arms need and the cross is lost in
+ * its own halo. Drawn at the size it ships at, not at the size it is
+ * designed at.
  *
  * ⚠ AND IT IS NOT A SECOND CROSS, despite carrying one. The silhouette
- * decides that: the other side is a bare figure with four arms, this one
- * is a RING. They read apart instantly at any size, and the pair is
+ * decides that: the other side is a solid figure with four limbs, this
+ * one is a RING. They read apart instantly at any size, and the pair is
  * better for the rhyme — His cross on one side, His face's halo on the
  * other, the same cross inside a circle of glory.
  */
-function CruciformHalo({ tone }: { tone: string }) {
-  const box = 16;
-  const c = box / 2;
-  const r = c - 1.1;
-  // The bars stop just inside the ring rather than crossing it: a cross
-  // drawn over the circle reads as two symbols laid on each other, and
-  // one drawn inside it reads as one.
-  const arm = r - 0.6;
-
+function CruciformNimbus({ tone }: { tone: string }) {
   return (
-    <Svg width={box} height={box}>
-      <Circle cx={c} cy={c} r={r} stroke={tone} strokeWidth={1.5} fill="none" />
-      <Path
-        d={`M${c} ${c - arm}L${c} ${c + arm}M${c - arm} ${c}L${c + arm} ${c}`}
-        stroke={tone}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-      />
+    <Svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke={tone}>
+      <Circle cx={8} cy={8} r={7.05} strokeWidth={1.05} />
+      {/* The arms stop well inside the ring rather than crossing it: a
+          cross drawn over the circle reads as two symbols laid on each
+          other, and one drawn inside it reads as one. */}
+      <Path d="M8 2.5v11M2.5 8h11" strokeWidth={1.25} />
+      {/* The terminals, from the painting. */}
+      <Path d="M6.5 2.5h3M6.5 13.5h3M2.5 6.5v3M13.5 6.5v3" strokeWidth={0.95} />
+    </Svg>
+  );
+}
+
+/**
+ * The cross side's emblem: a LATIN CROSS, solid.
+ *
+ * ⚠ IT WAS A HAIRLINE AND IT IS NOW A FIGURE. The old mark was the app's
+ * general-purpose `Cross` glyph at 1.7 of stroke — correct proportions
+ * and no weight at all, so beside a ring carrying four bars it read as
+ * the faint option rather than as the equal one. The object it selects is
+ * a solid thing: a wide mahogany frame with a maple field in it, and mass
+ * is most of what you see across a room.
+ *
+ * Drawn rather than stroked, so the limbs keep the Latin proportion — the
+ * bar in the upper third, the foot longer than the head — at any weight.
+ *
+ * (Its own inlay line was tried inside this figure, echoing the gold
+ * thread in the real cross's maple, and it is lovely at four times the
+ * size. At sixteen points it hollows the mark out and hands the solidity
+ * straight back.)
+ */
+function LatinCross({ tone }: { tone: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 16 16">
+      <Path d="M6.9 1.6h2.2v3.9h3.9v2.2H9.1v6.7H6.9V7.7H3V5.5h3.9z" fill={tone} />
     </Svg>
   );
 }
@@ -225,8 +252,8 @@ function Emblem({
       <View style={[s.emblemDisc, { backgroundColor: tone.disc }]} />
       <View style={[s.emblemHeart, { backgroundColor: tone.heart }]} />
       {kind === 'icon'
-        ? <CruciformHalo tone={tone.glyph} />
-        : <Cross s={15} c={tone.glyph} w={1.7} />}
+        ? <CruciformNimbus tone={tone.glyph} />
+        : <LatinCross tone={tone.glyph} />}
     </Reanimated.View>
   );
 }
@@ -519,12 +546,20 @@ const s = StyleSheet.create({
   emblemSeat: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
   emblemDisc: { position: 'absolute', width: 23, height: 23, borderRadius: 11.5 },
   emblemHeart: { position: 'absolute', width: 18, height: 18, borderRadius: 9 },
+  /**
+   * The light the chosen emblem throws onto its plaque.
+   *
+   * ⚠ WARM WHITE, NOT WHITE. A pure white disc over gilt or over pale
+   * wood is the one thing on this control that belongs to neither
+   * material — it reads as a milky patch rather than as light. Warmed a
+   * few points, it reads as the plaque catching the lamp.
+   */
   emblemGlow: {
     position: 'absolute',
     width: 33,
     height: 33,
     borderRadius: 16.5,
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: 'rgba(255,250,236,0.8)',
   },
 
 });
