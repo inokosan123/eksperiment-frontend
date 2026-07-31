@@ -18,7 +18,7 @@ import Reanimated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X } from '@/components/icons/Icons';
+import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import {
@@ -133,11 +133,24 @@ export default function PantocratorAboutSheet({
           pointerEvents="none"
         />
 
-        {/* ── The head of the book ─────────────────────────────────── */}
+        {/* ── THE HEAD ──────────────────────────────────────────────
+            ⚠ IT NO LONGER REPEATS THE TITLE ON EVERY PAGE. "About the
+            icon / Christ Pantocrator" stood over all five slides in
+            25-point serif — a heading you read once, occupying the top
+            eighth of the screen four more times than it was wanted, on
+            a sheet whose whole business is prose.
+
+            What belongs at the top of a five-part story is WHERE YOU
+            ARE, which is what every story format puts there and what
+            this sheet had nowhere at all. So the head is the progress,
+            the count, and the way out. The name of the thing is on the
+            first page, where it introduces the thing. */}
         <View style={[s.head, { paddingTop: insets.top + 10 }]}>
           <View style={s.headCopy}>
-            <Text style={s.headKicker}>ABOUT THE ICON</Text>
-            <Text style={s.headTitle}>Christ Pantocrator</Text>
+            <ReadingProgress page={page} total={total} onGo={goTo} />
+            <Text style={s.headCount}>
+              {slideNumeral(page)} · {PANTOCRATOR_SLIDES[page]?.eyebrow ?? ''}
+            </Text>
           </View>
           <TouchableOpacity
             onPress={onClose}
@@ -146,10 +159,9 @@ export default function PantocratorAboutSheet({
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
-            <X s={18} c={GOLD_INK} />
+            <X s={17} c={GOLD_INK} />
           </TouchableOpacity>
         </View>
-        <View style={s.headRule} />
 
         {/* ── The pages ────────────────────────────────────────────── */}
         <ScrollView
@@ -172,32 +184,67 @@ export default function PantocratorAboutSheet({
           ))}
         </ScrollView>
 
-        {/* ── The foot: one diamond per page, on a gold thread ─────── */}
-        <View style={[s.foot, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
-          <View style={s.threadRow}>
-            {/* The thread is drawn INSIDE the row and centred on it with a
-                percentage, so it stays on the beads' own centre line
-                whatever the marks measure — a hand-added offset would be
-                one restyle away from floating off them. */}
-            <View pointerEvents="none" style={s.thread} />
-            {PANTOCRATOR_SLIDES.map((slide, index) => {
-              const here = index === page;
-              return (
-                <TouchableOpacity
-                  key={slide.id}
-                  onPress={() => goTo(index)}
-                  activeOpacity={0.7}
-                  haptic="selection"
-                  style={s.markHit}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Page ${index + 1} of ${total}`}
-                  accessibilityState={{ selected: here }}
-                >
-                  <View style={[s.mark, here ? s.markHere : s.markRest]} />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+        {/* ── THE FOOT: A WAY ON ────────────────────────────────────
+            ⚠ NOTHING TOLD YOU THERE WAS MORE. The sheet's only
+            navigation was five diamonds six points across, at the very
+            bottom, on a thread — beautiful, and unreadable as either a
+            position or a control. A reader who did not think to swipe
+            met one page and left.
+
+            So the foot carries a real way forward, in the book's own
+            register: parchment, a gold hairline, the serif. It names
+            the page it is going to, which is the thing a bare arrow
+            can never do — you go on because you want THAT, not because
+            a button was there. */}
+        <View style={[s.foot, { paddingBottom: Math.max(insets.bottom, 12) + 6 }]}>
+          <View style={s.footRule} />
+          {page > 0 ? (
+            <TouchableOpacity
+              onPress={() => goTo(page - 1)}
+              activeOpacity={0.78}
+              haptic="selection"
+              style={s.footBack}
+              accessibilityRole="button"
+              accessibilityLabel="Previous page"
+            >
+              <ChevronLeft s={17} c={GOLD_INK} w={2} />
+            </TouchableOpacity>
+          ) : (
+            <View style={s.footBackSpacer} />
+          )}
+
+          {page < total - 1 ? (
+            <TouchableOpacity
+              onPress={() => goTo(page + 1)}
+              activeOpacity={0.86}
+              haptic="selection"
+              style={s.footOn}
+              accessibilityRole="button"
+              accessibilityLabel={`Next: ${PANTOCRATOR_SLIDES[page + 1].title}`}
+            >
+              <View style={s.footOnCopy}>
+                <Text style={s.footOnKicker}>NEXT</Text>
+                <Text style={s.footOnTitle} numberOfLines={1}>
+                  {PANTOCRATOR_SLIDES[page + 1].title}
+                </Text>
+              </View>
+              <ChevronRight s={18} c={GOLD_INK} w={2} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={onClose}
+              activeOpacity={0.86}
+              haptic="selection"
+              style={s.footOn}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <View style={s.footOnCopy}>
+                <Text style={s.footOnTitle}>Return to the icon</Text>
+              </View>
+              <ChevronRight s={18} c={GOLD_INK} w={2} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </Modal>
@@ -253,7 +300,9 @@ function Slide({
           is above it and what is below it belong to each other. */}
       {!!slide.figure && <View style={s.figureRule} />}
 
-      <Text style={s.eyebrow}>{slide.eyebrow}</Text>
+      {/* ⚠ THE EYEBROW HAS MOVED TO THE HEAD, beside the numeral, where
+          it names the page you are on while you are on it. Repeating it
+          here would be the same line twice on one screen. */}
       <Text style={s.title}>{slide.title}</Text>
 
       {!!slide.facts?.length && (
@@ -289,6 +338,54 @@ function Slide({
         </View>
       )}
     </ScrollView>
+  );
+}
+
+/* ── WHERE YOU ARE ────────────────────────────────────────────────────
+ *
+ * ⚠ FIVE SEGMENTS ON A THREAD, NOT FIVE BEADS UNDER ONE. The old pager
+ * was five diamonds six points across at the foot of the screen: it
+ * could not tell you how far through you were without counting, and at
+ * six points it was not a control anybody could hit.
+ *
+ * A segmented rail answers both at a glance — filled behind you, empty
+ * ahead — which is why every story format uses one, and it is still the
+ * book's own material: a gold thread, inked where you have read.
+ *
+ * ⚠ AND IT IS STILL TAPPABLE, with the hit area padded well past the
+ * ink. A rail you can only swipe is a rail that has taken away the one
+ * thing the diamonds did offer.
+ */
+const SLIDE_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'] as const;
+
+function slideNumeral(index: number): string {
+  return SLIDE_NUMERALS[index] ?? String(index + 1);
+}
+
+function ReadingProgress({
+  page, total, onGo,
+}: {
+  page: number;
+  total: number;
+  onGo: (index: number) => void;
+}) {
+  return (
+    <View style={s.rail} accessibilityRole="tablist">
+      {Array.from({ length: total }, (_, index) => (
+        <TouchableOpacity
+          key={index}
+          onPress={() => onGo(index)}
+          activeOpacity={0.7}
+          haptic="selection"
+          style={s.railHit}
+          accessibilityRole="button"
+          accessibilityLabel={`Page ${index + 1} of ${total}`}
+          accessibilityState={{ selected: index === page }}
+        >
+          <View style={[s.railSegment, index <= page && s.railSegmentRead]} />
+        </TouchableOpacity>
+      ))}
+    </View>
   );
 }
 
@@ -462,41 +559,50 @@ const s = StyleSheet.create({
   // ── Head ───────────────────────────────────────────────────────────
   head: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+    alignItems: 'center',
+    gap: 14,
     paddingHorizontal: 22,
-    paddingBottom: 12,
+    paddingBottom: 14,
   },
-  headCopy: { flex: 1, minWidth: 0 },
-  headKicker: {
+  headCopy: { flex: 1, minWidth: 0, gap: 9 },
+  /**
+   * The numeral and the part's name, on one line.
+   *
+   * ⚠ A ROMAN NUMERAL, because this is a book and a book numbers its
+   * parts that way. It also solves a real problem: "1 · SAINT
+   * CATHERINE'S MONASTERY, SINAI" reads as a list item, where
+   * "I · SAINT CATHERINE'S MONASTERY, SINAI" reads as a chapter.
+   */
+  headCount: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 2.6,
-    color: 'rgba(139,107,47,0.7)',
+    fontSize: 9,
+    letterSpacing: 1.9,
+    color: 'rgba(139,107,47,0.78)',
+    textTransform: 'uppercase',
   },
-  headTitle: {
-    marginTop: 4,
-    fontFamily: F.serifMedium,
-    fontSize: 25,
-    lineHeight: 30,
-    letterSpacing: -0.2,
-    color: C.text,
+
+  /** The rail — see ReadingProgress. */
+  rail: { flexDirection: 'row', marginLeft: -5 },
+  // ⚠ The hit area is five times the ink. A 3-point rail is a mark, not
+  // a button; this is what makes it one.
+  railHit: { flex: 1, paddingHorizontal: 5, paddingVertical: 9 },
+  railSegment: {
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(197,160,89,0.22)',
   },
+  railSegmentRead: { backgroundColor: C.gold },
+
   close: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: GOLD_HAIR,
     backgroundColor: 'rgba(255,255,255,0.66)',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-  },
-  headRule: {
-    height: 1,
-    marginHorizontal: 22,
-    backgroundColor: GOLD_HAIR,
   },
 
   // ── Pages ──────────────────────────────────────────────────────────
@@ -535,14 +641,17 @@ const s = StyleSheet.create({
     opacity: 0.55,
   },
 
-  eyebrow: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 2.4,
-    color: GOLD_INK,
-  },
+  /**
+   * ⚠ THE SUBJECT IS NOT NAMED AGAIN ON THE PAGE. It used to stand over
+   * all five slides as a running head in 25-point serif — the top eighth
+   * of four screens spent repeating something said once. Moving it onto
+   * the opening page only was the first fix, and it was still one too
+   * many: page one then read CHRIST PANTOCRATOR at the top and
+   * "NEXT · Christ Pantocrator" at the foot, the same name twice on one
+   * screen. Page two is titled with it, which is where it belongs — the
+   * page that is actually about the name.
+   */
   title: {
-    marginTop: 5,
     fontFamily: F.serifMedium,
     fontSize: 30,
     lineHeight: 35,
@@ -674,36 +783,74 @@ const s = StyleSheet.create({
   },
 
   // ── Foot ───────────────────────────────────────────────────────────
-  foot: { paddingTop: 14, paddingHorizontal: 22 },
-  thread: {
-    position: 'absolute',
-    // In from the outer beads' hit areas, so the line ends under the row
-    // of marks rather than running out past them.
-    left: 8,
-    right: 8,
-    top: '50%',
-    marginTop: -0.5,
-    height: 1,
-    backgroundColor: GOLD_HAIR,
-  },
-  // Shrunk to its own contents, so the thread spans the beads and nothing
-  // more.
-  threadRow: {
-    position: 'relative',
-    alignSelf: 'center',
+  // ── Foot ───────────────────────────────────────────────────────────
+  foot: {
+    paddingTop: 12,
+    paddingHorizontal: 22,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
-  markHit: { paddingHorizontal: 8, paddingVertical: 7, alignItems: 'center', justifyContent: 'center' },
-  mark: {
-    width: 6,
-    height: 6,
-    borderRadius: 1,
-    transform: [{ rotate: '45deg' }],
+  // The rule runs the full width above the foot, which is what tells you
+  // the foot is furniture and the page above it is the book.
+  footRule: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: GOLD_HAIR,
+    opacity: 0.7,
   },
-  // The page you are on is struck; the rest are the thread's own colour,
-  // so the row reads as one line with a bead on it rather than as seven
-  // buttons.
-  markHere: { backgroundColor: C.gold, width: 8, height: 8 },
-  markRest: { backgroundColor: 'rgba(197,160,89,0.34)' },
+  footBack: {
+    width: 44,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: GOLD_HAIR,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+  },
+  // Holds the forward plate in the same place on page one, so it does
+  // not jump left the moment you turn back.
+  footBackSpacer: { width: 44 },
+  /**
+   * THE WAY ON.
+   *
+   * ⚠ IT NAMES THE PAGE IT IS GOING TO. A bare arrow says only that
+   * there is more; a title says what the more IS, and a reader goes on
+   * because they want that page rather than because a control existed.
+   *
+   * ⚠ AND IT IS PARCHMENT, NOT A FILLED PLATE. This is a book. A gold
+   * button at the foot of it would be the coin grammar walking into the
+   * one room in the app that keeps it out.
+   */
+  footOn: {
+    flex: 1,
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingLeft: 16,
+    paddingRight: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.5)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+  },
+  footOnCopy: { flex: 1, minWidth: 0 },
+  footOnKicker: {
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    letterSpacing: 1.9,
+    color: 'rgba(139,107,47,0.62)',
+    textTransform: 'uppercase',
+  },
+  footOnTitle: {
+    marginTop: 1,
+    fontFamily: F.serifMedium,
+    fontSize: 16.5,
+    color: GOLD_INK,
+  },
 });
