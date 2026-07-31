@@ -29,7 +29,8 @@ import PantocratorAboutSheet from '@/components/prayer/PantocratorAboutSheet';
 import { PantocratorPanel, PrayerLamp, panelWidth } from '@/components/prayer/PantocratorIcon';
 import PrayerFocusSwitch, { type PrayerFocus } from '@/components/prayer/PrayerFocusSwitch';
 import StandingCross, { CROSS_ASPECT } from '@/components/prayer/StandingCross';
-import { useIgnition, useReadoutInk } from '@/components/prayer/prayerMotion';
+import PrayerReadout, { PrayerReadoutLight } from '@/components/prayer/PrayerReadout';
+import { useIgnition } from '@/components/prayer/prayerMotion';
 import PrayerRoom from '@/components/prayer/PrayerRoom';
 import PrayerStartHalo from '@/components/prayer/PrayerStartHalo';
 import { useAppSettings } from '@/components/settings/SettingsContext';
@@ -296,7 +297,6 @@ function PrayerTimerReadout({
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const accumulatedMsRef = useRef(0);
   const reportedElapsedRef = useRef(false);
-  const readoutInk = useReadoutInk(ignition, C.text, accent);
 
   useEffect(() => {
     accumulatedMsRef.current = 0;
@@ -326,19 +326,20 @@ function PrayerTimerReadout({
 
   const hasHours = elapsedSecs >= 3600;
   const timeFont = hasHours ? (compact ? 38 : 44) : (compact ? 50 : 58);
-  const colonFont = timeFont * 0.42;
   const display = formatElapsed(elapsedSecs);
 
+  // How the figures are set, how they change places and how a minute
+  // landing is marked all live in PrayerReadout. What stays here is the
+  // one thing this component exists for: owning the second so the icon,
+  // the room, the deck and the modals never rerender with the clock.
   return (
-    <View style={s.readout}>
-      <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-        {display.main}
-      </Reanimated.Text>
-      <Reanimated.Text style={[s.colonText, readoutInk, { fontSize: colonFont }]}>:</Reanimated.Text>
-      <Reanimated.Text style={[s.timeText, s.timeTail, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-        {display.tail}
-      </Reanimated.Text>
-    </View>
+    <PrayerReadout
+      accent={accent}
+      ignition={ignition}
+      main={display.main}
+      tail={display.tail}
+      timeFont={timeFont}
+    />
   );
 }
 
@@ -510,6 +511,10 @@ export default function PersonalRuleTaskView({
   // stops at the object's edge is a rectangle of light, which is not what
   // a lamp makes.
   const lampSize = Math.min(screenWidth * 1.15, Math.round(panelWidth(panelHeight) * 2.4));
+  // The pool under the reading. Wide enough that its own edge is always
+  // off the sides of the seat — a light you can see the end of is a
+  // shape, and this one has to be light.
+  const readoutLightWidth = Math.round(Math.min(screenWidth * 1.02, 400));
 
   useEffect(() => {
     // Arriving is slower than leaving, and eases out rather than in and
@@ -923,6 +928,18 @@ export default function PersonalRuleTaskView({
           on `switchStyle`. This is the piece that keeps the whole screen
           still while its state changes. */}
       <View style={[s.seat, isCompactHeight && s.seatCompact]}>
+        {/* ⚠ A SIBLING OF THE READING, NOT ITS CHILD — see PrayerReadout.
+            The reading is scaled between its resting and running sizes by
+            the seat, and a vector inside it would be scaled with it and
+            resample on Android for the whole of every transition. It is
+            invisible at rest, so it never has to be taken out. */}
+        <PrayerReadoutLight
+          breath={breath}
+          ignition={ignition}
+          tint={theme.accent}
+          width={readoutLightWidth}
+        />
+
         <Reanimated.View
           style={[s.seatItem, switchStyle]}
           pointerEvents={running ? 'none' : 'auto'}
@@ -1185,34 +1202,6 @@ const s = StyleSheet.create({
   },
 
   deck: { alignItems: 'center', paddingHorizontal: 16 },
-  readout: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' },
-  timeText: {
-    fontFamily: F.serifBold,
-    // Tabular figures, so a second ticking over does not shove the whole
-    // reading sideways. It did, every second, for as long as this screen
-    // has existed.
-    fontVariant: ['tabular-nums', 'lining-nums'],
-    includeFontPadding: false,
-  },
-  colonText: {
-    fontFamily: F.serifBold,
-    opacity: 0.3,
-    marginHorizontal: 3,
-    includeFontPadding: false,
-  },
-  /**
-   * The seconds, lighter than the minutes.
-   *
-   * A clock face distinguishes the figure you READ from the one that is
-   * merely running, and this reading had them at identical weight — two
-   * pairs of numerals with a dim colon between, which is a stopwatch.
-   *
-   * ⚠ BY OPACITY, NOT BY SIZE. Setting the seconds smaller would put the
-   * pair on two optical baselines and make the whole reading resize the
-   * moment an hour appeared and the minutes moved left. Same size, same
-   * baseline, less ink.
-   */
-  timeTail: { opacity: 0.58 },
 
   controlsDeck: {
     flexDirection: 'row',
