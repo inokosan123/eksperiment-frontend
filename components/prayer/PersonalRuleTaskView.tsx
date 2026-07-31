@@ -20,6 +20,7 @@ import Reanimated, {
   useSharedValue,
   withRepeat,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import ConfirmModal from '@/components/shared/ConfirmModal';
@@ -36,6 +37,21 @@ import { ArrowLeft, CheckSmall, ChevronDown, OpenBook, OrthodoxCross, Pause, Pla
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// These are static, expensive native/SVG/image subtrees. Their SharedValue
+// props keep animating on the UI thread without React needing to visit them
+// again when the clock, running state, or a modal changes.
+const StablePrayerRoom = React.memo(PrayerRoom);
+const StablePrayerLamp = React.memo(PrayerLamp);
+const StableStandingCross = React.memo(StandingCross);
+const StablePantocratorPanel = React.memo(PantocratorPanel);
+const StablePrayerFocusSwitch = React.memo(PrayerFocusSwitch);
+const StablePrayerStartHalo = React.memo(PrayerStartHalo);
+const StablePantocratorAboutSheet = React.memo(PantocratorAboutSheet);
+const StableConfirmModal = React.memo(ConfirmModal);
+
+const EXIT_CONFIRM_ICON = <ArrowLeft s={22} c={C.red} />;
+const FINISH_CONFIRM_ICON = <CheckSmall s={22} c={C.gold} w={2.5} />;
 
 /* ─────────────────────────────────────────────────────────────
  * MY RULE — the screen you pray on.
@@ -156,6 +172,42 @@ const READING_REST_SCALE = 0.52;
  */
 const SEAT = { height: 104, compactHeight: 100, liftShare: 0.22, dropShare: 0.29 } as const;
 
+/**
+ * How far the deck stands off the floor, ON TOP OF the home indicator's
+ * own inset.
+ *
+ * ⚠ SMALL ON PURPOSE. The controls being the last row on the screen is
+ * the arrangement this screen was built toward, and a deck floated well
+ * up the page turns back into a toolbar. Ten points is the difference
+ * between a plate resting ON the floor and one that has the floor
+ * underneath it — enough that the pill's own shadow has somewhere to
+ * fall, which is what was missing.
+ *
+ * It is paid for by the object, which is the only thing here that
+ * flexes, so it is deliberately half as much on a short phone where the
+ * object has nothing to spare.
+ */
+const DECK_LIFT = { normal: 10, compact: 5 } as const;
+
+/* ── THE DECK, LIT ────────────────────────────────────────────────────
+ *
+ * ⚠ THE PLATE WAS PURE WHITE AND STAYED PURE WHITE WHILE THE PRAYER RAN,
+ * which made it the brightest surface on the page at exactly the moment
+ * the room was darkening everything else so the object could be the only
+ * lit thing. The controls were out-shining the thing they serve.
+ *
+ * So the plate travels with the room: warm paper rather than white,
+ * and its hairline turns from neutral ink to the lamp's own gold — the
+ * app's lit edge, which every other lifted surface in it already wears.
+ * It still stands clear of the ground beneath it; it simply stops being
+ * a white card lying on an evening page.
+ */
+const DECK_PLATE = { rest: '#FFFFFF', lit: '#FFF9EF' } as const;
+const DECK_EDGE = { rest: 'rgba(28,25,23,0.06)', lit: 'rgba(197,160,89,0.34)' } as const;
+
+/** Reset and Finish, in the same warm ink their labels are set in. */
+const SMALL_INK = 'rgba(74,51,18,0.42)';
+
 export type PersonalPrayerRuleChoice = 'personal' | 'standard' | 'short' | 'seraphim';
 
 const RULE_OPTIONS: { id: PersonalPrayerRuleChoice; label: string }[] = [
@@ -221,6 +273,160 @@ function formatElapsed(totalSecs: number) {
   };
 }
 
+/**
+ * Owns the one-second updates so the large icon, gradients, SVG room,
+ * selector, controls, and modals do not rerender with the clock. The rendered
+ * readout is intentionally identical to the former inline one.
+ */
+function PrayerTimerReadout({
+  accent,
+  compact,
+  ignition,
+  onFirstSecond,
+  resetToken,
+  running,
+}: {
+  accent: string;
+  compact: boolean;
+  ignition: SharedValue<number>;
+  onFirstSecond: () => void;
+  resetToken: number;
+  running: boolean;
+}) {
+  const [elapsedSecs, setElapsedSecs] = useState(0);
+  const accumulatedMsRef = useRef(0);
+  const reportedElapsedRef = useRef(false);
+  const readoutInk = useReadoutInk(ignition, C.text, accent);
+
+  useEffect(() => {
+    accumulatedMsRef.current = 0;
+    reportedElapsedRef.current = false;
+    setElapsedSecs(0);
+  }, [resetToken]);
+
+  useEffect(() => {
+    if (!running) return;
+
+    const startedAt = Date.now();
+    const publish = () => {
+      const next = Math.floor((accumulatedMsRef.current + Date.now() - startedAt) / 1000);
+      if (next > 0 && !reportedElapsedRef.current) {
+        reportedElapsedRef.current = true;
+        onFirstSecond();
+      }
+      setElapsedSecs(current => current === next ? current : next);
+    };
+    const timer = setInterval(publish, 1000);
+
+    return () => {
+      clearInterval(timer);
+      accumulatedMsRef.current += Date.now() - startedAt;
+    };
+  }, [onFirstSecond, running]);
+
+  const hasHours = elapsedSecs >= 3600;
+  const timeFont = hasHours ? (compact ? 38 : 44) : (compact ? 50 : 58);
+  const colonFont = timeFont * 0.42;
+  const display = formatElapsed(elapsedSecs);
+
+  return (
+    <View style={s.readout}>
+      <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+        {display.main}
+      </Reanimated.Text>
+      <Reanimated.Text style={[s.colonText, readoutInk, { fontSize: colonFont }]}>:</Reanimated.Text>
+      <Reanimated.Text style={[s.timeText, s.timeTail, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
+        {display.tail}
+      </Reanimated.Text>
+    </View>
+  );
+}
+
+const StablePrayerTimerReadout = React.memo(PrayerTimerReadout);
+
+const StablePrayerRuleSelector = React.memo(function PrayerRuleSelector({
+  bottomInset,
+  enabled,
+  onClose,
+  onRulePress,
+  selectedRule,
+  theme,
+  visible,
+}: {
+  bottomInset: number;
+  enabled: boolean;
+  onClose: () => void;
+  onRulePress: (rule: PersonalPrayerRuleChoice) => void;
+  selectedRule: PersonalPrayerRuleChoice;
+  theme: { accent: string; bg: string; border: string };
+  visible: boolean;
+}) {
+  return (
+    <Modal
+      transparent
+      visible={enabled && visible}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={s.selectorOverlay}>
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+        <View style={[s.selectorSheet, { paddingBottom: bottomInset + 24 }]}>
+          <View style={s.selectorHandle} />
+          <View style={s.selectorHeader}>
+            <Text style={s.selectorTitle}>Prayer Rule</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              style={s.selectorClose}
+              activeOpacity={0.76}
+            >
+              <X s={17} c="#78716C" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={s.selectorList}>
+            {RULE_OPTIONS.map(rule => {
+              const active = rule.id === selectedRule;
+              const showOrthodoxBadge = isOrthodoxRule(rule.id);
+
+              return (
+                <TouchableOpacity
+                  key={rule.id}
+                  onPress={() => onRulePress(rule.id)}
+                  activeOpacity={0.78}
+                  style={[
+                    s.selectorOption,
+                    active
+                      ? { backgroundColor: theme.bg, borderColor: theme.border }
+                      : s.selectorOptionInactive,
+                  ]}
+                >
+                  <View style={s.selectorCopy}>
+                    <Text style={[s.selectorOptionTitle, { color: active ? theme.accent : C.text }]}>
+                      {rule.label}
+                    </Text>
+                    <Text style={s.selectorOptionSub}>{RULE_DESCRIPTIONS[rule.id]}</Text>
+                  </View>
+                  {(showOrthodoxBadge || active) && (
+                    <View style={s.selectorOptionTrailing}>
+                      {showOrthodoxBadge && (
+                        <View style={s.selectorOrthodoxBadge}>
+                          <OrthodoxCross s={11} c={theme.accent} w={1.35} />
+                          <Text style={[s.selectorOrthodoxBadgeText, { color: theme.accent }]}>ORTH.</Text>
+                        </View>
+                      )}
+                      {active && <CheckSmall s={18} c={theme.accent} />}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+});
+
 export default function PersonalRuleTaskView({
   title,
   prayerType,
@@ -235,8 +441,9 @@ export default function PersonalRuleTaskView({
   const { height, width: screenWidth } = useWindowDimensions();
   const { settings, updateSettings } = useAppSettings();
   const focus: PrayerFocus = settings.prayerFocus === 'icon' ? 'icon' : 'cross';
-  const [elapsedSecs, setElapsedSecs] = useState(0);
   const [running, setRunning] = useState(false);
+  const [hasElapsed, setHasElapsed] = useState(false);
+  const [timerResetToken, setTimerResetToken] = useState(0);
   const [showExit, setShowExit] = useState(false);
   const [showFinish, setShowFinish] = useState(false);
   const [showRuleSelector, setShowRuleSelector] = useState(false);
@@ -246,13 +453,13 @@ export default function PersonalRuleTaskView({
   // readout, a control deck and a door, and no constant survives all the
   // combinations of those across every phone.
   const [iconRoom, setIconRoom] = useState({ width: 0, height: 0 });
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finishLockRef = useRef(false);
   // One value lights the object, the room, the reading and the button.
-  const ignition = useIgnition(running);
+  const { ignition, animateIgnition } = useIgnition(running);
   // 0 = the cross is standing, 1 = the icon is. The exchange between them
   // is the one animation on this screen that has to be worth watching.
   const swap = useSharedValue(focus === 'icon' ? 1 : 0);
+  const focusIntentRef = useRef<PrayerFocus>(focus);
   // The slow breath in the button's light.
   const breath = useSharedValue(0);
   /**
@@ -270,16 +477,12 @@ export default function PersonalRuleTaskView({
    * Everything on the screen reads its state off this pair rather than
    * off React, so nothing can be a frame out of step with anything else.
    */
-  const timerShown = running || elapsedSecs > 0;
+  const timerShown = running || hasElapsed;
   const reveal = useSharedValue(timerShown ? 1 : 0);
   /** 0 → 1 once each time the prayer is started. The bell. */
   const strike = useSharedValue(0);
 
   const isCompactHeight = height < 720;
-  const hasHours = elapsedSecs >= 3600;
-  const timeFont = hasHours ? (isCompactHeight ? 38 : 44) : (isCompactHeight ? 50 : 58);
-  const colonFont = timeFont * 0.42;
-  const display = formatElapsed(elapsedSecs);
   const theme = prayerType === 'evening'
     ? PERSONAL_RULE_THEMES.evening
     : prayerType === 'morning'
@@ -307,19 +510,6 @@ export default function PersonalRuleTaskView({
   // stops at the object's edge is a rectangle of light, which is not what
   // a lamp makes.
   const lampSize = Math.min(screenWidth * 1.15, Math.round(panelWidth(panelHeight) * 2.4));
-
-  useEffect(() => {
-    if (!running) return;
-
-    timerRef.current = setInterval(() => {
-      setElapsedSecs(prev => prev + 1);
-    }, 1000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = null;
-    };
-  }, [running]);
 
   useEffect(() => {
     // Arriving is slower than leaving, and eases out rather than in and
@@ -358,6 +548,8 @@ export default function PersonalRuleTaskView({
   }, [breath, reduceMotion, running]);
 
   useEffect(() => {
+    if (focusIntentRef.current === focus) return;
+    focusIntentRef.current = focus;
     // Long and even. A spring here would overshoot the exchange and snap
     // the incoming object into place, and this is not a control settling
     // — it is one thing giving way to another.
@@ -366,6 +558,20 @@ export default function PersonalRuleTaskView({
       easing: Easing.inOut(Easing.cubic),
     });
   }, [focus, swap]);
+
+  const handleFocusIntent = useCallback((next: PrayerFocus) => {
+    focusIntentRef.current = next;
+    // Start the already-designed object exchange directly. Waiting for the
+    // settings context to persist and rerender the app was the visible pause.
+    swap.value = withTiming(next === 'icon' ? 1 : 0, {
+      duration: 560,
+      easing: Easing.inOut(Easing.cubic),
+    });
+  }, [swap]);
+
+  const commitFocus = useCallback((next: PrayerFocus) => {
+    updateSettings({ prayerFocus: next });
+  }, [updateSettings]);
 
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -394,36 +600,63 @@ export default function PersonalRuleTaskView({
   }, []);
 
   const handleReset = useCallback(() => {
+    animateIgnition(false);
     setRunning(false);
-    setElapsedSecs(0);
+    setHasElapsed(false);
+    setTimerResetToken(token => token + 1);
     if (Platform.OS !== 'web') {
       Haptics.selectionAsync().catch(() => {});
     }
+  }, [animateIgnition]);
+
+  const handleToggleRunning = useCallback(() => {
+    const next = !running;
+    // Same ignition timing/easing; it now begins before the React state commit
+    // instead of one effect later.
+    animateIgnition(next);
+    setRunning(next);
+  }, [animateIgnition, running]);
+
+  const handleFirstSecond = useCallback(() => {
+    setHasElapsed(true);
   }, []);
+
+  const closeAbout = useCallback(() => setShowAbout(false), []);
+  const closeExit = useCallback(() => setShowExit(false), []);
+  const closeFinish = useCallback(() => setShowFinish(false), []);
+  const closeRuleSelector = useCallback(() => setShowRuleSelector(false), []);
+
+  const confirmExit = useCallback(() => {
+    setShowExit(false);
+    setRunning(false);
+    onBack();
+  }, [onBack]);
 
   const handleFinish = useCallback(async () => {
     if (finishLockRef.current) return;
     finishLockRef.current = true;
+    animateIgnition(false);
     setRunning(false);
     if (Platform.OS !== 'web' && !isTask) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
     await onComplete?.();
     onBack();
-  }, [isTask, onBack, onComplete]);
+  }, [animateIgnition, isTask, onBack, onComplete]);
 
   const handleRulePress = useCallback((rule: PersonalPrayerRuleChoice) => {
     if (rule === selectedRule) {
       setShowRuleSelector(false);
       return;
     }
+    animateIgnition(false);
     setRunning(false);
     setShowRuleSelector(false);
     if (Platform.OS !== 'web') {
       Haptics.selectionAsync().catch(() => {});
     }
     void onRuleChange?.(rule);
-  }, [onRuleChange, selectedRule]);
+  }, [animateIgnition, onRuleChange, selectedRule]);
 
   const screenTitle = titleForPrayer(prayerType, title);
   const canSwitchRules = canSwitchPrayerRule(prayerType);
@@ -434,15 +667,34 @@ export default function PersonalRuleTaskView({
   const seatLift = seatHeight * SEAT.liftShare;
   const seatDrop = seatHeight * SEAT.dropShare;
 
-  // The reading warms into the hour's colour on the same curve the orbit
-  // kindles on, rather than flipping the instant `running` changes.
-  const readoutInk = useReadoutInk(ignition, C.text, theme.accent);
-
   // The button travels with it: ink at rest, the hour's colour running,
   // with a halo of its own light behind it while it does.
   const mainControlStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(ignition.value, [0, 1], [C.text, theme.accent]),
   }), [theme.accent]);
+  // And the plate under all three travels with them — see DECK_PLATE. Two
+  // colours on one existing animated pass; nothing here is laid out again.
+  const deckPlateStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(ignition.value, [0, 1], [DECK_PLATE.rest, DECK_PLATE.lit]),
+    borderColor: interpolateColor(ignition.value, [0, 1], [DECK_EDGE.rest, DECK_EDGE.lit]),
+  }));
+  /**
+   * The button's modelling, arriving with the prayer.
+   *
+   * ⚠ IT IS HALF-STRENGTH AT REST AND WHOLE WHILE RUNNING, because the
+   * same highlight does two different things depending on what is under
+   * it. On the hour's colour it models a struck button; on near-black it
+   * reads as gloss — a plastic dome, which is the one register this
+   * screen cannot afford. Half of it on ink is a lit edge; all of it on
+   * gold is a lit object.
+   *
+   * Layer opacity on one wrapper, so the sheen and the rim stay a single
+   * static gradient and a single static border underneath it — nothing
+   * here is redrawn per frame.
+   */
+  const mainGlossStyle = useAnimatedStyle(() => ({
+    opacity: 0.5 + ignition.value * 0.5,
+  }));
   // The two glyphs cross-fade in place and pass each other vertically.
   // ⚠ No scale on the swap: this is a small view, and scaling small views
   // on Android resamples their bitmaps.
@@ -571,7 +823,7 @@ export default function PersonalRuleTaskView({
       />
       {/* The room closing in — see PrayerRoom. It sits over the paper and
           under everything else, so nothing legible is ever shadowed. */}
-      <PrayerRoom ignition={ignition} />
+      <StablePrayerRoom ignition={ignition} />
 
       <ScreenTitleBar
         title={screenTitle}
@@ -619,16 +871,24 @@ export default function PersonalRuleTaskView({
             {/* One lamp, behind both. It does not belong to either object
                 — see PrayerLamp — because the whole point of the change
                 is that the light stays lit and the thing in it changes. */}
-            <PrayerLamp size={lampSize} light={ignition} swap={swap} />
+            <StablePrayerLamp size={lampSize} light={ignition} swap={swap} />
 
-            <Reanimated.View style={[s.stage, crossStyle]}>
-              <StandingCross height={panelHeight} />
+            <Reanimated.View
+              style={[s.stage, crossStyle]}
+              shouldRasterizeIOS
+              renderToHardwareTextureAndroid
+            >
+              <StableStandingCross height={panelHeight} />
             </Reanimated.View>
-            <Reanimated.View style={[s.stage, iconStyle]}>
+            <Reanimated.View
+              style={[s.stage, iconStyle]}
+              shouldRasterizeIOS
+              renderToHardwareTextureAndroid
+            >
               {/* The icon has no frame; it fades into the page at its own
                   edges, so it has to be told which page. GROUND[1] is the
                   screen's colour at the height the icon stands. */}
-              <PantocratorPanel height={panelHeight} ground={GROUND[1]} />
+              <StablePantocratorPanel height={panelHeight} ground={GROUND[1]} />
             </Reanimated.View>
           </Reanimated.View>
         )}
@@ -668,28 +928,23 @@ export default function PersonalRuleTaskView({
           pointerEvents={running ? 'none' : 'auto'}
         >
           <View style={s.switchWrap}>
-            <PrayerFocusSwitch
+            <StablePrayerFocusSwitch
               value={focus}
-              onChange={next => updateSettings({ prayerFocus: next })}
+              onChange={commitFocus}
+              onIntent={handleFocusIntent}
             />
           </View>
         </Reanimated.View>
 
         <Reanimated.View style={[s.seatItem, readingStyle]} pointerEvents="none">
-          <View style={s.readout}>
-            <Reanimated.Text style={[s.timeText, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-              {display.main}
-            </Reanimated.Text>
-            <Reanimated.Text style={[s.colonText, readoutInk, { fontSize: colonFont }]}>:</Reanimated.Text>
-            {/* ⚠ THE SECONDS ARE SET LIGHTER THAN THE MINUTES, not smaller.
-                A clock face distinguishes the figure you read from the one
-                that is merely running, and doing it by weight keeps the
-                reading on one baseline at one size — where doing it by size
-                would make the pair jump every time an hour appeared. */}
-            <Reanimated.Text style={[s.timeText, s.timeTail, readoutInk, { fontSize: timeFont, lineHeight: timeFont * 1.12 }]}>
-              {display.tail}
-            </Reanimated.Text>
-          </View>
+          <StablePrayerTimerReadout
+            accent={theme.accent}
+            compact={isCompactHeight}
+            ignition={ignition}
+            onFirstSecond={handleFirstSecond}
+            resetToken={timerResetToken}
+            running={running}
+          />
         </Reanimated.View>
       </View>
 
@@ -699,14 +954,30 @@ export default function PersonalRuleTaskView({
           under here — the reading, the About door — has moved up to where
           it belongs, which is what actually lowered these rather than
           shaving margins off them. */}
-      <View style={[s.deck, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-        <View style={[s.controlsDeck, isCompactHeight && s.controlsDeckCompact]}>
+      <View
+        style={[
+          s.deck,
+          {
+            paddingBottom:
+              Math.max(insets.bottom, 10)
+              + (isCompactHeight ? DECK_LIFT.compact : DECK_LIFT.normal),
+          },
+        ]}
+      >
+        <Reanimated.View
+          style={[s.controlsDeck, isCompactHeight && s.controlsDeckCompact, deckPlateStyle]}
+        >
+          {/* The pane of light along the shoulder that every lifted surface
+              in this app wears. Inset well clear of the pill's own curve,
+              so it reads as light lying on the plate rather than as a line
+              trying and failing to follow its edge. */}
+          <View pointerEvents="none" style={s.deckLit} />
           <TouchableOpacity
             onPress={handleReset}
             activeOpacity={0.78}
             style={[s.smallControl, isCompactHeight && s.smallControlCompact]}
           >
-            <RotateCcw s={isCompactHeight ? 18 : 20} c="rgba(28,25,23,0.38)" w={1.8} />
+            <RotateCcw s={isCompactHeight ? 18 : 20} c={SMALL_INK} w={1.8} />
             <Text style={s.smallLabel}>Reset</Text>
           </TouchableOpacity>
 
@@ -715,7 +986,7 @@ export default function PersonalRuleTaskView({
                 PrayerStartHalo. It is drawn behind the button and takes
                 no touches, so it can never steal the press it exists to
                 celebrate. */}
-            <PrayerStartHalo
+            <StablePrayerStartHalo
               size={isCompactHeight ? 58 : 66}
               tint={theme.accent}
               ignition={ignition}
@@ -723,7 +994,7 @@ export default function PersonalRuleTaskView({
               strike={strike}
             />
             <TouchableOpacity
-              onPress={() => setRunning(value => !value)}
+              onPress={handleToggleRunning}
               activeOpacity={0.88}
               accessibilityRole="button"
               accessibilityLabel={running ? 'Pause' : 'Start'}
@@ -737,6 +1008,34 @@ export default function PersonalRuleTaskView({
                   mainControlStyle,
                 ]}
               >
+                {/* ⚠ THE ONE FLAT SURFACE ON A SCREEN OF MODELLED ONES.
+                    Everything else here is struck: the plates run three
+                    stops on the diagonal, carry a pane of light and a lit
+                    edge. This was a disc of solid colour, and at rest —
+                    near-black on warm paper — it read as a hole in the
+                    deck rather than as a button standing in it.
+
+                    Light off the top, a foot in shadow, and a rim of light
+                    all round. All of it WHITE AND BLACK AT LOW ALPHA, never
+                    a tinted gradient, because the colour underneath it is
+                    animated: the same modelling has to sit correctly on ink
+                    at rest and on any of the three hours' colours running.
+                    And all of it static, so the strike, the breath and the
+                    colour keep the button to a single animated pass. */}
+                <Reanimated.View
+                  style={[StyleSheet.absoluteFill, mainGlossStyle]}
+                  pointerEvents="none"
+                >
+                  <LinearGradient
+                    colors={['rgba(255,255,255,0.24)', 'rgba(255,255,255,0)', 'rgba(0,0,0,0.12)']}
+                    locations={[0, 0.52, 1]}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={s.mainRim} />
+                </Reanimated.View>
+
                 {/* Both glyphs live on the button at once and pass each
                     other; a straight swap on React state was the one
                     thing on this screen that changed with no transition
@@ -756,105 +1055,48 @@ export default function PersonalRuleTaskView({
             activeOpacity={0.78}
             style={[s.smallControl, isCompactHeight && s.smallControlCompact]}
           >
-            <CheckSmall s={isCompactHeight ? 19 : 21} c="rgba(28,25,23,0.38)" w={1.8} />
+            <CheckSmall s={isCompactHeight ? 19 : 21} c={SMALL_INK} w={1.8} />
             <Text style={s.smallLabel}>Finish</Text>
           </TouchableOpacity>
-        </View>
+        </Reanimated.View>
       </View>
 
-      <PantocratorAboutSheet visible={showAbout} onClose={() => setShowAbout(false)} />
+      <StablePantocratorAboutSheet visible={showAbout} onClose={closeAbout} />
 
-      <ConfirmModal
+      <StableConfirmModal
         visible={showExit}
-        icon={<ArrowLeft s={22} c={C.red} />}
+        icon={EXIT_CONFIRM_ICON}
         iconBg="#FEF2F2"
         title="Exit My Rule?"
         body="Your prayer timer progress will be lost."
         cancelLabel="STAY"
         confirmLabel="EXIT"
-        onCancel={() => setShowExit(false)}
-        onConfirm={() => {
-          setShowExit(false);
-          setRunning(false);
-          onBack();
-        }}
+        onCancel={closeExit}
+        onConfirm={confirmExit}
       />
 
-      <ConfirmModal
+      <StableConfirmModal
         visible={showFinish}
-        icon={<CheckSmall s={22} c={C.gold} w={2.5} />}
+        icon={FINISH_CONFIRM_ICON}
         iconBg="#FFF8E0"
         title="Mark as Complete?"
         body="This will mark the prayer task as done for today."
         cancelLabel="CANCEL"
         confirmLabel="COMPLETE"
         confirmColor={C.gold}
-        onCancel={() => setShowFinish(false)}
+        onCancel={closeFinish}
         onConfirm={handleFinish}
       />
 
-      <Modal
-        transparent
-        visible={canSwitchRules && showRuleSelector}
-        animationType="fade"
-        onRequestClose={() => setShowRuleSelector(false)}
-      >
-        <View style={s.selectorOverlay}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setShowRuleSelector(false)} />
-          <View style={[s.selectorSheet, { paddingBottom: insets.bottom + 24 }]}>
-            <View style={s.selectorHandle} />
-            <View style={s.selectorHeader}>
-              <Text style={s.selectorTitle}>Prayer Rule</Text>
-              <TouchableOpacity
-                onPress={() => setShowRuleSelector(false)}
-                style={s.selectorClose}
-                activeOpacity={0.76}
-              >
-                <X s={17} c="#78716C" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={s.selectorList}>
-              {RULE_OPTIONS.map(rule => {
-                const active = rule.id === selectedRule;
-                const showOrthodoxBadge = isOrthodoxRule(rule.id);
-
-                return (
-                  <TouchableOpacity
-                    key={rule.id}
-                    onPress={() => handleRulePress(rule.id)}
-                    activeOpacity={0.78}
-                    style={[
-                      s.selectorOption,
-                      active
-                        ? { backgroundColor: theme.bg, borderColor: theme.border }
-                        : s.selectorOptionInactive,
-                    ]}
-                  >
-                    <View style={s.selectorCopy}>
-                      <Text style={[s.selectorOptionTitle, { color: active ? theme.accent : C.text }]}>
-                        {rule.label}
-                      </Text>
-                      <Text style={s.selectorOptionSub}>{RULE_DESCRIPTIONS[rule.id]}</Text>
-                    </View>
-                    {(showOrthodoxBadge || active) && (
-                      <View style={s.selectorOptionTrailing}>
-                        {showOrthodoxBadge && (
-                          <View style={s.selectorOrthodoxBadge}>
-                            <OrthodoxCross s={11} c={theme.accent} w={1.35} />
-                            <Text style={[s.selectorOrthodoxBadgeText, { color: theme.accent }]}>ORTH.</Text>
-                          </View>
-                        )}
-                        {active && <CheckSmall s={18} c={theme.accent} />}
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <StablePrayerRuleSelector
+        bottomInset={insets.bottom}
+        enabled={canSwitchRules}
+        onClose={closeRuleSelector}
+        onRulePress={handleRulePress}
+        selectedRule={selectedRule}
+        theme={theme}
+        visible={showRuleSelector}
+      />
     </View>
   );
 }
@@ -982,19 +1224,33 @@ const s = StyleSheet.create({
     // already there — 31 points of nothing between the reading and the
     // controls, on the screen with the least to spare.
     marginTop: 0,
-    backgroundColor: '#FFFFFF',
+    // The rest colour. It is animated from here to warm paper while the
+    // prayer runs — see DECK_PLATE — and the same for the hairline.
+    backgroundColor: DECK_PLATE.rest,
     padding: 9,
     paddingHorizontal: 13,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(28,25,23,0.06)',
-    shadowColor: '#000',
+    borderColor: DECK_EDGE.rest,
+    // ⚠ WARM, NOT BLACK. This screen's whole shadow language is the
+    // room's: a neutral shadow on warm paper reads as the phone dimming,
+    // which is a fault rather than a mood. A warm shadow reads lighter
+    // than a black one at the same alpha, so it is given a little more.
+    shadowColor: '#4A3312',
     shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.1,
     shadowRadius: 26,
     elevation: 9,
   },
   controlsDeckCompact: { gap: 15, marginTop: 0, padding: 7, paddingHorizontal: 11 },
+  deckLit: {
+    position: 'absolute',
+    top: 1,
+    left: 34,
+    right: 34,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
   mainWrap: { alignItems: 'center', justifyContent: 'center' },
   mainHit: { width: 66, height: 66, borderRadius: 33 },
   mainHitCompact: { width: 58, height: 58, borderRadius: 29 },
@@ -1011,10 +1267,23 @@ const s = StyleSheet.create({
     elevation: 10,
   },
   mainControlCompact: { width: 58, height: 58, borderRadius: 29 },
+  // The rim of light round the button's own edge. `borderRadius: 999`
+  // rather than the button's exact 33, so it follows whichever size the
+  // button is on this phone without a second compact variant to keep in
+  // step with it.
+  mainRim: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
   mainGlyph: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   smallControl: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   smallControlCompact: { width: 46, height: 46, borderRadius: 23 },
-  smallLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(28,25,23,0.32)', marginTop: 2, textTransform: 'uppercase' },
+  // ⚠ WARM INK, NOT NEUTRAL. Stone grey is what these were, and it is the
+  // one colour on this page that belongs to no light in the room — it
+  // reads as disabled at rest and as forgotten while the prayer runs.
+  smallLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(74,51,18,0.4)', marginTop: 2, textTransform: 'uppercase' },
 
   about: {
     marginTop: 8,
