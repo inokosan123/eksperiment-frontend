@@ -142,10 +142,31 @@ const GROUND = ['#FFFDF9', '#FDF8EF', '#FAF3E6'] as const;
  * exactly 1, the image's own resolution. Drawn small and grown instead,
  * the state you actually pray in would be the blurred one.
  *
- * 0.88 rather than something more dramatic: this is a prayer beginning,
- * not a card flipping. The change has to be felt more than watched.
+ * ⚠ 0.84 RATHER THAN THE 0.88 IT STOOD AT, which is the only way this
+ * object can be made to GROW MORE without ever being drawn above its own
+ * resolution. The running state has to land on exactly 1 — it is the one
+ * you pray in, and it must be the sharp one — so a bigger arrival is
+ * bought by starting smaller, never by finishing larger.
+ *
+ * Still not dramatic: this is a prayer beginning, not a card flipping.
+ * The change has to be felt more than watched.
  */
-const REST_SCALE = 0.88;
+const REST_SCALE = 0.84;
+
+/**
+ * How far the object SINKS as the prayer begins.
+ *
+ * ⚠ IT MOVES INTO ROOM THAT HAS JUST BEEN VACATED, which is the whole
+ * justification. Starting a prayer empties the screen underneath the
+ * object — the About door goes, the switch steps back — and an object
+ * that grows while everything below it withdraws should settle into that
+ * space rather than hold its mark and let a gap open under it.
+ *
+ * It is also what lets the object be BIGGER while running than the
+ * resting layout could hold: the growth goes downward into the freed
+ * row instead of upward into the epigraph.
+ */
+const OBJECT_DROP = 18;
 
 /**
  * How small the reading stands when the prayer is paused.
@@ -289,6 +310,7 @@ function formatElapsed(totalSecs: number) {
  */
 function PrayerTimerReadout({
   accent,
+  bloom,
   compact,
   ignition,
   onFirstSecond,
@@ -296,6 +318,7 @@ function PrayerTimerReadout({
   running,
 }: {
   accent: string;
+  bloom: SharedValue<number>;
   compact: boolean;
   ignition: SharedValue<number>;
   onFirstSecond: () => void;
@@ -343,6 +366,7 @@ function PrayerTimerReadout({
   return (
     <PrayerReadout
       accent={accent}
+      bloom={bloom}
       ignition={ignition}
       main={display.main}
       tail={display.tail}
@@ -471,6 +495,10 @@ export default function PersonalRuleTaskView({
   const focusIntentRef = useRef<PrayerFocus>(focus);
   // The slow breath in the button's light.
   const breath = useSharedValue(0);
+  // A minute turning over. ⚠ Owned here rather than inside the reading,
+  // because the light under the reading swells with it and that light is
+  // the reading's SIBLING — see PrayerReadout. One value, two readers.
+  const bloom = useSharedValue(0);
   /**
    * THE THREE PHASES, IN TWO VALUES.
    *
@@ -508,12 +536,29 @@ export default function PersonalRuleTaskView({
    * growing into the image's native resolution.
    *
    * The cross is 19% wider than the icon and they share this seat, so the
-   * width budget is figured from the wider of the two. 380 is where the
-   * height stops mattering: past it the controls look like they fell off
-   * the bottom of a tall phone.
+   * width budget is figured from the wider of the two.
+   *
+   * ⚠ THE HEIGHT BUDGET IS THE ROOM PLUS THE DROP, NOT THE ROOM. The
+   * object is centred in its box and then SINKS by OBJECT_DROP while the
+   * prayer runs, so an object exactly `2 × OBJECT_DROP` taller than the
+   * box still has its head inside it — the whole of the overhang has gone
+   * down into the row the About door just vacated, and none of it up into
+   * the epigraph. That is what buys the extra size, and the arithmetic is
+   * why the drop and the budget must be changed together.
+   *
+   * At rest the same object is at REST_SCALE, so what actually has to fit
+   * the resting layout is 0.84 of this — which on every phone this app
+   * runs on is comfortably inside the box.
+   *
+   * 412 is where the height stops mattering: past it the controls look
+   * like they fell off the bottom of a tall phone.
    */
   const panelHeight = iconRoom.height > 0
-    ? Math.max(150, Math.min(iconRoom.height - 8, (iconRoom.width * 0.66) / CROSS_ASPECT, 380))
+    ? Math.max(150, Math.min(
+      iconRoom.height + OBJECT_DROP * 2 - 8,
+      (iconRoom.width * 0.66) / CROSS_ASPECT,
+      412,
+    ))
     : 0;
   // The pool reaches well outside whatever is standing in it; a glow that
   // stops at the object's edge is a rectangle of light, which is not what
@@ -712,7 +757,25 @@ export default function PersonalRuleTaskView({
   // colours on one existing animated pass; nothing here is laid out again.
   const deckPlateStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(ignition.value, [0, 1], [DECK_PLATE.rest, DECK_PLATE.lit]),
-    borderColor: interpolateColor(ignition.value, [0, 1], [DECK_EDGE.rest, DECK_EDGE.lit]),
+    /**
+     * ⚠ AND THE EDGE BREATHES ONCE THE PRAYER IS RUNNING.
+     *
+     * Three things on this screen were lit and alive — the lamp behind
+     * the object, the pool under the reading, the halo round the button —
+     * and all three breathe on one shared value. The deck was the fourth
+     * lit thing and the only still one, so the bottom of the screen read
+     * as a photograph of a plate under three things that were breathing.
+     *
+     * ⚠ ON THE HAIRLINE ONLY, and only between two golds. Breathing the
+     * plate's fill would be a surface changing brightness, which at this
+     * size reads as a flicker; a lit edge gaining and losing a little
+     * gold is a highlight moving on metal.
+     */
+    borderColor: interpolateColor(
+      ignition.value * (0.72 + breath.value * 0.28),
+      [0, 1],
+      [DECK_EDGE.rest, DECK_EDGE.lit],
+    ),
   }));
   /**
    * The button's modelling, arriving with the prayer.
@@ -778,37 +841,43 @@ export default function PersonalRuleTaskView({
    * ⚠ IT WAS SITTING AT THE BOTTOM OF THE ROOM, NOT UNDER THE ICON, and
    * on a tall phone those are sixty points apart. The object is CENTRED
    * in a box that flexes, so whenever the object is smaller than its box
-   * — which is whenever the box is taller than the 380-point ceiling —
    * all the slack gathers under its foot, and the door sat below the
    * slack. It read as a control belonging to the page instead of as the
    * icon's own footnote.
    *
    * So it is lifted by exactly the slack it is asked to cross, less the
-   * gap it should keep. Measured from the object, so it holds at every
-   * size on every phone, and clamped at zero: on a screen with no slack
-   * the door simply stays where the row puts it.
+   * gap it should keep. Measured from the object AT REST, which is the
+   * only state it is ever seen in, so it holds at every size on every
+   * phone; clamped at zero for the phones with no slack to give.
    *
-   * ⚠ AND IT FOLLOWS THE OBJECT DOWN AS THE OBJECT GROWS. The icon is at
-   * REST_SCALE before the prayer begins and lands on 1 while it runs, so
-   * its foot travels; a door hung under the resting foot would be
-   * crowded by the running one. It gives back exactly what the object
-   * takes, on the same ignition, and the gap between them never changes.
+   * ⚠ AND IT LEAVES WHEN THE PRAYER BEGINS. It is a door to seven pages
+   * of history and craft — a thing to read before or after praying and
+   * never during. Every other invitation on this screen withdraws at that
+   * moment; the one that stayed was the one offering the longest detour.
+   *
+   * Gone by 45% of the ignition: what withdraws should be clear before
+   * what replaces it settles, or the two read as a crossfade. It is also
+   * why the door does not follow the object down as the object sinks and
+   * grows — it is no longer on the screen by the time that finishes.
    */
   const aboutLift = Math.max(
     0,
     Math.round((iconRoom.height - panelHeight * REST_SCALE) / 2) - ABOUT_GAP,
   );
-  // ⚠ AND IT NEVER TRAVELS BELOW WHERE ITS OWN ROW PUTS IT. On a short
-  // phone the object fills its box to within a few points, so there is
-  // no slack, no lift — and a door still following the object down would
-  // be leaving its reserved row and landing in the seat. It gives back
-  // what it was given and not a point more.
-  const aboutFollow = Math.min((panelHeight * (1 - REST_SCALE)) / 2, aboutLift);
 
-  const aboutStyle = useAnimatedStyle(() => ({
-    opacity: Math.max(0, (swap.value - 0.45) / 0.55),
-    transform: [{ translateY: -aboutLift + ignition.value * aboutFollow }],
-  }), [aboutFollow, aboutLift]);
+  const aboutStyle = useAnimatedStyle(() => {
+    const out = Math.min(1, ignition.value / 0.45);
+    return {
+      opacity: Math.max(0, (swap.value - 0.45) / 0.55) * (1 - out),
+      transform: [
+        { translateY: -aboutLift },
+        // It steps back as it goes, exactly as the switch does — fading
+        // alone reads as switching off, where a shade smaller reads as
+        // withdrawing.
+        { scale: 1 - out * 0.06 },
+      ],
+    };
+  }, [aboutLift]);
 
   /* ── What the start of a prayer does to the screen ──────────────────
    *
@@ -825,7 +894,16 @@ export default function PersonalRuleTaskView({
   // resolution. Growing from a smaller render would have meant praying in
   // front of an upscaled one.
   const objectStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: REST_SCALE + (1 - REST_SCALE) * ignition.value }],
+    transform: [
+      // ⚠ THE SINK COMES BEFORE THE SCALE. Transforms compose in order,
+      // so a translate written after a scale is a translate MEASURED IN
+      // THE SCALED SPACE — the drop would arrive 16% shorter at rest than
+      // running and the object would appear to travel on its own as the
+      // scale eased. Written first, the eighteen points are eighteen
+      // points throughout.
+      { translateY: OBJECT_DROP * ignition.value },
+      { scale: REST_SCALE + (1 - REST_SCALE) * ignition.value },
+    ],
   }));
 
   /* ── THE SWITCH AND THE READING SHARE ONE SEAT ──────────────────────
@@ -978,7 +1056,10 @@ export default function PersonalRuleTaskView({
           whether the cross or the icon is standing, so the exchange
           between them moves nothing. */}
       <View style={s.aboutRow}>
-        <Reanimated.View style={aboutStyle} pointerEvents={focus === 'icon' ? 'auto' : 'none'}>
+        <Reanimated.View
+          style={aboutStyle}
+          pointerEvents={focus === 'icon' && !running ? 'auto' : 'none'}
+        >
           <TouchableOpacity
             onPress={() => setShowAbout(true)}
             activeOpacity={0.76}
@@ -986,8 +1067,8 @@ export default function PersonalRuleTaskView({
             style={s.about}
             accessibilityRole="button"
             accessibilityLabel="About the icon"
-            accessibilityElementsHidden={focus !== 'icon'}
-            importantForAccessibility={focus === 'icon' ? 'auto' : 'no-hide-descendants'}
+            accessibilityElementsHidden={focus !== 'icon' || running}
+            importantForAccessibility={focus === 'icon' && !running ? 'auto' : 'no-hide-descendants'}
           >
             {/* Struck from the app's own plate material — three stops on
                 the diagonal from near-white at the shoulder to warm at the
@@ -1027,6 +1108,7 @@ export default function PersonalRuleTaskView({
             resample on Android for the whole of every transition. It is
             invisible at rest, so it never has to be taken out. */}
         <PrayerReadoutLight
+          bloom={bloom}
           breath={breath}
           ignition={ignition}
           tint={theme.accent}
@@ -1049,6 +1131,7 @@ export default function PersonalRuleTaskView({
         <Reanimated.View style={[s.seatItem, readingStyle]} pointerEvents="none">
           <StablePrayerTimerReadout
             accent={theme.accent}
+            bloom={bloom}
             compact={isCompactHeight}
             ignition={ignition}
             onFirstSecond={handleFirstSecond}

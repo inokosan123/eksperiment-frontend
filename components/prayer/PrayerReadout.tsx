@@ -248,19 +248,34 @@ function DigitRun({
  * button — one breath in the room, not two.
  */
 export function PrayerReadoutLight({
+  bloom,
   breath,
   ignition,
   tint,
   width,
 }: {
+  /** 0 → 1 → 0 each time a minute turns over. */
+  bloom?: SharedValue<number>;
   breath: SharedValue<number>;
   ignition: SharedValue<number>;
   tint: string;
   width: number;
 }) {
   const height = Math.round(width * 0.46);
+  /**
+   * ⚠ THE MINUTE IS ACKNOWLEDGED BY THE WHOLE OF THE BOTTOM, not by the
+   * figures alone. The minutes warming while the light under them held
+   * perfectly steady read as type changing colour — a property of the
+   * text. The light swelling with them reads as something HAPPENING in
+   * the room, which is what a minute of prayer is.
+   *
+   * A third, and on the digits' own curve, so the two are one event
+   * rather than two that agree.
+   */
   const style = useAnimatedStyle(() => ({
-    opacity: ignition.value * (0.55 + breath.value * 0.45),
+    opacity: ignition.value
+      * (0.55 + breath.value * 0.45)
+      * (1 + (bloom?.value ?? 0) * 0.34),
   }));
 
   return (
@@ -290,12 +305,20 @@ export function PrayerReadoutLight({
 
 export default function PrayerReadout({
   accent,
+  bloom,
   ignition,
   main,
   tail,
   timeFont,
 }: {
   accent: string;
+  /**
+   * ⚠ OWNED BY THE SCREEN, NOT BY THIS COMPONENT, because the light under
+   * the reading blooms with it and that light is a SIBLING of the reading
+   * rather than its child — the seat scales the reading and a vector
+   * inside it would resample. One value, driven here, read in both places.
+   */
+  bloom: SharedValue<number>;
   ignition: SharedValue<number>;
   /** The minutes — or hours and minutes once there are hours. */
   main: string;
@@ -304,7 +327,6 @@ export default function PrayerReadout({
   timeFont: number;
 }) {
   const reduceMotion = useReducedMotion();
-  const bloom = useSharedValue(0);
   const landedRef = useRef(main);
   const lit = useMemo(() => litTone(accent), [accent]);
 
