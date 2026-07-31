@@ -34,7 +34,7 @@ import { useIgnition } from '@/components/prayer/prayerMotion';
 import PrayerRoom from '@/components/prayer/PrayerRoom';
 import PrayerStartHalo from '@/components/prayer/PrayerStartHalo';
 import { useAppSettings } from '@/components/settings/SettingsContext';
-import { ArrowLeft, CheckSmall, ChevronDown, OpenBook, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
+import { ArrowLeft, CheckSmall, ChevronDown, ChevronRight, OpenBook, OrthodoxCross, Pause, Play, RotateCcw, X } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -209,6 +209,13 @@ const DECK_EDGE = { rest: 'rgba(28,25,23,0.06)', lit: 'rgba(197,160,89,0.34)' } 
 
 /** Reset and Finish, in the same warm ink their labels are set in. */
 const SMALL_INK = 'rgba(74,51,18,0.42)';
+
+/** The About door's own ink — a shade deeper than the app's gold, so a
+ *  serif at 14.5 on a warm plate reads without being shouted. */
+const ABOUT_INK = '#7A5A22';
+
+/** How far the About door keeps below the foot of the icon it belongs to. */
+const ABOUT_GAP = 18;
 
 export type PersonalPrayerRuleChoice = 'personal' | 'standard' | 'short' | 'seraphim';
 
@@ -766,9 +773,42 @@ export default function PersonalRuleTaskView({
   // cross — but it stays MOUNTED either way, so the deck below never
   // changes height and the only thing that moves during the exchange is
   // the object itself.
+  /* ── The About door, hung on the icon rather than on the page ───────
+   *
+   * ⚠ IT WAS SITTING AT THE BOTTOM OF THE ROOM, NOT UNDER THE ICON, and
+   * on a tall phone those are sixty points apart. The object is CENTRED
+   * in a box that flexes, so whenever the object is smaller than its box
+   * — which is whenever the box is taller than the 380-point ceiling —
+   * all the slack gathers under its foot, and the door sat below the
+   * slack. It read as a control belonging to the page instead of as the
+   * icon's own footnote.
+   *
+   * So it is lifted by exactly the slack it is asked to cross, less the
+   * gap it should keep. Measured from the object, so it holds at every
+   * size on every phone, and clamped at zero: on a screen with no slack
+   * the door simply stays where the row puts it.
+   *
+   * ⚠ AND IT FOLLOWS THE OBJECT DOWN AS THE OBJECT GROWS. The icon is at
+   * REST_SCALE before the prayer begins and lands on 1 while it runs, so
+   * its foot travels; a door hung under the resting foot would be
+   * crowded by the running one. It gives back exactly what the object
+   * takes, on the same ignition, and the gap between them never changes.
+   */
+  const aboutLift = Math.max(
+    0,
+    Math.round((iconRoom.height - panelHeight * REST_SCALE) / 2) - ABOUT_GAP,
+  );
+  // ⚠ AND IT NEVER TRAVELS BELOW WHERE ITS OWN ROW PUTS IT. On a short
+  // phone the object fills its box to within a few points, so there is
+  // no slack, no lift — and a door still following the object down would
+  // be leaving its reserved row and landing in the seat. It gives back
+  // what it was given and not a point more.
+  const aboutFollow = Math.min((panelHeight * (1 - REST_SCALE)) / 2, aboutLift);
+
   const aboutStyle = useAnimatedStyle(() => ({
     opacity: Math.max(0, (swap.value - 0.45) / 0.55),
-  }));
+    transform: [{ translateY: -aboutLift + ignition.value * aboutFollow }],
+  }), [aboutFollow, aboutLift]);
 
   /* ── What the start of a prayer does to the screen ──────────────────
    *
@@ -949,8 +989,29 @@ export default function PersonalRuleTaskView({
             accessibilityElementsHidden={focus !== 'icon'}
             importantForAccessibility={focus === 'icon' ? 'auto' : 'no-hide-descendants'}
           >
-            <OpenBook s={14} c={C.goldDark} w={1.6} />
+            {/* Struck from the app's own plate material — three stops on
+                the diagonal from near-white at the shoulder to warm at the
+                foot, under a lit hairline. It was a flat white pill at 60%
+                over warm paper, which is the one surface finish this app
+                does not use anywhere. */}
+            <LinearGradient
+              colors={['#FFFDF8', '#FBF3E2', '#F3E4C6']}
+              locations={[0, 0.52, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            <View pointerEvents="none" style={s.aboutLit} />
+
+            <OpenBook s={14} c={ABOUT_INK} w={1.6} />
             <Text style={s.aboutText}>About the icon</Text>
+            {/* ⚠ It opens a seven-page sheet, and nothing about a label
+                said so. The app's own arrow orb, at the size a footnote
+                can carry. */}
+            <View style={s.aboutChevron}>
+              <ChevronRight s={11} c={ABOUT_INK} w={2.4} />
+            </View>
           </TouchableOpacity>
         </Reanimated.View>
       </View>
@@ -1307,21 +1368,48 @@ const s = StyleSheet.create({
   smallLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 0.8, color: 'rgba(74,51,18,0.4)', marginTop: 2, textTransform: 'uppercase' },
 
   about: {
-    marginTop: 8,
-    minHeight: 38,
+    position: 'relative',
+    // The plate is a gradient and the chevron's seat sits on the curve, so
+    // both have to be clipped to the radius.
+    overflow: 'hidden',
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 15,
-    borderRadius: 19,
+    gap: 9,
+    // Tighter on the chevron side: the orb carries its own optical margin
+    // and 14 on both sides left it adrift from the edge it points at.
+    paddingLeft: 14,
+    paddingRight: 8,
+    borderRadius: 18,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.34)',
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    borderColor: 'rgba(197,160,89,0.44)',
+    shadowColor: '#4A3312',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.13,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  aboutLit: {
+    position: 'absolute',
+    top: 1,
+    left: 22,
+    right: 22,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.95)',
   },
   aboutText: {
-    fontFamily: F.serif,
+    fontFamily: F.serifMedium,
     fontSize: 14.5,
-    color: C.goldDark,
+    color: ABOUT_INK,
+  },
+  aboutChevron: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.18)',
   },
 
   selectorOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(28,25,23,0.24)' },
