@@ -13,6 +13,7 @@ import Reanimated, {
   FadeInDown,
   FadeOutUp,
   LinearTransition,
+  interpolateColor,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -62,6 +63,11 @@ type NoteTone = {
   spine: string;
   leader: string;
   motif: 'rays' | 'counter';
+  // The ruling of the chapter table. It is NOT frameInner: a double frame is
+  // drawn twice a few points apart and can afford to whisper, but a cell edge
+  // is the only line a 44pt folio gets, and at frameInner's weight the table
+  // read as numbers floating on a tinted page rather than as ruled paper.
+  cellBorder: string;
   pill: string;
   pillBorder: string;
   pillText: string;
@@ -81,6 +87,7 @@ const NOTE_TONES: Record<BibleTab, NoteTone> = {
     spine: 'rgba(94,123,85,0.45)',
     leader: '#5E7B55',
     motif: 'rays',
+    cellBorder: 'rgba(94,123,85,0.22)',
     pill: '#F3F9EE',
     pillBorder: 'rgba(94,123,85,0.34)',
     pillText: '#4C6647',
@@ -98,6 +105,7 @@ const NOTE_TONES: Record<BibleTab, NoteTone> = {
     spine: 'rgba(197,160,89,0.5)',
     leader: '#C5A059',
     motif: 'rays',
+    cellBorder: 'rgba(197,160,89,0.26)',
     pill: '#FFF8E7',
     pillBorder: 'rgba(197,160,89,0.38)',
     pillText: '#8B6B2F',
@@ -117,6 +125,7 @@ const NOTE_TONES: Record<BibleTab, NoteTone> = {
     spine: 'rgba(138,106,69,0.45)',
     leader: '#8A6A45',
     motif: 'counter',
+    cellBorder: 'rgba(138,106,69,0.24)',
     pill: '#F7EFE3',
     pillBorder: 'rgba(138,106,69,0.36)',
     pillText: '#6E5334',
@@ -137,6 +146,16 @@ const CHAPTER_LEAF_PADDING = 4;
 const CHAPTER_LEAF_INSET = 2 + CHAPTER_LEAF_PADDING * 2;
 const BIBLE_NOTES_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 const bibleNotesLayout = LinearTransition.duration(178).easing(BIBLE_NOTES_EASE);
+// Opening runs a shade slower than closing: the room's light has to come up
+// under the cover before the leaf below has finished unfolding, while closing
+// should get out of the way at the speed the leaf leaves.
+const BOOK_WAKE_IN = 208;
+const BOOK_WAKE_OUT = 146;
+const BOOK_INK = '#2D2520';
+const BOOK_INK_BLANK = '#BDB8AF';
+const BOOK_SPINE_BLANK = 'rgba(198,193,183,0.5)';
+const BOOK_CHEVRON_BLANK = '#C7C2B8';
+const BOOK_SEAT_BLANK = 'rgba(214,209,199,0.5)';
 
 type BibleTab = 'nt' | 'psalms' | 'ot';
 type BibleBook = {
@@ -981,6 +1000,57 @@ function NotedBookRow({
   const [leaderWidth, setLeaderWidth] = useState(0);
   const written = count > 0;
 
+  // THE BOOK WAKES WHEN IT IS OPENED.
+  //
+  // A book with nothing written in it is a blank line — grey ground, grey
+  // binding, grey ink — and that is right while it is closed. But pressing it
+  // opens a green leaf directly underneath, and the cover used to stay grey
+  // above it: a grey title bolted onto a green page, with the only change a
+  // border colour that snapped in one frame.
+  //
+  // So the room's light comes up in the cover as it opens — ground, binding,
+  // ink and chevron seat together, over ~200ms on the UI thread. It stops
+  // short of the ruled page, the double frame and the leader out to a folio:
+  // those say WRITTEN IN, and an empty book that has merely been opened has
+  // not earned them. Open-and-empty is a page turned to; written is a page
+  // written on.
+  const openness = useSharedValue(expanded ? 1 : 0);
+  useEffect(() => {
+    openness.value = withTiming(expanded ? 1 : 0, {
+      duration: expanded ? BOOK_WAKE_IN : BOOK_WAKE_OUT,
+      easing: BIBLE_NOTES_EASE,
+    });
+  }, [expanded, openness]);
+
+  const restSpine = written ? tone.spine : BOOK_SPINE_BLANK;
+  const restInk = written ? BOOK_INK : BOOK_INK_BLANK;
+  // A written book's name is ink and stays ink. A blank one lifts to the
+  // room's own dark tone rather than to black — it is lit by the room, not
+  // written in.
+  const openInk = written ? BOOK_INK : tone.pillText;
+  const restSeat = written ? tone.pillBorder : BOOK_SEAT_BLANK;
+
+  // Painted as a layer rather than onto the touchable's own style, so the
+  // press-opacity TouchableOpacity drives natively is never fighting a
+  // Reanimated write on the same view.
+  const wakeStyle = useAnimatedStyle(() => ({ opacity: openness.value }));
+  const spineStyle = useAnimatedStyle(
+    () => ({ backgroundColor: interpolateColor(openness.value, [0, 1], [restSpine, tone.spine]) }),
+    [restSpine, tone.spine],
+  );
+  const nameStyle = useAnimatedStyle(
+    () => ({ color: interpolateColor(openness.value, [0, 1], [restInk, openInk]) }),
+    [restInk, openInk],
+  );
+  const seatStyle = useAnimatedStyle(
+    () => ({
+      borderColor: interpolateColor(openness.value, [0, 1], [restSeat, tone.pillBorder]),
+      transform: [{ rotate: `${openness.value * 180}deg` }],
+    }),
+    [restSeat, tone.pillBorder],
+  );
+  const chevronLitStyle = useAnimatedStyle(() => ({ opacity: openness.value }));
+
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -990,20 +1060,29 @@ function NotedBookRow({
         written
           ? [s.bookCardWritten, { backgroundColor: tone.ground, borderColor: tone.border }]
           : s.bookCardBlank,
-        expanded && { borderColor: tone.pillBorder },
       ]}
     >
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          s.bookWake,
+          {
+            // A written book already stands on the room's ground; opening it
+            // only tightens its hairline, so this layer carries the ring alone.
+            backgroundColor: written ? 'transparent' : tone.ground,
+            borderColor: tone.pillBorder,
+          },
+          wakeStyle,
+        ]}
+      />
       {written && <NoteMotif tone={tone} />}
       {written && <View pointerEvents="none" style={[s.bookFrame, { borderColor: tone.frame }]} />}
       {written && <View pointerEvents="none" style={[s.bookFrameInner, { borderColor: tone.frameInner }]} />}
       <View pointerEvents="none" style={s.bookLit} />
-      <View
-        pointerEvents="none"
-        style={[s.bookSpine, { backgroundColor: written ? tone.spine : 'rgba(198,193,183,0.5)' }]}
-      />
+      <Reanimated.View pointerEvents="none" style={[s.bookSpine, spineStyle]} />
       <View style={s.bookCopy}>
         <View style={s.bookLine}>
-          <Text style={[s.bookName, !written && s.bookNameMuted]} numberOfLines={1}>{name}</Text>
+          <Reanimated.Text style={[s.bookName, nameStyle]} numberOfLines={1}>{name}</Reanimated.Text>
           {written && (
             <>
               <View
@@ -1031,15 +1110,19 @@ function NotedBookRow({
           )}
         </View>
       </View>
-      <View
-        style={[
-          s.chevronWrap,
-          written && { borderColor: tone.pillBorder },
-          expanded && s.chevronOpen,
-        ]}
-      >
-        <ChevronDown s={13} c={written ? tone.soft : '#C7C2B8'} />
-      </View>
+      {/* The seat turns instead of flipping: 180° over the same curve the
+          ground comes up on, so cover and chevron open as one movement. */}
+      <Reanimated.View style={[s.chevronWrap, seatStyle]}>
+        <ChevronDown s={13} c={written ? tone.soft : BOOK_CHEVRON_BLANK} />
+        {!written && (
+          // The glyph cannot take an animated colour through the icon's `c`
+          // prop, so the lit chevron is a second copy crossfading over the
+          // grey one. Written books are already at tone.soft and need none.
+          <Reanimated.View pointerEvents="none" style={[s.chevronGlyph, chevronLitStyle]}>
+            <ChevronDown s={13} c={tone.soft} />
+          </Reanimated.View>
+        )}
+      </Reanimated.View>
     </TouchableOpacity>
   );
 }
@@ -1059,7 +1142,7 @@ function ChapterCell({
       activeOpacity={0.82}
       style={[
         s.chapterCell,
-        { width, borderColor: tone.frameInner },
+        { width, borderColor: tone.cellBorder },
         hasNote && [s.chapterCellActive, {
           borderColor: tone.pillBorder,
           shadowColor: tone.accent,
@@ -1383,7 +1466,19 @@ const s = StyleSheet.create({
     borderColor: 'rgba(226,222,213,0.7)',
     backgroundColor: 'rgba(252,251,248,0.72)',
   },
-  bookCardExpanded: { borderColor: 'rgba(94,123,85,0.4)' },
+  // The room's light coming up under an opened cover. It sits at inset 0 with
+  // its own hairline ring, which lands on top of the card's border rather than
+  // outside it — the card clips its overflow, so a negative inset would be cut.
+  bookWake: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+  },
   noteMotif: { position: 'absolute', top: 0, right: 0, bottom: 0, overflow: 'hidden' },
   bookFrame: {
     position: 'absolute',
@@ -1422,11 +1517,11 @@ const s = StyleSheet.create({
     borderTopRightRadius: 2,
     borderBottomRightRadius: 2,
   },
-  bookSpineBlank: { backgroundColor: 'rgba(198,193,183,0.5)' },
   bookCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
   bookLine: { flexDirection: 'row', alignItems: 'baseline', gap: 9, minWidth: 0 },
-  bookName: { fontFamily: F.serif, fontSize: 17.5, lineHeight: 21, letterSpacing: 0.25, color: '#2D2520', flexShrink: 1 },
-  bookNameMuted: { color: '#BDB8AF' },
+  // Colour is written by the wake animation (BOOK_INK ↔ the room's ink), so it
+  // is deliberately absent here — a static colour would be overwritten anyway.
+  bookName: { fontFamily: F.serif, fontSize: 17.5, lineHeight: 21, letterSpacing: 0.25, flexShrink: 1 },
   bookLeader: { flex: 1, minWidth: 10, height: 4, alignSelf: 'center' },
   bookFolio: {
     fontFamily: F.serif,
@@ -1447,7 +1542,15 @@ const s = StyleSheet.create({
     borderColor: 'rgba(214,209,199,0.5)',
     flexShrink: 0,
   },
-  chevronOpen: { transform: [{ rotate: '180deg' }] },
+  chevronGlyph: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   chapterGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1525,13 +1628,16 @@ const s = StyleSheet.create({
   },
   // A folio, not a pill: 44 tall to clear Apple's tap minimum, but squared off
   // at 12 so a table of them reads as ruled paper rather than as a keypad.
+  // The white at 0.34 sat so close to the leaf under it that the cell had no
+  // body of its own — an edge can only rule something that is there, so the
+  // folio is given a page first and the ruling then has work to do.
   chapterCell: {
     overflow: 'hidden',
     minHeight: 44,
     borderRadius: 12,
     borderCurve: 'continuous',
     borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.34)',
+    backgroundColor: 'rgba(255,255,255,0.56)',
     alignItems: 'center',
     justifyContent: 'center',
   },
