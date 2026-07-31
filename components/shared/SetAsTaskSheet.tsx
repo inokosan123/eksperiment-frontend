@@ -22,7 +22,9 @@ import Reanimated, {
   interpolateColor,
   runOnJS,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -371,8 +373,51 @@ const PRAYER_TYPES: {
   { key: 'evening', label: 'Evening', short: 'EVE', Icon: Moon, accent: '#7867C6', tint: '#F3F0FF', border: '#DDD5FF', defaultTitle: 'Evening Prayer', defaultTime: '21:00' },
   { key: 'meal', label: 'Meals', short: 'MEALS', Icon: Utensils, accent: '#7D8FC9', tint: '#F1F5FF', border: '#D9E1F7', defaultTitle: 'Meal Prayer', defaultTime: '12:00' },
   { key: 'jesus', label: 'Jesus', short: 'JESUS', Icon: Cross, accent: '#B98228', tint: '#FFF3E2', border: '#E9C98E', defaultTitle: 'Jesus Prayer', defaultTime: '13:00' },
-  { key: 'custom', label: 'Custom', short: 'CUSTOM', Icon: Feather, accent: '#5F9F97', tint: '#EDF8F6', border: '#CBE7E3', defaultTitle: 'Custom Prayer', defaultTime: '08:00' },
+  // ⚠ 'Prayer', not 'Custom Prayer'. "Custom" is the name of the CHOICE in
+  // this sheet — the tile you tapped to get here — and it does not belong
+  // in the name of the task that choice produces. Every other type seeds a
+  // name you would actually call the thing ("Morning Prayer", "Meal
+  // Prayer"); this one was seeding the name of a button. It shows on the
+  // Home card, in My Routine and in the task list, where nothing explains
+  // what "custom" was ever in contrast to.
+  { key: 'custom', label: 'Custom', short: 'CUSTOM', Icon: Feather, accent: '#5F9F97', tint: '#EDF8F6', border: '#CBE7E3', defaultTitle: 'Prayer', defaultTime: '08:00' },
 ];
+
+/**
+ * WHAT CHOOSING A PRAYER TYPE FILLS IN.
+ *
+ * ⚠ ONE COPY, because there are two callers — a tap on a tile, and the
+ * sheet opening — and they had a setter each. Two lists of the same six
+ * assignments is how the opening state and the tapped state drift apart,
+ * and the drift shows up as a sheet that behaves differently the first
+ * time you see it than every time after.
+ */
+function prayerDraft(next: PrayerType): {
+  title: string;
+  time: string;
+  rule: PrayerRuleChoice;
+} {
+  const meta = PRAYER_TYPES.find(item => item.key === next);
+  return {
+    title: meta?.defaultTitle ?? 'Prayer',
+    time: meta?.defaultTime ?? '08:00',
+    // The three hours that have a personal rule open on it; the rest start
+    // on the standard one.
+    rule: next === 'meal' || next === 'morning' || next === 'evening' ? 'personal' : 'standard',
+  };
+}
+
+/**
+ * What the sheet opens on when nothing has been preselected for it.
+ *
+ * ⚠ IT USED TO OPEN ON NOTHING, and an empty selection is not a neutral
+ * starting point — it is a locked door. With no type chosen the sheet
+ * shows a row of tiles and nothing else: no name, no time, no way to
+ * save, and no indication that a tile is what unlocks the rest. Custom is
+ * the one type that presumes nothing about WHEN or WHICH rule, so it is
+ * the honest thing to have already chosen on your behalf.
+ */
+const DEFAULT_PRAYER_TYPE: PrayerType = 'custom';
 
 const JOURNAL_TECHNIQUES: {
   key: JournalTechnique;
@@ -382,9 +427,18 @@ const JOURNAL_TECHNIQUES: {
   defaultTitle: string;
   defaultTime: string;
 }[] = [
-  { key: 'daily', label: 'Daily Journal', Icon: Pencil, color: '#1F2937', defaultTitle: 'Daily Journal', defaultTime: '21:30' },
-  { key: 'morning_pages', label: 'Morning Pages', Icon: Feather, color: '#44403C', defaultTitle: 'Morning Pages', defaultTime: '07:15' },
-  { key: 'free_writing', label: 'Free Writing', Icon: Notebook, color: '#57534E', defaultTitle: 'Free Writing', defaultTime: '20:45' },
+  // Each technique carries its own colour, and they are NOT new colours: these
+  // are the three journal cards' own accents, lifted straight off
+  // `JournalHub`'s `WRITE_CARDS`. Gold for the day's close, violet for the
+  // hours before it starts, green for the open page.
+  //
+  // They used to be three near-blacks (#1F2937, #44403C, #57534E) — greys a
+  // few points apart, which chose nothing and left the row one dark block. And
+  // since the sheet opens from those very cards, taking their colours means
+  // the choice is already familiar by the time it is offered.
+  { key: 'daily', label: 'Daily Journal', Icon: Pencil, color: '#A9863F', defaultTitle: 'Daily Journal', defaultTime: '21:30' },
+  { key: 'morning_pages', label: 'Morning Pages', Icon: Feather, color: '#6D5AAE', defaultTitle: 'Morning Pages', defaultTime: '07:15' },
+  { key: 'free_writing', label: 'Free Writing', Icon: Notebook, color: '#3D8273', defaultTitle: 'Free Writing', defaultTime: '20:45' },
 ];
 
 const SCRIPTURE_TYPES: {
@@ -886,8 +940,8 @@ export default function SetAsTaskSheet({
   const [selectedCatalogId, setSelectedCatalogId] = useState<string | null>(null);
   const [expandedChallengeId, setExpandedChallengeId] = useState<string | null>(null);
 
-  const [prayerType, setPrayerType] = useState<PrayerType | null>(null);
-  const [prayerTitle, setPrayerTitle] = useState('');
+  const [prayerType, setPrayerType] = useState<PrayerType | null>(DEFAULT_PRAYER_TYPE);
+  const [prayerTitle, setPrayerTitle] = useState(prayerDraft(DEFAULT_PRAYER_TYPE).title);
   const [prayerRule, setPrayerRule] = useState<PrayerRuleChoice>('standard');
   const [jesusMode, setJesusMode] = useState<JesusPrayerMode>('duration');
   const [jesusDuration, setJesusDuration] = useState('15');
@@ -895,6 +949,7 @@ export default function SetAsTaskSheet({
   const [prayerSchedule, setPrayerSchedule] = useState<ScheduleDraft>(defaultSchedule('08:00'));
 
   const [journalTechnique, setJournalTechnique] = useState<JournalTechnique>('daily');
+  const [journalTitle, setJournalTitle] = useState(JOURNAL_TECHNIQUES[0].defaultTitle);
   const [journalTime, setJournalTime] = useState<ScheduleDraft>(defaultSchedule('21:30'));
 
   const [scriptureType, setScriptureType] = useState<ScriptureReadingType | null>(null);
@@ -947,23 +1002,25 @@ export default function SetAsTaskSheet({
     setTaskTab(context === 'journal' ? 'routine' : 'spiritual');
     setSelectedCatalogId(null);
     setExpandedChallengeId(null);
-    // Apply onboarding preselects exactly as a user tap would (see
-    // selectPrayerType / selectScriptureType) — setters only, so this stays
-    // inert while the sheet is open.
-    if (initialPrayerType) {
-      const meta = PRAYER_TYPES.find(item => item.key === initialPrayerType);
-      setPrayerType(initialPrayerType);
-      setPrayerTitle(meta?.defaultTitle ?? 'Prayer');
-      setPrayerSchedule(defaultSchedule(meta?.defaultTime ?? '08:00'));
-      setPrayerRule(
-        initialPrayerType === 'meal' || initialPrayerType === 'morning' || initialPrayerType === 'evening'
-          ? 'personal'
-          : 'standard'
-      );
-      setJesusMode('duration');
-      setJesusDuration('15');
-      setJesusCount('100');
-    }
+    // Apply the opening selection exactly as a user tap would (see
+    // selectPrayerType) — setters only, so this stays inert while the sheet
+    // is open.
+    //
+    // ⚠ IT RUNS WHETHER OR NOT SOMETHING WAS PRESELECTED. The onboarding
+    // preselect used to be the only thing that seeded this, so opening the
+    // sheet normally left whatever the last visit had chosen sitting there —
+    // a stale type, its stale name and its stale hour, on a sheet that
+    // looks freshly opened. Every open now starts from a known state:
+    // whatever was asked for, or Custom.
+    const openingPrayerType = initialPrayerType ?? DEFAULT_PRAYER_TYPE;
+    const opening = prayerDraft(openingPrayerType);
+    setPrayerType(openingPrayerType);
+    setPrayerTitle(opening.title);
+    setPrayerSchedule(defaultSchedule(opening.time));
+    setPrayerRule(opening.rule);
+    setJesusMode('duration');
+    setJesusDuration('15');
+    setJesusCount('100');
     if (initialScriptureType) {
       const meta = SCRIPTURE_TYPES.find(item => item.key === initialScriptureType);
       setScriptureType(initialScriptureType);
@@ -1026,11 +1083,11 @@ export default function SetAsTaskSheet({
   }, [context, journalTechnique]);
 
   const selectPrayerType = (next: PrayerType) => {
+    const draft = prayerDraft(next);
     setPrayerType(next);
-    const meta = PRAYER_TYPES.find(item => item.key === next);
-    setPrayerTitle(meta?.defaultTitle ?? 'Prayer');
-    setPrayerSchedule(defaultSchedule(meta?.defaultTime ?? '08:00'));
-    setPrayerRule(next === 'meal' || next === 'morning' || next === 'evening' ? 'personal' : 'standard');
+    setPrayerTitle(draft.title);
+    setPrayerSchedule(defaultSchedule(draft.time));
+    setPrayerRule(draft.rule);
     setJesusMode('duration');
     setJesusDuration('15');
     setJesusCount('100');
@@ -1042,6 +1099,14 @@ export default function SetAsTaskSheet({
     setScriptureTitle(meta?.defaultTitle ?? 'Scripture Reading');
     setScriptureSchedule(defaultSchedule(next === 'psalter' ? '06:45' : next === 'church_calendar' ? '06:30' : '08:00'));
     setScriptureDailyAmount(1);
+  };
+
+  const selectJournalTechnique = (next: JournalTechnique) => {
+    const meta = JOURNAL_TECHNIQUES.find(item => item.key === next);
+    setJournalTechnique(next);
+    // Selecting a technique seeds its familiar name again. From here the
+    // controlled field is fully editable by the user.
+    setJournalTitle(meta?.defaultTitle ?? 'Journal');
   };
 
   const openChallengeSetup = (entry: ChallengeCatalogEntry) => {
@@ -1112,9 +1177,10 @@ export default function SetAsTaskSheet({
 
     if (context === 'journal') {
       const technique = JOURNAL_TECHNIQUES.find(item => item.key === journalTechnique);
-      if (!technique) return;
+      const title = journalTitle.trim();
+      if (!technique || !title) return;
       await onTaskDraft?.({
-        title: technique.defaultTitle,
+        title,
         subtitle: `${formatSummaryFrequency(journalTime)} - ${journalTime.time}`,
         level: 2,
         source: 'routine',
@@ -1133,7 +1199,7 @@ export default function SetAsTaskSheet({
           technique: journalTechnique,
         },
       });
-      onSummaryChange?.(`${technique.label} · ${formatSummaryFrequency(journalTime)} · ${journalTime.time}`);
+      onSummaryChange?.(`${title} · ${formatSummaryFrequency(journalTime)} · ${journalTime.time}`);
     }
 
     if (context === 'scripture') {
@@ -1457,8 +1523,10 @@ export default function SetAsTaskSheet({
                   {context === 'journal' && (
                     <JournalRoutinePanel
                       journalTechnique={journalTechnique}
+                      journalTitle={journalTitle}
                       schedule={journalTime}
-                      onTechniqueChange={setJournalTechnique}
+                      onTechniqueChange={selectJournalTechnique}
+                      onTitleChange={setJournalTitle}
                       onScheduleChange={setJournalTime}
                       onSave={handleSaveSpiritual}
                     />
@@ -1923,14 +1991,18 @@ function PrayerChallengeRuleEditor({
 
 function JournalRoutinePanel({
   journalTechnique,
+  journalTitle,
   schedule,
   onTechniqueChange,
+  onTitleChange,
   onScheduleChange,
   onSave,
 }: {
   journalTechnique: JournalTechnique;
+  journalTitle: string;
   schedule: ScheduleDraft;
   onTechniqueChange: (value: JournalTechnique) => void;
+  onTitleChange: (value: string) => void;
   onScheduleChange: (value: ScheduleDraft) => void;
   onSave: () => void;
 }) {
@@ -1955,6 +2027,17 @@ function JournalRoutinePanel({
         </View>
       </CardBlock>
 
+      <CardBlock label="Task Name" accent={ROUTINE_TASK_ACCENT}>
+        <TextInput
+          value={journalTitle}
+          onChangeText={onTitleChange}
+          placeholder="e.g. Evening Reflection"
+          placeholderTextColor="#D1D5DB"
+          returnKeyType="done"
+          style={s.activityNameInput}
+        />
+      </CardBlock>
+
       <ScheduleEditor value={schedule} onChange={onScheduleChange} showFrequency accent={ROUTINE_TASK_ACCENT} />
 
       <PrimaryButton label="Save Routine Task" onPress={onSave} accent={ROUTINE_TASK_ACCENT} />
@@ -1962,6 +2045,19 @@ function JournalRoutinePanel({
   );
 }
 
+/*
+ * ⚠ The plate used to animate while its CONTENTS SNAPPED: background and
+ * border ran through `interpolateColor` over a spring, but the icon took
+ * `active ? white : colour` and the label took a style-array swap — both
+ * change on the frame the state does. The button eased into its colour while
+ * the mark and word inside it jumped.
+ *
+ * Everything now rides one `progress`: plate, border, label, and the icon,
+ * which is drawn TWICE and cross-faded because an SVG's stroke is not a style
+ * and cannot be interpolated. The arriving choice hops once — the app's
+ * standard pick, the same one the Prayer Book's hour row and the notification
+ * selector use.
+ */
 function TechniqueChoice({
   item,
   active,
@@ -1971,27 +2067,53 @@ function TechniqueChoice({
   active: boolean;
   onPress: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
   const progress = useSelectionMotion(active);
-  const motionStyle = useAnimatedStyle(() => ({
+  const hop = useSharedValue(0);
+  const press = useSharedValue(0);
+
+  useEffect(() => {
+    // Only the arriving choice hops: three at once would be noise.
+    if (!active || reduceMotion) return;
+    hop.value = withSequence(
+      withTiming(-4, { duration: 130, easing: Easing.out(Easing.quad) }),
+      withSpring(0, { damping: 9, stiffness: 300, mass: 0.6 }),
+    );
+  }, [active, hop, reduceMotion]);
+
+  const plateStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(progress.value, [0, 1], ['#FFFFFF', item.color]),
     borderColor: interpolateColor(progress.value, [0, 1], ['#F0EDE6', item.color]),
     shadowOpacity: 0.015 + progress.value * 0.165,
-    transform: [{ scale: 1 + progress.value * 0.012 }],
+    transform: [
+      { translateY: hop.value + press.value * 1.5 },
+      { scale: 1 + progress.value * 0.012 - press.value * 0.012 },
+    ],
+  }), [item.color]);
+  const litIcon = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const restIcon = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
+  const labelStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], ['#A8A29E', '#FFFFFF']),
   }));
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={s.techniqueTouch}>
-      <Reanimated.View
-        style={[
-          s.techniqueBtn,
-          motionStyle,
-          {
-            shadowColor: item.color,
-          },
-        ]}
-      >
-        <item.Icon s={20} c={active ? '#FFFFFF' : item.color} />
-        <Text style={[s.techniqueBtnText, active && s.techniqueBtnTextActive]}>{item.label}</Text>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.9}
+      onPressIn={() => { press.value = withTiming(1, { duration: 90 }); }}
+      onPressOut={() => { press.value = withTiming(0, { duration: 190 }); }}
+      style={s.techniqueTouch}
+    >
+      <Reanimated.View style={[s.techniqueBtn, plateStyle, { shadowColor: item.color }]}>
+        <View style={s.techniqueIcon}>
+          <Reanimated.View style={restIcon}>
+            <item.Icon s={22} c={item.color} />
+          </Reanimated.View>
+          <Reanimated.View style={[s.techniqueIconLit, litIcon]}>
+            <item.Icon s={22} c="#FFFFFF" />
+          </Reanimated.View>
+        </View>
+        <Reanimated.Text style={[s.techniqueBtnText, labelStyle]}>{item.label}</Reanimated.Text>
       </Reanimated.View>
     </TouchableOpacity>
   );
@@ -3206,7 +3328,15 @@ function ChallengeCatalogEntryCard({
             <ScheduleEditor value={churchSchedule} onChange={onChurchScheduleChange} showFrequency allowMonthly={false} />
           ) : (
             <>
-              <View style={s.catalogScheduleShell}>
+              {/* ⚠ No plate here, on purpose. This used to sit in a bordered,
+                  tinted `catalogScheduleShell` — a card inside the setup panel,
+                  which is itself inside the challenge card, inside the sheet.
+                  Three frames deep, and it was the ONLY section with one:
+                  Duration, Prayer Rule and Jesus Prayer are all bare blocks
+                  under a small caps label, and Notifications below is too. A
+                  frame that only one sibling wears is not emphasis, it is an
+                  inconsistency that also eats its own width. */}
+              <View style={s.catalogSetupBlock}>
                 <Text style={s.scriptureSetupLabel}>Schedule</Text>
                 <ChallengeTimeEditor value={challengeSchedule} onChange={onChallengeScheduleChange} />
               </View>
@@ -4671,16 +4801,16 @@ const s = StyleSheet.create({
     elevation: 2,
     overflow: 'hidden',
   },
+  techniqueIcon: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
+  techniqueIconLit: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   techniqueBtnText: {
     fontFamily: F.sansBold,
     fontSize: 8.5,
     letterSpacing: 1.05,
-    color: '#A8A29E',
     textTransform: 'uppercase',
     textAlign: 'center',
     lineHeight: 12,
   },
-  techniqueBtnTextActive: { color: '#FFFFFF' },
   frequencyWrap: {
     gap: 8,
   },
@@ -5373,6 +5503,10 @@ const s = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.42)',
   },
+  // 20, following `catalogSetupInline`. This editor shares `catalogSetupBlock`,
+  // whose inner gap went to 12 — leaving a 14 outer against a 12 inner, which
+  // is near enough to equal that the sections stop reading as sections. The
+  // gap between blocks has to stay clearly wider than the gap inside one.
   challengeEditor: {
     paddingHorizontal: 18,
     paddingBottom: 18,
@@ -5380,7 +5514,7 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(197,160,89,0.18)',
     backgroundColor: '#FFFDF7',
-    gap: 14,
+    gap: 20,
   },
   challengeActionRow: {
     flexDirection: 'row',
@@ -5595,24 +5729,22 @@ const s = StyleSheet.create({
     lineHeight: 15,
     color: '#9CA3AF',
   },
+  // The setup panel breathes a little more now that nothing inside it is
+  // boxed: 22 between sections against 16, and the foot pulled off the Start
+  // button. The gain comes free — losing the schedule shell gave back its 15
+  // of padding and 2 of border on both sides.
   catalogSetupInline: {
     borderTopWidth: 1,
     borderTopColor: 'rgba(197,160,89,0.18)',
     paddingHorizontal: 16,
-    paddingTop: 17,
-    paddingBottom: 18,
-    gap: 16,
+    paddingTop: 20,
+    paddingBottom: 20,
+    gap: 22,
   },
+  // 12 under the label, not 10 — a small-caps label at 10pt over 1.8 tracking
+  // needs a beat before the control it names, or it reads as glued to it.
   catalogSetupBlock: {
-    gap: 10,
-  },
-  catalogScheduleShell: {
     gap: 12,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#EDD6A6',
-    backgroundColor: '#FFFCF4',
-    padding: 15,
   },
   setupCard: {
     borderRadius: 26,
