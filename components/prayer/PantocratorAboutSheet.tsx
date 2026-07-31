@@ -22,9 +22,12 @@ import { X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import {
+  NICHE_ALPHA,
   PantocratorFace,
   PantocratorPanel,
   PANTOCRATOR_IMAGE,
+  PrayerNiche,
+  nicheGround,
   type PantocratorFaceMode,
 } from '@/components/prayer/PantocratorIcon';
 import {
@@ -61,6 +64,12 @@ import {
  * ───────────────────────────────────────────────────────────── */
 
 const PARCHMENT = ['#FDFBF6', '#F8F2E6', '#F2E9D8'] as const;
+
+/**
+ * What the board's edges dissolve into here: this sheet's parchment with
+ * its own niche over it. ⚠ Computed, never written down — see nicheGround.
+ */
+const SHEET_ICON_GROUND = nicheGround(PARCHMENT[1], NICHE_ALPHA.sheet);
 const GOLD_INK = '#8B6B2F';
 const GOLD_HAIR = 'rgba(197,160,89,0.42)';
 const BODY_INK = '#4A4038';
@@ -229,10 +238,15 @@ function Slide({
     >
       {slide.figure === 'icon' && (
         <View style={s.figure}>
-          {/* The icon fades into its page at the edges rather than wearing
-              a frame, so it is handed this room's parchment — the sheet's
-              middle stop, which is the colour at the height it stands. */}
-          <PantocratorPanel height={panelHeight} ground={PARCHMENT[1]} />
+          {/* ⚠ THE SAME PROBLEM AS THE PRAYER SCREEN, IN A LIGHTER ROOM —
+              see PrayerNiche. A dark sixth-century panel fading into
+              parchment fogs at every edge exactly as it fogged into the
+              prayer page's cream, so it gets the same warm field to
+              dissolve into. Shallower than the prayer screen's: this
+              sheet is a page you read, not a room you pray in, and the
+              field has prose beside it. */}
+          <PrayerNiche alpha={NICHE_ALPHA.sheet} panelHeight={panelHeight} />
+          <PantocratorPanel height={panelHeight} ground={SHEET_ICON_GROUND} />
         </View>
       )}
 

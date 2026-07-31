@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Image as ExpoImage, type ImageSource } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 import Reanimated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 /* ─────────────────────────────────────────────────────────────
@@ -44,27 +44,35 @@ import Reanimated, { useAnimatedStyle, type SharedValue } from 'react-native-rea
 
 /* ── THE IMAGE ────────────────────────────────────────────────────────
  *
- * ⚠ THE FILE IS NOT IN THE REPO YET, AND THAT IS WHY THIS IS A CONSTANT
- * RATHER THAN A require() AT THE POINT OF USE.
+ * The Sinai Pantocrator — public domain, sixth century, unknown hand.
+ * Source: Wikimedia Commons, `Spas vsederzhitel sinay.jpg`, 2023 × 3774.
  *
- * Metro resolves require() statically: a require of a path that does not
- * exist is not a runtime null, it is a build failure, and there is no
- * try/catch that saves you from it. So the source lives here alone, and
- * everything below renders an empty board while it is null.
+ * ⚠ IT IS CROPPED TO THE PAINTED BOARD AND NOTHING ELSE, and the crop was
+ * done in the repo rather than by eye, because the Commons file is the
+ * board photographed on a WHITE BACKING and carries a pale margin on all
+ * four sides. Dropped in unprocessed it would have hung a light frame
+ * around an image whose whole design is that it has no frame — and the
+ * fades at its edges would have been fading a white margin into warm
+ * paper, which is nothing at all.
  *
- * TO TURN THE ICON ON:
- *   1. Save the Sinai Pantocrator — public domain, sixth century — as
- *      `assets/images/prayer/pantocrator-sinai.jpg`. Wikimedia Commons
- *      carries it at full resolution.
- *   2. ⚠ Crop it to the painted board and nothing else. No mount, no
- *      wall, no drop shadow from the photograph. PANEL_ASPECT below is
- *      the panel's real proportion, and a photograph with margin in it
- *      will not match.
- *   3. Replace the null on the next line with:
- *        require('@/assets/images/prayer/pantocrator-sinai.jpg')
- *   4. Calibrate FACE against the real file — see the block below.
+ * The recipe, so it can be redone from the original:
+ *   · the board is found by column and row means — the surround runs
+ *     above 225 and the painted panel nowhere near it,
+ *   · the height is then trimmed EVENLY at both ends to PANEL_ASPECT, so
+ *     `cover` never has to crop the board at render and no part of it can
+ *     be lost on any phone,
+ *   · and it is shipped 1400 wide. That is set by the About sheet, not by
+ *     this screen: the sheet's mirrored faces enlarge a crop 52% of the
+ *     board across, so they ask for more source than the hero does.
+ *
+ * ⚠ IT STAYS A CONSTANT rather than a require() at the point of use.
+ * Metro resolves require() statically — a require of a missing path is a
+ * build failure, not a runtime null — so keeping the one source here
+ * means everything below can fall back to an empty board if it ever goes
+ * missing again, instead of taking the app down with it.
  */
-export const PANTOCRATOR_IMAGE: ImageSource | number | null = null;
+export const PANTOCRATOR_IMAGE: ImageSource | number | null =
+  require('@/assets/images/prayer/pantocrator-sinai.jpg');
 
 /**
  * The board's real proportion: 45.5 cm wide by 84 cm tall.
@@ -74,30 +82,37 @@ export const PANEL_ASPECT = 45.5 / 84;
 
 /* ── FACE CALIBRATION ─────────────────────────────────────────────────
  *
- * ⚠ THESE FOUR NUMBERS ARE ESTIMATES UNTIL SOMEONE SETS THEM AGAINST
- * THE REAL FILE. They are written down rather than guessed inline so
- * that tuning them is a two-minute job and not an archaeology dig.
- *
- * All four are fractions of the cropped board, measured from its
+ * ⚠ THESE FOUR NUMBERS ARE MEASURED AGAINST THE SHIPPED FILE, not
+ * estimated. All four are fractions of the cropped board, from its
  * top-left corner.
  *
  *   axisX      where the FACE's own midline falls — down the bridge of
- *              the nose. ⚠ NOT the middle of the board. The figure is
- *              not centred on the panel, and the board was cut down
- *              along its sides at some point, so 0.5 is a starting
- *              guess and almost certainly wrong. Everything about the
- *              two composites depends on this one number: mirror about
- *              the wrong axis and you get two strangers rather than two
- *              readings of one man.
+ *              the nose. ⚠ NOT the middle of the board: the figure sits
+ *              LEFT of centre, at 0.44, because the panel was cut down
+ *              along its sides at some point in fourteen hundred years.
+ *              Everything about the two composites depends on this one
+ *              number — mirror about the wrong axis and you get two
+ *              strangers rather than two readings of one man.
  *   halfWidth  how far to either side of that axis the face crop runs.
+ *              0.26 takes the head and a little of the halo; the old
+ *              0.33 reached past the shoulders, which put the book and
+ *              the blessing hand into a crop that is meant to be a face.
  *   top        where the crop begins, above the hair.
  *   bottom     where it ends, below the beard.
+ *
+ * ⚠ HOW THE AXIS WAS FOUND, because measuring a nose by eye does not
+ * settle it: the composites themselves were built from the real file at
+ * 0.40 / 0.42 / 0.44 / 0.46 / 0.48 and then at tenths between, and the
+ * axis chosen was the one where BOTH halves make a coherent face. It is
+ * a sharp test — a fifth of a percent off and the mirrored nose forks or
+ * the mouth widens — and it is worth redoing exactly this way if the
+ * crop is ever regenerated.
  */
 export const FACE = {
-  axisX: 0.5,
-  halfWidth: 0.33,
-  top: 0.05,
-  bottom: 0.40,
+  axisX: 0.44,
+  halfWidth: 0.26,
+  top: 0.06,
+  bottom: 0.44,
 } as const;
 
 export type PantocratorFaceMode = 'whole' | 'mercy' | 'judgement';
@@ -107,8 +122,129 @@ export type PantocratorFaceMode = 'whole' | 'mercy' | 'judgement';
 /** The ground seen only while the image is missing. */
 const FIELD_EMPTY = ['#F3EADA', '#E4D6BD'] as const;
 
+/* ── THE NICHE ────────────────────────────────────────────────────────
+ *
+ * ⚠ THE ICON IS A DARK OBJECT AND THE PAGE IS BRIGHT PAPER, and until
+ * the real painting arrived nothing on this screen had to reckon with
+ * that. An empty board was a pale gradient and dissolved into warm paper
+ * beautifully. A sixth-century encaustic panel does not: it is a deep
+ * thing — its robe is nearly black, its board is dark at every edge —
+ * and fading THAT into cream produced a milky haze all round it, as if
+ * the icon were behind frosted glass. It was the one treatment that made
+ * the picture look cheap, and it was the treatment already in the code.
+ *
+ * THE FIX IS NOT TO PUSH THE ICON TOWARD THE PAPER. It is to bring the
+ * paper toward the icon: a wide, soft, warm-deep field gathered where
+ * the icon stands, so its edges dissolve into a value close to their own
+ * and there is nothing left to fog. An icon hangs in a niche; this is
+ * that niche, made of light rather than of architecture.
+ *
+ * ⚠ IT BELONGS TO THE ICON AND NOT TO THE SCREEN, which is the opposite
+ * of the lamp. The lamp stays lit while the object in it changes — that
+ * is the whole good of the exchange. The niche is the WALL, and the wall
+ * is the icon's own: a pale wooden cross wants bright paper behind it and
+ * would look shadowed hanging here. So it arrives and leaves with the
+ * board, on `swap`.
+ *
+ * ⚠ AND IT IS MUCH WIDER THAN THE BOARD, deliberately. A field only a
+ * little larger would fall away across the panel's own footprint and
+ * leave the corners lighter than the sides — a visible ring at exactly
+ * the edge all of this exists to hide. Four board-widths across, with
+ * the value held flat over the whole panel and falling only well outside
+ * it, and the edges have one tone to dissolve into.
+ */
+const NICHE_TINT = '#4A3312';
+const NICHE_TINT_RGB = [0x4a, 0x33, 0x12] as const;
+
+/** How deep the field is over the board itself. */
+export const NICHE_ALPHA = { prayer: 0.16, sheet: 0.13 } as const;
+
+/**
+ * THE COLOUR THE PANEL'S EDGES MUST DISSOLVE INTO — worked out, never
+ * written down.
+ *
+ * ⚠ THE FADE AND THE NICHE ARE ONE DECISION. A fade running to the room's
+ * paper while a niche lies over that paper draws a pale ring at exactly
+ * the edge the niche exists to hide; a fade running to a hardcoded colour
+ * draws the same ring the day either the tint or the alpha is tuned. So
+ * the ground is COMPUTED from the two of them, and the pair cannot drift.
+ *
+ * `paper` must be a six-digit hex — the room's own colour at the height
+ * the board stands.
+ */
+export function nicheGround(paper: string, alpha: number = NICHE_ALPHA.prayer): string {
+  const hex = /^#([0-9a-fA-F]{6})$/.exec(paper);
+  if (!hex) return paper;
+  const n = parseInt(hex[1], 16);
+  const blend = (channel: number, tint: number) =>
+    Math.round(channel * (1 - alpha) + tint * alpha);
+  const rgb = [
+    blend((n >> 16) & 0xff, NICHE_TINT_RGB[0]),
+    blend((n >> 8) & 0xff, NICHE_TINT_RGB[1]),
+    blend(n & 0xff, NICHE_TINT_RGB[2]),
+  ];
+  return `#${rgb.map(v => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
 export function panelWidth(height: number) {
   return height * PANEL_ASPECT;
+}
+
+/**
+ * The wall the icon hangs on. Nothing here moves; only its layer opacity
+ * does — on the prayer screen, on the same value that exchanges the two
+ * objects; in the About sheet, not at all, because nothing else can ever
+ * be standing there.
+ */
+export function PrayerNiche({
+  alpha = NICHE_ALPHA.prayer,
+  panelHeight,
+  swap,
+}: {
+  alpha?: number;
+  panelHeight: number;
+  /** 0 = the cross is standing, 1 = the icon is. Omitted: always present. */
+  swap?: SharedValue<number>;
+}) {
+  const width = Math.round(panelWidth(panelHeight) * 4);
+  const height = Math.round(panelHeight * 1.9);
+
+  const style = useAnimatedStyle(() => ({ opacity: swap ? swap.value : 1 }), [swap]);
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[s.niche, { width, height, marginLeft: -width / 2, marginTop: -height / 2 }, style]}
+      shouldRasterizeIOS
+      renderToHardwareTextureAndroid
+    >
+      <Svg width={width} height={height}>
+        <Defs>
+          {/* ⚠ The gradient's id carries the alpha. Two niches at
+              different depths on screen at once — which is what the
+              sheet opening over the prayer screen is — would otherwise
+              share one definition and the second would be drawn at the
+              first one's value. */}
+          <RadialGradient id={`prayerNiche${Math.round(alpha * 1000)}`} cx="50%" cy="50%" r="50%">
+            {/* Held flat out to 45% — which covers the whole board — and
+                gone by the edge, so the panel has ONE tone behind it and
+                the field never shows an edge of its own. */}
+            <Stop offset="0" stopColor={NICHE_TINT} stopOpacity={alpha} />
+            <Stop offset="0.45" stopColor={NICHE_TINT} stopOpacity={alpha} />
+            <Stop offset="0.74" stopColor={NICHE_TINT} stopOpacity={alpha * 0.44} />
+            <Stop offset="1" stopColor={NICHE_TINT} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Ellipse
+          cx={width / 2}
+          cy={height / 2}
+          rx={width / 2}
+          ry={height / 2}
+          fill={`url(#prayerNiche${Math.round(alpha * 1000)})`}
+        />
+      </Svg>
+    </Reanimated.View>
+  );
 }
 
 /**
@@ -135,18 +271,34 @@ export function panelWidth(height: number) {
 export function PantocratorPanel({
   /** The icon's height. Width follows the panel's real proportion. */
   height,
-  ground = '#FDF8EF',
+  /**
+   * ⚠ THE COLOUR ACTUALLY BEHIND THE BOARD'S EDGES, which since the niche
+   * arrived is no longer the room's paper. Every caller passes
+   * `nicheGround(ownPaper)` rather than its paper directly; handed the
+   * paper, the fade overshoots the niche and rings.
+   */
+  ground,
   style,
 }: {
   height: number;
-  ground?: string;
+  ground: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const width = height * PANEL_ASPECT;
-  // Enough to lose the cut edge, little enough to leave the face whole:
-  // the head sits within the top third, so a fade of a twelfth never
-  // touches it.
-  const fade = Math.round(height * 0.085);
+  /**
+   * ⚠ A TWENTY-FIFTH, NOT A TWELFTH. The fade was twice this deep and it
+   * was built for a board that did not exist yet — a pale placeholder
+   * gradient, which can be dissolved over any distance you like without
+   * looking of anything. Run that far into the real painting and it eats
+   * the top of the halo and the foot of the robe and leaves a milky band
+   * round all four sides.
+   *
+   * The niche behind is what makes the short ramp enough: the tone the
+   * edges are dissolving into is now close to their own, so the job is
+   * only to lose the cut line, not to travel the whole distance from a
+   * dark painting to cream paper.
+   */
+  const fade = Math.round(height * 0.04);
 
   return (
     <View style={[{ width, height }, s.panelWrap, style]}>
@@ -251,15 +403,36 @@ export function PrayerLamp({
   swap?: SharedValue<number>;
 }) {
   const style = useAnimatedStyle(() => {
+    const at = swap?.value ?? 0;
     const base = 0.34 + (light?.value ?? 0) * 0.66;
+    /**
+     * ⚠ THE LAMP IS TURNED UP FOR THE ICON, and only a little.
+     *
+     * This is the one thing about it that may depend on what is standing
+     * there — everything else about the exchange rests on the light
+     * STAYING and the object changing. But the two objects do not take
+     * light the same way: the cross is pale maple in a light frame and
+     * gives it all back, while a sixth-century encaustic panel is a dark
+     * thing that swallows it. Lit identically, the same lamp reads bright
+     * behind the cross and dim behind the icon.
+     *
+     * A sixth, so it is a lamp answering a darker object rather than a
+     * second brightness the eye can catch changing.
+     */
+    const forObject = 1 + at * 0.17;
     // Brightest exactly halfway through the exchange, and back to
     // nothing at either end of it.
-    const flare = 1 + 0.26 * Math.sin(Math.PI * (swap?.value ?? 0));
-    return { opacity: base * flare };
+    const flare = 1 + 0.26 * Math.sin(Math.PI * at);
+    return { opacity: base * forObject * flare };
   }, [light, swap]);
 
   return (
-    <Reanimated.View pointerEvents="none" style={[s.lamp, { width: size, height: size }, style]}>
+    <Reanimated.View
+      pointerEvents="none"
+      style={[s.lamp, { width: size, height: size }, style]}
+      shouldRasterizeIOS
+      renderToHardwareTextureAndroid
+    >
       <Svg width={size} height={size}>
         <Defs>
           <RadialGradient id="pantocratorLamp" cx="50%" cy="50%" r="50%">
@@ -420,6 +593,8 @@ const s = StyleSheet.create({
   // A shadow under a picture with no edges is a shadow cast by nothing.
   panelWrap: { position: 'relative' },
   lamp: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  // Centred on the stage the way the lamp is, and behind everything.
+  niche: { position: 'absolute', left: '50%', top: '50%' },
   edgeFade: { position: 'absolute' },
 
   faceBox: {
