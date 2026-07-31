@@ -22,12 +22,13 @@ import { X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import {
+  FACE,
   NICHE_DEPTH,
+  PANEL_ASPECT,
   PantocratorFace,
   PantocratorPanel,
   PANTOCRATOR_IMAGE,
   PrayerNiche,
-  type PantocratorFaceMode,
 } from '@/components/prayer/PantocratorIcon';
 import {
   PANTOCRATOR_FACE_CAPTIONS,
@@ -245,6 +246,13 @@ function Slide({
 
       {slide.figure === 'faces' && <FacesFigure width={width - 44} />}
 
+      {/* ⚠ A RULE CLOSES THE FIGURE, NOT A GAP. The plate and the prose
+          were held apart by twenty-two points of nothing, which is how
+          a page ends up looking like two pages. A hairline does the same
+          work in one point and says something a gap cannot: that what
+          is above it and what is below it belong to each other. */}
+      {!!slide.figure && <View style={s.figureRule} />}
+
       <Text style={s.eyebrow}>{slide.eyebrow}</Text>
       <Text style={s.title}>{slide.title}</Text>
 
@@ -284,25 +292,55 @@ function Slide({
   );
 }
 
-/* ── The two faces ────────────────────────────────────────────────── */
+/* ── The two faces ──────────────────────────────────────────────────
+ *
+ * ⚠ THEY ARE SHOWN SIDE BY SIDE NOW, WHICH IS THE WHOLE POINT OF THEM.
+ *
+ * The figure used to show ONE composite at a time, chosen from a rule of
+ * three names set at nine and a half points. Two faults, and the first
+ * is fatal to the idea: a demonstration that two halves DIFFER cannot be
+ * made by showing one half at a time. You had to tap, remember, tap
+ * back, and compare against a memory. Every presentation of this famous
+ * comparison — including the one this sheet was written from — puts them
+ * beside each other, because that is the only arrangement in which the
+ * difference is a thing you SEE rather than a thing you are told.
+ *
+ * The second: nine and a half points of tracked capitals with a
+ * twenty-two point underline is not a control anybody finds. It is now
+ * two segments at readable size, and the pair is what it opens on.
+ *
+ * ⚠ AND THE BOX NEVER RESIZES, which is what lets the two states
+ * cross-fade instead of jumping. The composites and the whole panel are
+ * the same crop, so a column of one width is a column of one height:
+ * two side by side, or one centred, inside a box whose height is fixed
+ * by that single column. Nothing below the figure ever moves.
+ * ────────────────────────────────────────────────────────────────── */
 
-const FACE_MODES: PantocratorFaceMode[] = ['whole', 'mercy', 'judgement'];
+type FacesView = 'halves' | 'whole';
+
+const FACES_VIEWS: { id: FacesView; label: string }[] = [
+  { id: 'halves', label: 'The two halves' },
+  { id: 'whole', label: 'The icon' },
+];
 
 function FacesFigure({ width }: { width: number }) {
-  const [mode, setMode] = useState<PantocratorFaceMode>('whole');
+  const [view, setView] = useState<FacesView>('halves');
   const at = useSharedValue(0);
 
-  const choose = useCallback((next: PantocratorFaceMode) => {
-    setMode(next);
-    at.value = withTiming(FACE_MODES.indexOf(next), { duration: 240 });
+  const choose = useCallback((next: FacesView) => {
+    setView(next);
+    at.value = withTiming(next === 'whole' ? 1 : 0, { duration: 260 });
   }, [at]);
 
-  // With no image there is nothing to mirror, and a rule of three names
-  // that changes nothing is worse than no control at all.
+  // ⚠ One column sets the height for both states — see the note above.
+  const column = Math.floor((width - FACES_GAP) / 2);
+
+  // With no image there is nothing to mirror, and a control that changes
+  // nothing is worse than no control at all.
   if (!PANTOCRATOR_IMAGE) {
     return (
       <View style={s.figure}>
-        <PantocratorFace width={width} mode="whole" />
+        <PantocratorFace width={column} mode="whole" />
         <Text style={s.faceCaption}>
           The two composites appear here once the icon file is added to the app.
         </Text>
@@ -312,68 +350,108 @@ function FacesFigure({ width }: { width: number }) {
 
   return (
     <View style={s.figure}>
-      {/* All three stacked and cross-faded on one shared value, so the
-          change happens on the UI thread and the box never resizes: the
-          three composites are the same crop and therefore the same
-          height, whatever is showing. */}
-      <View style={s.faceStack}>
-        {FACE_MODES.map((candidate, index) => (
-          <FaceLayer key={candidate} width={width} mode={candidate} index={index} at={at} />
-        ))}
+      <View style={[s.faceStage, { width, height: faceBoxHeight(column) }]}>
+        {/* THE PAIR */}
+        <FaceLayer at={at} show={0}>
+          <View style={s.facePair}>
+            <View>
+              <PantocratorFace width={column} mode="mercy" />
+              <Text style={s.faceName}>{PANTOCRATOR_FACE_LABELS.mercy}</Text>
+            </View>
+            <View>
+              <PantocratorFace width={column} mode="judgement" />
+              <Text style={s.faceName}>{PANTOCRATOR_FACE_LABELS.judgement}</Text>
+            </View>
+          </View>
+        </FaceLayer>
+
+        {/* THE PANEL AS IT IS */}
+        <FaceLayer at={at} show={1}>
+          <View style={s.faceWhole}>
+            <PantocratorFace width={column} mode="whole" />
+            <Text style={s.faceName}>{PANTOCRATOR_FACE_LABELS.whole}</Text>
+          </View>
+        </FaceLayer>
       </View>
 
-      {/* The rule of three. Not a plaque — a plaque is the coin grammar,
-          and this page is a book. Three names on a hairline, the chosen
-          one inked gold and underscored. */}
-      <View style={s.faceRule}>
-        {FACE_MODES.map(candidate => {
-          const here = candidate === mode;
+      {/* ⚠ A SEGMENTED CONTROL, NOT A RULE OF NAMES. It is still a book's
+          furniture — parchment, a gold hairline, the serif — but it is
+          the size of something meant to be pressed, and the chosen side
+          is a lifted plate rather than a twenty-two point underscore. */}
+      <View style={s.faceSwitch}>
+        {FACES_VIEWS.map(candidate => {
+          const here = candidate.id === view;
           return (
             <TouchableOpacity
-              key={candidate}
-              onPress={() => choose(candidate)}
-              activeOpacity={0.76}
+              key={candidate.id}
+              onPress={() => choose(candidate.id)}
+              activeOpacity={0.82}
               haptic="selection"
-              style={s.faceChoice}
+              style={[s.faceSegment, here && s.faceSegmentHere]}
               accessibilityRole="button"
               accessibilityState={{ selected: here }}
             >
-              <Text style={[s.faceChoiceText, here && s.faceChoiceTextHere]}>
-                {PANTOCRATOR_FACE_LABELS[candidate]}
+              <Text style={[s.faceSegmentText, here && s.faceSegmentTextHere]}>
+                {candidate.label}
               </Text>
-              <View style={[s.faceChoiceUnder, here && s.faceChoiceUnderHere]} />
             </TouchableOpacity>
           );
         })}
       </View>
 
-      <Reanimated.Text key={mode} entering={FadeIn.duration(220)} style={s.faceCaption}>
-        {PANTOCRATOR_FACE_CAPTIONS[mode]}
+      <Reanimated.Text key={view} entering={FadeIn.duration(220)} style={s.faceCaption}>
+        {view === 'halves'
+          ? 'Each half of the face, mirrored into a whole one.'
+          : PANTOCRATOR_FACE_CAPTIONS.whole}
       </Reanimated.Text>
     </View>
   );
 }
 
+/** The gap between the two composites. */
+const FACES_GAP = 9;
+
+/**
+ * How tall a column of this width comes out.
+ *
+ * ⚠ IT IS THE CROP'S OWN ARITHMETIC, not a guess: the crop spans
+ * `2 × halfWidth` across the board and `bottom − top` down it, so a
+ * column of width w is `(bottom − top) × w / (2 × halfWidth) /
+ * PANEL_ASPECT` tall. Written here because the stage has to reserve that
+ * height before either state has been laid out — otherwise the figure
+ * would settle a frame late and shove the prose down with it.
+ */
+function faceBoxHeight(column: number): number {
+  const cropW = FACE.halfWidth * 2;
+  const cropH = FACE.bottom - FACE.top;
+  return Math.round((cropH * (column / cropW)) / PANEL_ASPECT);
+}
+
+/**
+ * One state of the figure, lying over the other.
+ *
+ * ⚠ BOTH ARE ABSOLUTE INSIDE A STAGE OF FIXED HEIGHT, so the change is
+ * pure opacity on the UI thread and nothing on the page is laid out a
+ * second time when it happens.
+ */
 function FaceLayer({
-  width, mode, index, at,
+  at, show, children,
 }: {
-  width: number;
-  mode: PantocratorFaceMode;
-  index: number;
   at: SharedValue<number>;
+  /** The value of `at` at which this layer is the one showing. */
+  show: 0 | 1;
+  children: React.ReactNode;
 }) {
   const style = useAnimatedStyle(() => ({
-    opacity: Math.max(0, 1 - Math.abs(at.value - index)),
+    opacity: Math.max(0, 1 - Math.abs(at.value - show)),
   }));
 
   return (
     <Reanimated.View
-      // The first layer holds the stack open; the other two lie over it,
-      // so the figure has a height before anything has been chosen.
-      style={[index === 0 ? undefined : StyleSheet.absoluteFill, style]}
+      style={[StyleSheet.absoluteFill, s.faceLayer, style]}
       pointerEvents="none"
     >
-      <PantocratorFace width={width} mode={mode} />
+      {children}
     </Reanimated.View>
   );
 }
@@ -423,12 +501,39 @@ const s = StyleSheet.create({
 
   // ── Pages ──────────────────────────────────────────────────────────
   pager: { flex: 1 },
+  /**
+   * ⚠ THE PAGE WAS HELD APART BY GAPS AND IT READ AS SEVERAL PAGES.
+   *
+   * Twenty-two points under the figure, eighteen over the first
+   * paragraph, fourteen between every pair after it, twelve over the
+   * facts — every block on this page was separated by a space large
+   * enough to be mistaken for the end of something. The prose is set at
+   * 17 over 27, so a 22-point gap is most of a blank line: the reader
+   * kept arriving at what looked like a finish.
+   *
+   * The reference pages this was rebuilt against — the artwork pages in
+   * Google Arts & Culture, the plate-and-caption pages in Blue Bottle —
+   * do the opposite everywhere: metadata is pinned tight under its
+   * title, two to four points, and SEPARATION IS DONE BY A HAIRLINE.
+   * A rule costs one point and says what a gap cannot, which is that
+   * the things on either side of it belong together.
+   *
+   * So: the gaps come in, the rules go in, and the page reads as one
+   * page. The type sizes are untouched — nothing here was too small.
+   */
   page: {
     paddingHorizontal: 22,
-    paddingTop: 22,
+    paddingTop: 18,
     paddingBottom: 32,
   },
-  figure: { alignItems: 'center', marginBottom: 22 },
+  figure: { alignItems: 'center', marginBottom: 14 },
+  // The hairline that closes the figure block — see the note in Slide.
+  figureRule: {
+    height: 1,
+    marginBottom: 16,
+    backgroundColor: GOLD_HAIR,
+    opacity: 0.55,
+  },
 
   eyebrow: {
     fontFamily: F.sansBold,
@@ -437,7 +542,7 @@ const s = StyleSheet.create({
     color: GOLD_INK,
   },
   title: {
-    marginTop: 7,
+    marginTop: 5,
     fontFamily: F.serifMedium,
     fontSize: 30,
     lineHeight: 35,
@@ -449,7 +554,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 9,
   },
   factItem: { flexDirection: 'row', alignItems: 'center' },
   // The prayer book's own ornament, doing the work a bullet would do
@@ -472,7 +577,7 @@ const s = StyleSheet.create({
   },
 
   body: {
-    marginTop: 18,
+    marginTop: 14,
     fontFamily: F.serif,
     // 17 over 27: this is prose to be read, not a caption under a
     // control, and it is the one place in the app that asks for a
@@ -481,7 +586,9 @@ const s = StyleSheet.create({
     lineHeight: 27,
     color: BODY_INK,
   },
-  bodyAfter: { marginTop: 14 },
+  // ⚠ TIGHTER THAN THE BLOCK ABOVE IT. Paragraph spacing that equals
+  // block spacing tells the reader every paragraph is a new section.
+  bodyAfter: { marginTop: 11 },
   versal: {
     fontFamily: F.serifMedium,
     fontSize: 34,
@@ -489,7 +596,10 @@ const s = StyleSheet.create({
     color: GOLD_INK,
   },
 
-  sourceWrap: { marginTop: 26, alignItems: 'center', gap: 11 },
+  // ⚠ The one gap on this page that stays large. It is not separating
+  // two blocks of the same page — it is separating the page from the
+  // note about where the page came from.
+  sourceWrap: { marginTop: 22, alignItems: 'center', gap: 10 },
   sourceRule: { width: 32, height: 1, opacity: 0.5, backgroundColor: C.gold },
   source: {
     fontFamily: F.serifItalic,
@@ -500,26 +610,61 @@ const s = StyleSheet.create({
   },
 
   // ── The faces ──────────────────────────────────────────────────────
-  faceStack: { position: 'relative' },
-  faceRule: {
-    flexDirection: 'row',
-    alignSelf: 'stretch',
-    justifyContent: 'center',
-    gap: 4,
-    marginTop: 16,
-  },
-  faceChoice: { paddingHorizontal: 12, paddingTop: 6, alignItems: 'center', gap: 6 },
-  faceChoiceText: {
+  /** The stage both states lie in — see FacesFigure. */
+  faceStage: { position: 'relative' },
+  faceLayer: { alignItems: 'center', justifyContent: 'flex-start' },
+  facePair: { flexDirection: 'row', gap: 9 },
+  faceWhole: { alignItems: 'center' },
+  /** The name under each composite. */
+  faceName: {
+    marginTop: 7,
     fontFamily: F.sansBold,
     fontSize: 9.5,
-    letterSpacing: 1.7,
-    color: 'rgba(74,64,56,0.42)',
+    letterSpacing: 1.8,
+    textAlign: 'center',
+    color: GOLD_INK,
+    textTransform: 'uppercase',
   },
-  faceChoiceTextHere: { color: GOLD_INK },
-  faceChoiceUnder: { height: 1.5, width: 22, borderRadius: 1, backgroundColor: 'transparent' },
-  faceChoiceUnderHere: { backgroundColor: C.gold },
+  /**
+   * THE CONTROL.
+   *
+   * ⚠ STILL A BOOK'S FURNITURE — parchment, a gold hairline, the serif —
+   * but the size of something meant to be pressed. It replaced three
+   * names at 9.5 with a 22-point underscore, which nobody found and
+   * nobody could hit.
+   */
+  faceSwitch: {
+    marginTop: 16,
+    flexDirection: 'row',
+    padding: 3,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: GOLD_HAIR,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+  },
+  faceSegment: {
+    minHeight: 34,
+    paddingHorizontal: 15,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  faceSegmentHere: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#8C7A4F',
+    shadowOpacity: 0.13,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 7,
+    elevation: 1,
+  },
+  faceSegmentText: {
+    fontFamily: F.serifMedium,
+    fontSize: 14.5,
+    color: 'rgba(74,64,56,0.5)',
+  },
+  faceSegmentTextHere: { color: GOLD_INK },
   faceCaption: {
-    marginTop: 13,
+    marginTop: 12,
     fontFamily: F.serifItalic,
     fontSize: 14,
     lineHeight: 20,
