@@ -26,7 +26,7 @@ import * as Haptics from 'expo-haptics';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import PantocratorAboutSheet from '@/components/prayer/PantocratorAboutSheet';
-import { PantocratorPanel, PrayerLamp, PrayerNiche, nicheGround, panelWidth } from '@/components/prayer/PantocratorIcon';
+import { PantocratorPanel, PrayerLamp, PrayerNiche, panelWidth } from '@/components/prayer/PantocratorIcon';
 import PrayerFocusSwitch, { type PrayerFocus } from '@/components/prayer/PrayerFocusSwitch';
 import StandingCross, { CROSS_ASPECT } from '@/components/prayer/StandingCross';
 import PrayerReadout, { PrayerReadoutLight } from '@/components/prayer/PrayerReadout';
@@ -132,14 +132,6 @@ const QUOTE_REF = '1 Thessalonians 5:17';
 
 /** Warm paper, so the lamp has something to be light against. */
 const GROUND = ['#FFFDF9', '#FDF8EF', '#FAF3E6'] as const;
-
-/**
- * What the icon's own edges dissolve into: this page's colour at the
- * height the board stands, with the niche lying over it. ⚠ Computed from
- * the niche rather than written down, so tuning the niche can never leave
- * the fade running to a colour that is no longer there — see nicheGround.
- */
-const ICON_GROUND = nicheGround(GROUND[1]);
 
 /**
  * How small the cross or the icon stands before the prayer begins.
@@ -911,7 +903,7 @@ export default function PersonalRuleTaskView({
                 have nothing to dissolve into but cream and it fogs. The
                 cross needs none of this and gets none: the niche arrives
                 and leaves with the board, on the same `swap`. */}
-            <StablePrayerNiche panelHeight={panelHeight} swap={swap} />
+            <StablePrayerNiche ignition={ignition} panelHeight={panelHeight} swap={swap} />
 
             {/* One lamp, behind both. It does not belong to either object
                 — see PrayerLamp — because the whole point of the change
@@ -930,12 +922,10 @@ export default function PersonalRuleTaskView({
               shouldRasterizeIOS
               renderToHardwareTextureAndroid
             >
-              {/* The icon has no frame; it fades out at its own edges, so
-                  it has to be told what into. ⚠ NOT THE PAPER ANY MORE —
-                  the niche lies over the paper here, and a fade running
-                  past it to cream would draw a pale ring at exactly the
-                  edge the niche exists to hide. */}
-              <StablePantocratorPanel height={panelHeight} ground={ICON_GROUND} />
+              {/* No frame and no fade — see PantocratorPanel. It is a
+                  panel of painted wood with a warm shadow under it, and
+                  the niche behind is what it stands in. */}
+              <StablePantocratorPanel height={panelHeight} />
             </Reanimated.View>
           </Reanimated.View>
         )}

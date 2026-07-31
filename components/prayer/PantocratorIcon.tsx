@@ -125,91 +125,101 @@ const FIELD_EMPTY = ['#F3EADA', '#E4D6BD'] as const;
 /* ── THE NICHE ────────────────────────────────────────────────────────
  *
  * ⚠ THE ICON IS A DARK OBJECT AND THE PAGE IS BRIGHT PAPER, and until
- * the real painting arrived nothing on this screen had to reckon with
- * that. An empty board was a pale gradient and dissolved into warm paper
- * beautifully. A sixth-century encaustic panel does not: it is a deep
- * thing — its robe is nearly black, its board is dark at every edge —
- * and fading THAT into cream produced a milky haze all round it, as if
- * the icon were behind frosted glass. It was the one treatment that made
- * the picture look cheap, and it was the treatment already in the code.
+ * the real painting arrived nothing here had to reckon with that. An
+ * empty board was a pale gradient and dissolved into warm paper
+ * beautifully. A sixth-century encaustic panel does not: its robe is
+ * nearly black and its board is dark at every edge, and dropped straight
+ * onto cream it is a hole punched in a bright page.
  *
- * THE FIX IS NOT TO PUSH THE ICON TOWARD THE PAPER. It is to bring the
- * paper toward the icon: a wide, soft, warm-deep field gathered where
- * the icon stands, so its edges dissolve into a value close to their own
- * and there is nothing left to fog. An icon hangs in a niche; this is
- * that niche, made of light rather than of architecture.
+ * ⚠ THE ANSWER IS NOT TO PUSH THE ICON TOWARD THE PAPER — that was
+ * tried, by fading its edges out, and it is what this file did until the
+ * crop was fixed. It is to bring the paper toward the icon: a wide, soft,
+ * warm-deep field gathered where the board stands. An icon hangs in a
+ * niche; this is that niche, made of light rather than of architecture.
  *
  * ⚠ IT BELONGS TO THE ICON AND NOT TO THE SCREEN, which is the opposite
  * of the lamp. The lamp stays lit while the object in it changes — that
  * is the whole good of the exchange. The niche is the WALL, and the wall
  * is the icon's own: a pale wooden cross wants bright paper behind it and
- * would look shadowed hanging here. So it arrives and leaves with the
- * board, on `swap`.
+ * would look shadowed hanging here.
+ *
+ * ⚠ AND IT IS THE ICON'S ANSWER TO THE PRAYER BEGINNING.
+ *
+ * The cross gets a visible one for free: it stands on bright paper, so
+ * the room darkening at its edges and the lamp coming up are plainly
+ * legible against it. Behind the icon the same two moves did almost
+ * nothing — the field there was already warm, and the only thing that
+ * read was the object growing, which is not enough to mark the one
+ * deliberate act on the screen.
+ *
+ * So the WALL ITSELF DEEPENS. At rest it is a warm suggestion; while the
+ * prayer runs it is a dark chapel, and the lamp — up a sixth for the
+ * icon already — lights the face out of it. It is the same idea the room
+ * has, done where it can actually be seen, and it is the truest thing
+ * this screen does: an icon in the dark with a lamp burning in front of
+ * it is not a metaphor for anything, it is what the object is for.
+ *
+ * ⚠ ONE LAYER OPACITY, NOT AN ANIMATED GRADIENT. The field is drawn once
+ * at its DEEPEST value and the whole layer is faded toward its resting
+ * share, so react-native-svg is never handed a stop update per frame.
  *
  * ⚠ AND IT IS MUCH WIDER THAN THE BOARD, deliberately. A field only a
  * little larger would fall away across the panel's own footprint and
- * leave the corners lighter than the sides — a visible ring at exactly
- * the edge all of this exists to hide. Four board-widths across, with
- * the value held flat over the whole panel and falling only well outside
- * it, and the edges have one tone to dissolve into.
+ * leave the corners lighter than the sides.
  */
-const NICHE_TINT = '#4A3312';
-const NICHE_TINT_RGB = [0x4a, 0x33, 0x12] as const;
+const NICHE_TINT = '#3A260C';
 
-/** How deep the field is over the board itself. */
-export const NICHE_ALPHA = { prayer: 0.16, sheet: 0.13 } as const;
+/** How deep the field goes at its darkest, in each of the two rooms. */
+export const NICHE_DEPTH = { prayer: 0.34, sheet: 0.13 } as const;
 
 /**
- * THE COLOUR THE PANEL'S EDGES MUST DISSOLVE INTO — worked out, never
- * written down.
+ * What share of that depth stands before the prayer begins.
  *
- * ⚠ THE FADE AND THE NICHE ARE ONE DECISION. A fade running to the room's
- * paper while a niche lies over that paper draws a pale ring at exactly
- * the edge the niche exists to hide; a fade running to a hardcoded colour
- * draws the same ring the day either the tint or the alpha is tuned. So
- * the ground is COMPUTED from the two of them, and the pair cannot drift.
- *
- * `paper` must be a six-digit hex — the room's own colour at the height
- * the board stands.
+ * 0.38 of 0.34 is 0.13 — the value the resting screen was tuned at — so
+ * the rest state is unchanged and the whole of the change is the arrival
+ * of the running one.
  */
-export function nicheGround(paper: string, alpha: number = NICHE_ALPHA.prayer): string {
-  const hex = /^#([0-9a-fA-F]{6})$/.exec(paper);
-  if (!hex) return paper;
-  const n = parseInt(hex[1], 16);
-  const blend = (channel: number, tint: number) =>
-    Math.round(channel * (1 - alpha) + tint * alpha);
-  const rgb = [
-    blend((n >> 16) & 0xff, NICHE_TINT_RGB[0]),
-    blend((n >> 8) & 0xff, NICHE_TINT_RGB[1]),
-    blend(n & 0xff, NICHE_TINT_RGB[2]),
-  ];
-  return `#${rgb.map(v => v.toString(16).padStart(2, '0')).join('')}`;
-}
+const NICHE_REST_SHARE = 0.38;
 
 export function panelWidth(height: number) {
   return height * PANEL_ASPECT;
 }
 
 /**
- * The wall the icon hangs on. Nothing here moves; only its layer opacity
- * does — on the prayer screen, on the same value that exchanges the two
- * objects; in the About sheet, not at all, because nothing else can ever
- * be standing there.
+ * The wall the icon hangs on.
+ *
+ * `swap` brings it with the board and takes it away with it; `ignition`
+ * deepens it while the prayer runs. Both are optional: the About sheet
+ * has neither, because nothing else can ever be standing there and no
+ * prayer is running.
  */
 export function PrayerNiche({
-  alpha = NICHE_ALPHA.prayer,
+  depth = NICHE_DEPTH.prayer,
+  ignition,
   panelHeight,
   swap,
 }: {
-  alpha?: number;
+  depth?: number;
+  /** 0 at rest, 1 while the prayer runs. */
+  ignition?: SharedValue<number>;
   panelHeight: number;
-  /** 0 = the cross is standing, 1 = the icon is. Omitted: always present. */
+  /** 0 = the cross is standing, 1 = the icon is. */
   swap?: SharedValue<number>;
 }) {
   const width = Math.round(panelWidth(panelHeight) * 4);
   const height = Math.round(panelHeight * 1.9);
+  // ⚠ The gradient's id carries the depth. The sheet opens over the
+  // prayer screen, so two niches at different depths are mounted at
+  // once; sharing one definition would draw the second at the first's.
+  const id = `prayerNiche${Math.round(depth * 1000)}`;
 
-  const style = useAnimatedStyle(() => ({ opacity: swap ? swap.value : 1 }), [swap]);
+  const style = useAnimatedStyle(() => {
+    const here = swap ? swap.value : 1;
+    const lit = ignition
+      ? NICHE_REST_SHARE + ignition.value * (1 - NICHE_REST_SHARE)
+      : 1;
+    return { opacity: here * lit };
+  }, [ignition, swap]);
 
   return (
     <Reanimated.View
@@ -220,85 +230,59 @@ export function PrayerNiche({
     >
       <Svg width={width} height={height}>
         <Defs>
-          {/* ⚠ The gradient's id carries the alpha. Two niches at
-              different depths on screen at once — which is what the
-              sheet opening over the prayer screen is — would otherwise
-              share one definition and the second would be drawn at the
-              first one's value. */}
-          <RadialGradient id={`prayerNiche${Math.round(alpha * 1000)}`} cx="50%" cy="50%" r="50%">
+          <RadialGradient id={id} cx="50%" cy="50%" r="50%">
             {/* Held flat out to 45% — which covers the whole board — and
                 gone by the edge, so the panel has ONE tone behind it and
                 the field never shows an edge of its own. */}
-            <Stop offset="0" stopColor={NICHE_TINT} stopOpacity={alpha} />
-            <Stop offset="0.45" stopColor={NICHE_TINT} stopOpacity={alpha} />
-            <Stop offset="0.74" stopColor={NICHE_TINT} stopOpacity={alpha * 0.44} />
+            <Stop offset="0" stopColor={NICHE_TINT} stopOpacity={depth} />
+            <Stop offset="0.45" stopColor={NICHE_TINT} stopOpacity={depth} />
+            <Stop offset="0.74" stopColor={NICHE_TINT} stopOpacity={depth * 0.44} />
             <Stop offset="1" stopColor={NICHE_TINT} stopOpacity={0} />
           </RadialGradient>
         </Defs>
-        <Ellipse
-          cx={width / 2}
-          cy={height / 2}
-          rx={width / 2}
-          ry={height / 2}
-          fill={`url(#prayerNiche${Math.round(alpha * 1000)})`}
-        />
+        <Ellipse cx={width / 2} cy={height / 2} rx={width / 2} ry={height / 2} fill={`url(#${id})`} />
       </Svg>
     </Reanimated.View>
   );
 }
 
 /**
- * THE ICON, UNFRAMED.
+ * THE ICON, UNFRAMED — BUT NOT DISSOLVED.
  *
- * ⚠ IT WORE A GILT BORDER AND THE BORDER IS GONE. A frame turns the icon
- * into a picture hanging on the screen — an object with an edge, a thing
- * displayed. What this screen wants is the face itself, present, with
- * nothing announcing that it is a reproduction. The lamp behind it does
- * all the framing that is wanted.
+ * ⚠ IT WORE A GILT BORDER AND THE BORDER IS GONE, and that stands. A
+ * frame turns the icon into a picture hanging on the screen — an object
+ * on display, announcing that it is a reproduction. The lamp and the
+ * niche do all the framing that is wanted.
  *
- * ⚠ AND IT DOES NOT END IN A HARD LINE EITHER. Without a border, a
- * rectangle of photograph cut off dead against warm paper is worse than
- * a frame was — the frame at least explained the edge. So the image
- * FADES OUT at its own edges into the page: four gradients, one per
- * side, running from the screen's paper colour to transparent. The face
- * is at the middle where they never reach, and what you see is an image
- * emerging from the light rather than a picture placed on it.
+ * ⚠ AND IT USED TO FADE OUT AT ALL FOUR EDGES, WHICH IS ALSO GONE, and
+ * that is the correction. The reasoning had been that a rectangle of
+ * photograph cut off dead against warm paper is worse than a frame was —
+ * true of the crop we had, and not true of the crop we have.
  *
- * `ground` is the paper it fades into and must be the colour actually
- * behind it, or the fade shows as a grey haze. The prayer screen hands
- * over its own; the About sheet, which is parchment, hands over its.
+ * THE FADE WAS COVERING FOR A BAD CUT. The Commons file is the board
+ * photographed on a white backing, and the board is not a rectangle: its
+ * fourteen-hundred-year-old edges are chipped and BOWED — wide at the
+ * middle, tapering sharply at the very top and foot. Any rectangle loose
+ * enough to hold the whole silhouette carries strips of that white
+ * backing down both sides, which is exactly what the first asset did and
+ * exactly why its edges had to be dissolved to hide them.
+ *
+ * The crop now taken is the largest rectangle lying INSIDE the board
+ * across the band where it runs full width, so there is no backing left
+ * anywhere to hide. And a clean edge does not want hiding: the icon reads
+ * as what it is, a panel, with a warm shadow under it setting it in its
+ * niche. Fading it was making a sixth-century painting look as though it
+ * had been printed on tissue.
  */
 export function PantocratorPanel({
   /** The icon's height. Width follows the panel's real proportion. */
   height,
-  /**
-   * ⚠ THE COLOUR ACTUALLY BEHIND THE BOARD'S EDGES, which since the niche
-   * arrived is no longer the room's paper. Every caller passes
-   * `nicheGround(ownPaper)` rather than its paper directly; handed the
-   * paper, the fade overshoots the niche and rings.
-   */
-  ground,
   style,
 }: {
   height: number;
-  ground: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const width = height * PANEL_ASPECT;
-  /**
-   * ⚠ A TWENTY-FIFTH, NOT A TWELFTH. The fade was twice this deep and it
-   * was built for a board that did not exist yet — a pale placeholder
-   * gradient, which can be dissolved over any distance you like without
-   * looking of anything. Run that far into the real painting and it eats
-   * the top of the halo and the foot of the robe and leaves a milky band
-   * round all four sides.
-   *
-   * The niche behind is what makes the short ramp enough: the tone the
-   * edges are dissolving into is now close to their own, so the job is
-   * only to lose the cut line, not to travel the whole distance from a
-   * dark painting to cream paper.
-   */
-  const fade = Math.round(height * 0.04);
 
   return (
     <View style={[{ width, height }, s.panelWrap, style]}>
@@ -318,61 +302,7 @@ export function PantocratorPanel({
           style={StyleSheet.absoluteFill}
         />
       )}
-
-      {/* The four edges dissolving into the page. Drawn over the image,
-          each one only as deep as it needs to be. */}
-      <EdgeFade ground={ground} depth={fade} side="top" />
-      <EdgeFade ground={ground} depth={fade} side="bottom" />
-      <EdgeFade ground={ground} depth={fade} side="left" />
-      <EdgeFade ground={ground} depth={fade} side="right" />
     </View>
-  );
-}
-
-function EdgeFade({
-  ground,
-  depth,
-  side,
-}: {
-  ground: string;
-  depth: number;
-  side: 'top' | 'bottom' | 'left' | 'right';
-}) {
-  const vertical = side === 'top' || side === 'bottom';
-  /**
-   * ⚠ THE FAR STOP IS THE SAME COLOUR AT ZERO ALPHA, NEVER 'transparent'.
-   * `transparent` is transparent BLACK, and Android interpolates through
-   * it — so a warm fade to `transparent` arrives as a dirty grey halo
-   * around the image, which is the single most common way an effect like
-   * this goes wrong. `ground` must therefore be a six-digit hex; anything
-   * else falls back rather than producing that halo silently.
-   */
-  const clear = /^#[0-9a-fA-F]{6}$/.test(ground) ? `${ground}00` : 'rgba(253,248,239,0)';
-
-  // Every fade runs FROM the paper INTO nothing, so the colour stop order
-  // is fixed and only the direction turns.
-  const start = side === 'top' ? { x: 0.5, y: 0 }
-    : side === 'bottom' ? { x: 0.5, y: 1 }
-      : side === 'left' ? { x: 0, y: 0.5 }
-        : { x: 1, y: 0.5 };
-  const end = side === 'top' ? { x: 0.5, y: 1 }
-    : side === 'bottom' ? { x: 0.5, y: 0 }
-      : side === 'left' ? { x: 1, y: 0.5 }
-        : { x: 0, y: 0.5 };
-
-  return (
-    <LinearGradient
-      pointerEvents="none"
-      colors={[ground, clear]}
-      start={start}
-      end={end}
-      style={[
-        s.edgeFade,
-        vertical
-          ? { [side]: 0, left: 0, right: 0, height: depth }
-          : { [side]: 0, top: 0, bottom: 0, width: depth },
-      ]}
-    />
   );
 }
 
@@ -587,15 +517,33 @@ function FaceSlab({
 }
 
 const s = StyleSheet.create({
-  // ⚠ No shadow on it any more. A drop shadow is what an object lying ON
-  // a surface casts, and the whole point of losing the frame is that the
-  // icon is not an object placed on the page — it comes out of the light.
-  // A shadow under a picture with no edges is a shadow cast by nothing.
-  panelWrap: { position: 'relative' },
+  /**
+   * ⚠ THE SHADOW IS BACK, and the note that removed it is worth keeping
+   * because it was right at the time: a shadow under a picture with no
+   * edges is a shadow cast by nothing, and while the board dissolved into
+   * the page it had no edges to cast one.
+   *
+   * It has them now. The panel is a rectangle of painted wood standing in
+   * a niche, and the shadow is what puts it there rather than leaving it
+   * pasted on. ⚠ WARM, like every other shadow on this screen — a neutral
+   * one over warm paper reads as the phone dimming.
+   *
+   * ⚠ AND STATIC. The niche behind it already carries the whole change
+   * between resting and praying; animating a shadow as well would mean
+   * re-rasterising a soft edge every frame for a second reading of a
+   * thing the wall has already said.
+   */
+  panelWrap: {
+    position: 'relative',
+    shadowColor: '#281906',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 28,
+    elevation: 12,
+  },
   lamp: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   // Centred on the stage the way the lamp is, and behind everything.
   niche: { position: 'absolute', left: '50%', top: '50%' },
-  edgeFade: { position: 'absolute' },
 
   faceBox: {
     position: 'relative',
