@@ -516,6 +516,29 @@ export default function PersonalRuleTaskView({
   // shape, and this one has to be light.
   const readoutLightWidth = Math.round(Math.min(screenWidth * 1.02, 400));
 
+  /**
+   * THE CROSS STANDS A LITTLE LOWER THAN THE ICON, on purpose.
+   *
+   * Both objects are centred in the same box, and centred is where the
+   * icon belongs — a painted board is an even rectangle and its geometric
+   * middle is its optical one. A cross is not: its mass is the crossbar
+   * and the head above it, all of it in the upper half, with a long bare
+   * shaft under. Hung on the box's true centre it therefore reads as
+   * riding high, which is the one thing an object standing in a room must
+   * never look like.
+   *
+   * ⚠ A SHARE OF THE OBJECT, NOT A COUNT OF POINTS, and ⚠ NEVER MORE THAN
+   * THE SLACK THE BOX ACTUALLY HAS. The object is sized to the room it is
+   * given, so on a short phone it can already fill that room to within a
+   * few points; a fixed drop would push the foot of the cross out of its
+   * box and into the row beneath it, on exactly the phones with the least
+   * room to give.
+   */
+  const crossDrop = Math.min(
+    Math.round(panelHeight * 0.035),
+    Math.max(0, Math.round((iconRoom.height - panelHeight) / 2)),
+  );
+
   useEffect(() => {
     // Arriving is slower than leaving, and eases out rather than in and
     // out: a reading appearing should feel like it settles, and one
@@ -732,8 +755,8 @@ export default function PersonalRuleTaskView({
    */
   const crossStyle = useAnimatedStyle(() => {
     const out = Math.min(1, swap.value / 0.55);
-    return { opacity: 1 - out, transform: [{ translateY: out * -14 }] };
-  });
+    return { opacity: 1 - out, transform: [{ translateY: crossDrop + out * -14 }] };
+  }, [crossDrop]);
   const iconStyle = useAnimatedStyle(() => {
     const arrive = Math.max(0, (swap.value - 0.45) / 0.55);
     return { opacity: arrive, transform: [{ translateY: (1 - arrive) * 14 }] };
