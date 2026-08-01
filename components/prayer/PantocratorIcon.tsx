@@ -436,6 +436,49 @@ export function PrayerLamp({
 }
 
 /**
+ * THE WALL THE CHAPEL IS LIT BY — the icon's own colour, out of focus.
+ *
+ * ⚠ THE ABOUT SHEET'S CHAPEL WAS A BLACK-TO-BROWN GRADIENT, and against
+ * an app whose every other screen is warm paper and coloured ink it read
+ * as a different application. This is the fix, and it costs one image:
+ * the board itself, blown up past the bounds and blurred out of all
+ * recognition, so the room behind the icon is lit by the GOLD OF ITS OWN
+ * HALO and the umber of its own robe. Nothing is invented, nothing is
+ * sampled by hand, and if the asset is ever recropped the wall follows
+ * it without a line changing.
+ *
+ * ⚠ THE SHADE OVER IT IS NOT OPTIONAL. Blurred, the panel is still a
+ * bright object; the figure standing in front of it needs the wall to be
+ * darker than itself or it is a picture on a picture. The gradient is
+ * deepest at the head and the foot — where the folio and the leaf's edge
+ * have to read — and lightest across the middle, where the light is.
+ */
+export function PantocratorWall({ shade }: { shade: readonly [string, string, string, string] }) {
+  if (!PANTOCRATOR_IMAGE) {
+    return <LinearGradient colors={FIELD_EMPTY} style={StyleSheet.absoluteFill} pointerEvents="none" />;
+  }
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {/* ⚠ It overhangs its box on every side. A blur samples what is
+          beyond the edge as nothing, so a blurred image drawn to its own
+          bounds fades to transparent at all four of them. */}
+      <ExpoImage
+        source={PANTOCRATOR_IMAGE}
+        style={s.wall}
+        contentFit="cover"
+        blurRadius={44}
+        cachePolicy="memory-disk"
+      />
+      <LinearGradient
+        colors={shade}
+        locations={[0, 0.34, 0.72, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+    </View>
+  );
+}
+
+/**
  * ONE DETAIL OF THE BOARD, enlarged.
  *
  * The same arithmetic the composites use, with no mirror: the board is
@@ -667,6 +710,10 @@ const s = StyleSheet.create({
   lamp: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   // Centred on the stage the way the lamp is, and behind everything.
   niche: { position: 'absolute', left: '50%', top: '50%' },
+
+  /** See PantocratorWall — it overhangs its box so the blur has something
+   *  to sample at every edge. */
+  wall: { position: 'absolute', left: -70, right: -70, top: -80, bottom: -80 },
 
   /** A detail lifted out of the board — see PantocratorDetail. */
   detail: {
