@@ -452,7 +452,22 @@ export function PrayerLamp({
  * darker than itself or it is a picture on a picture. The gradient is
  * deepest at the head and the foot — where the folio and the leaf's edge
  * have to read — and lightest across the middle, where the light is.
+ *
+ * ⚠ AND IT COSTS NOTHING PER FRAME. The blur is a Glide transformation on
+ * Android and a filter on the decoded image on iOS: it is baked into a
+ * cached bitmap once, under its own cache key, and every frame after that
+ * is an ordinary draw. It is not a live backdrop filter and must never be
+ * turned into one — this view sits under a parallaxing chapel.
+ *
+ * ⚠ ANDROID CLAMPS THE RADIUS TO 25 and downsamples by four before
+ * blurring (expo-image's `BlurTransformation(min(r, 25), 4)`), so the two
+ * platforms do not blur by the same arithmetic. It does not matter and
+ * the number is deliberately past the clamp: what is wanted here is a
+ * field of the icon's colour with no feature left legible in it, and both
+ * platforms are far past that at this radius. Anything low enough to
+ * differ visibly would be low enough to show a ghost of the face.
  */
+const WALL_BLUR = 44;
 export function PantocratorWall({ shade }: { shade: readonly [string, string, string, string] }) {
   if (!PANTOCRATOR_IMAGE) {
     return <LinearGradient colors={FIELD_EMPTY} style={StyleSheet.absoluteFill} pointerEvents="none" />;
@@ -466,8 +481,17 @@ export function PantocratorWall({ shade }: { shade: readonly [string, string, st
         source={PANTOCRATOR_IMAGE}
         style={s.wall}
         contentFit="cover"
-        blurRadius={44}
+        blurRadius={WALL_BLUR}
+        // ⚠ Kept in memory. It is the same file the panel in front of it
+        // draws, under a different transformation and therefore a
+        // different key; decoding it again on every page of the sheet
+        // would be paying twice for a thing that never changes.
         cachePolicy="memory-disk"
+        // Nothing is announced: it is a colour, not a picture, and a
+        // reader told "Christ Pantocrator" twice per page is being told
+        // about a blur.
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
       />
       <LinearGradient
         colors={shade}

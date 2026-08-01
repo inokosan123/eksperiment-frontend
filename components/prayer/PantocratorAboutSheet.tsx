@@ -206,6 +206,11 @@ export default function PantocratorAboutSheet({
       /** Where a figure that is not the whole board may stand. */
       figureTop: band + 8,
       room: leafTop - (band + 8) - 6,
+      /**
+       * How far the page must be read up before it is lying under the
+       * band rather than below it — see BandGround.
+       */
+      cover: Math.max(1, leafTop - band),
     };
   }, [height, insets.bottom, insets.top]);
 
@@ -338,14 +343,24 @@ export default function PantocratorAboutSheet({
         </Reanimated.ScrollView>
 
         {/* ── THE HEAD-BAND ──────────────────────────────────────────
-            The reader's own: folio, roundel, ruled channel. */}
+            The reader's own: folio, roundel, ruled channel.
+
+            ⚠ IT IS A BOUND BOOK'S HEAD-BAND AND THE PAGE PASSES UNDER
+            IT. A long slide read to its end lifts the parchment right up
+            to here — so the band takes a parchment ground of its own as
+            that happens, and its ink darkens from the pale gold that
+            reads on a dark wall into the part's own colour, which is
+            what reads on paper. One or the other alone would be
+            invisible half the time. */}
         <View
           pointerEvents="box-none"
           style={[s.head, { paddingTop: insets.top + 2 }]}
         >
+          <BandGround leafY={leafY} cover={metrics.cover} height={metrics.band} />
+
           <View style={s.headRow} pointerEvents="box-none">
             <View pointerEvents="none" style={s.headSpacer} />
-            <Folio index={page} total={total} at={at} />
+            <Folio index={page} total={total} at={at} leafY={leafY} cover={metrics.cover} />
             <TouchableOpacity
               onPress={onClose}
               activeOpacity={0.82}
@@ -364,6 +379,8 @@ export default function PantocratorAboutSheet({
             total={total}
             track={track}
             onTrack={setTrack}
+            leafY={leafY}
+            cover={metrics.cover}
           />
         </View>
 
@@ -423,29 +440,88 @@ export default function PantocratorAboutSheet({
  * rather than snapping when it lands.
  */
 const PART_LIT = PANTOCRATOR_SLIDES.map(slide => slide.lit);
+/** The same five colours, at the weight that reads on parchment. */
+const PART_INK = PANTOCRATOR_SLIDES.map(slide => plaqueInk(slide.accent, 30));
 const PART_STOPS = PANTOCRATOR_SLIDES.map((_, index) => index);
 
+/**
+ * THE COLOUR OF THE HEAD, wherever the head happens to be lying.
+ *
+ * Two interpolations, one inside the other: ACROSS the parts, so the head
+ * warms from gold into violet as the second slide arrives; and BETWEEN
+ * THE TWO GROUNDS, so it darkens as the page rises under it. Both run on
+ * the UI thread — Reanimated parses the `hsl()` that `plaqueInk` returns,
+ * so the app's own ink function can be used here rather than a second set
+ * of hand-picked colours that could drift from it.
+ */
+function useHeadInk(at: SharedValue<number>, leafY: SharedValue<number>, cover: number) {
+  return useAnimatedStyle(() => {
+    const onLeaf = Math.min(1, Math.max(0, leafY.value / cover));
+    return {
+      color: interpolateColor(onLeaf, [0, 1], [
+        interpolateColor(at.value, PART_STOPS, PART_LIT) as string,
+        interpolateColor(at.value, PART_STOPS, PART_INK) as string,
+      ]),
+    };
+  }, [cover]);
+}
+
+/** The parchment the band lies on once the page has been read up to it. */
+function BandGround({
+  leafY, cover, height,
+}: {
+  leafY: SharedValue<number>;
+  cover: number;
+  height: number;
+}) {
+  const style = useAnimatedStyle(() => ({
+    opacity: Math.min(1, Math.max(0, leafY.value / cover)),
+  }), [cover]);
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      // ⚠ It reaches past the band by the height of the fade below it, so
+      // the parchment does not stop dead on a line of its own.
+      style={[s.bandGround, { height: height + 22 }, style]}
+    >
+      <LinearGradient
+        colors={['#FDFBF6', '#FCF8F0', 'rgba(252,248,240,0)']}
+        locations={[0, 0.72, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+    </Reanimated.View>
+  );
+}
+
 function Folio({
-  index, total, at,
+  index, total, at, leafY, cover,
 }: {
   index: number;
   total: number;
   at: SharedValue<number>;
+  leafY: SharedValue<number>;
+  cover: number;
 }) {
-  const figureStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(at.value, PART_STOPS, PART_LIT),
-  }), []);
-  const restStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(at.value, PART_STOPS, PART_LIT),
-  }), []);
+  const inkStyle = useHeadInk(at, leafY, cover);
+  // The struck diamond takes the same colour as a fill rather than as ink.
+  const diamondStyle = useAnimatedStyle(() => {
+    const onLeaf = Math.min(1, Math.max(0, leafY.value / cover));
+    return {
+      backgroundColor: interpolateColor(onLeaf, [0, 1], [
+        interpolateColor(at.value, PART_STOPS, PART_LIT) as string,
+        interpolateColor(at.value, PART_STOPS, PART_INK) as string,
+      ]),
+    };
+  }, [cover]);
 
   return (
     <View style={s.folio} pointerEvents="none">
-      <Reanimated.Text style={[s.folioFigure, figureStyle]} allowFontScaling={false}>
+      <Reanimated.Text style={[s.folioFigure, inkStyle]} allowFontScaling={false}>
         {slideNumeral(index)}
       </Reanimated.Text>
-      <Reanimated.View style={[s.folioDiamond, restStyle]} />
-      <Reanimated.Text style={[s.folioTotal, figureStyle]} allowFontScaling={false}>
+      <Reanimated.View style={[s.folioDiamond, diamondStyle]} />
+      <Reanimated.Text style={[s.folioTotal, inkStyle]} allowFontScaling={false}>
         {slideNumeral(total - 1)}
       </Reanimated.Text>
     </View>
@@ -453,28 +529,42 @@ function Folio({
 }
 
 function RuledChannel({
-  at, total, track, onTrack,
+  at, total, track, onTrack, leafY, cover,
 }: {
   at: SharedValue<number>;
   total: number;
   track: number;
   onTrack: (width: number) => void;
+  leafY: SharedValue<number>;
+  cover: number;
 }) {
   const onLayout = useCallback((event: LayoutChangeEvent) => {
     onTrack(event.nativeEvent.layout.width);
   }, [onTrack]);
 
-  const tint = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(at.value, PART_STOPS, PART_LIT),
-  }), []);
+  const tint = useAnimatedStyle(() => {
+    const onLeaf = Math.min(1, Math.max(0, leafY.value / cover));
+    return {
+      backgroundColor: interpolateColor(onLeaf, [0, 1], [
+        interpolateColor(at.value, PART_STOPS, PART_LIT) as string,
+        interpolateColor(at.value, PART_STOPS, PART_INK) as string,
+      ]),
+    };
+  }, [cover]);
 
   /* ⚠ THE INK IS SCALED, NOT RESIZED, and the mark rides the same value
      rather than running on a clock of its own — so the rule and the
      diamond can never disagree about where the reading is. */
-  const inkStyle = useAnimatedStyle(() => ({
-    transform: [{ scaleX: (at.value + 1) / total }],
-    backgroundColor: interpolateColor(at.value, PART_STOPS, PART_LIT),
-  }), [total]);
+  const inkStyle = useAnimatedStyle(() => {
+    const onLeaf = Math.min(1, Math.max(0, leafY.value / cover));
+    return {
+      transform: [{ scaleX: (at.value + 1) / total }],
+      backgroundColor: interpolateColor(onLeaf, [0, 1], [
+        interpolateColor(at.value, PART_STOPS, PART_LIT) as string,
+        interpolateColor(at.value, PART_STOPS, PART_INK) as string,
+      ]),
+    };
+  }, [cover, total]);
 
   const markStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: track * ((at.value + 1) / total) }],
@@ -971,6 +1061,7 @@ const s = StyleSheet.create({
 
   // ── The head-band ──────────────────────────────────────────────────
   head: { position: 'absolute', left: 0, right: 0, top: 0, paddingHorizontal: 20 },
+  bandGround: { position: 'absolute', left: 0, right: 0, top: 0 },
   headRow: { flexDirection: 'row', alignItems: 'center' },
   headSpacer: { width: 34 },
   folio: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },

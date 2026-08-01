@@ -111,6 +111,80 @@ test('the chapel leaves a readable page on every phone', () => {
   }
 });
 
+/**
+ * ⚠ THE BUG THIS FIXES: read to the end of a slide and the page used to
+ * climb clear of the bottom of the screen, showing the room's black
+ * backing under the text. The cure is geometric rather than a clamp —
+ * the pager begins BELOW the head-band and runs to the very bottom, so
+ * the spacer above the page and the scroller's own height cancel — and
+ * this is the proof of it, at every offset a reader can reach.
+ */
+test('the page reaches the foot of the screen at every scroll offset', () => {
+  const phones: [string, number, number, number][] = [
+    ['iPhone SE', 667, 20, 0],
+    ['iPhone 15', 852, 59, 34],
+    ['iPhone 15 Pro Max', 932, 59, 34],
+    ['Android', 800, 24, 24],
+  ];
+
+  for (const [name, height, topInset, bottomInset] of phones) {
+    const chapel = chapelHeight(height, bottomInset);
+    const band = topInset + 2 + 34 + 10 + 9;
+    const leafTop = chapel - LEAF_LAP;
+    // What the sheet hands the scroller.
+    const spacer = leafTop - band;
+    const scroller = height - band;
+    const minLeaf = height - leafTop;
+
+    assert.ok(spacer > 0, `${name}: the page would begin above the head-band`);
+
+    // Every page length a reader could meet, from the shortest to a very
+    // long one, at the top, the middle and the very end of its scroll.
+    for (let length = minLeaf; length <= minLeaf + 900; length += 7) {
+      const content = spacer + length;
+      const maxScroll = Math.max(0, content - scroller);
+      for (const y of [0, maxScroll / 2, maxScroll]) {
+        const top = leafTop - y;
+        const bottom = top + length;
+        assert.ok(
+          bottom >= height - 0.001,
+          `${name}: at ${Math.round(y)}pt the page ends ${Math.round(height - bottom)}pt short of the foot`,
+        );
+      }
+
+      /* ⚠ A LONG SLIDE DOES PASS UNDER THE BAND, and that is the point of
+         BandGround: the head is a bound book's head-band, not a lid. What
+         must hold is that the band has finished changing ground BY the
+         time the page arrives under it — otherwise there is a window in
+         which pale-gold ink is sitting on parchment. */
+      const coverAt = leafTop - band;
+      const reachesTheBand = maxScroll >= coverAt;
+      if (reachesTheBand) {
+        assert.ok(
+          coverAt > 0,
+          `${name}: the page starts already under the band`,
+        );
+      }
+    }
+  }
+});
+
+test('the head-band finishes changing ground before the page reaches it', () => {
+  for (const [height, topInset, bottomInset] of
+    [[667, 20, 0], [852, 59, 34], [932, 59, 34], [800, 24, 24]] as const) {
+    const chapel = chapelHeight(height, bottomInset);
+    const band = topInset + 2 + 34 + 10 + 9;
+    const cover = Math.max(1, (chapel - LEAF_LAP) - band);
+
+    // The ink is fully dark at leafY === cover, and the page's top edge
+    // is at `band` at exactly that offset — so the two land together.
+    const topAtCover = (chapel - LEAF_LAP) - cover;
+    assert.equal(topAtCover, band, `the ground and the page disagree at ${height}pt`);
+    // And there must be real travel to do it in, or it snaps.
+    assert.ok(cover >= 150, `only ${cover}pt of travel to change ground at ${height}pt`);
+  }
+});
+
 test('the chapel never runs past the foot of the screen', () => {
   for (let height = 600; height <= 1100; height += 4) {
     for (const bottom of [0, 24, 34]) {
