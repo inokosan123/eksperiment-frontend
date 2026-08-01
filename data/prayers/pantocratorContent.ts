@@ -153,7 +153,11 @@ export const PANTOCRATOR_SLIDES: PantocratorSlide[] = [
       'The icon is kept at **Saint Catherine’s Monastery on Mount Sinai** in Egypt. The monastery’s remote location, dry climate, and continuous monastic life helped preserve many early Christian treasures that disappeared elsewhere during centuries of conflict and destruction.',
       // [GEN] the type went on to be used across the Eastern Church — dome,
       // apse half-dome, nave vault.
-      'This icon is especially important **not only because of its age**, but because it became one of the most influential representations of Christ in Christian art. Its direct gaze, raised hand, Gospel book, and solemn presence shaped the image of Christ Pantocrator for generations that followed.',
+      // ⚠ TWO MARKS, AND THEY ARE THE TWO HALVES OF ONE SENTENCE — "not
+      // only X, but Y". Marking one half and leaving the other sets up an
+      // antithesis and then drops it; the eye scanning the bolds would
+      // read "not only because of its age" and never meet the because.
+      'This icon is especially important **not only because of its age**, but because it became one of the **most influential representations of Christ in Christian art**. Its direct gaze, raised hand, Gospel book, and solemn presence shaped the image of Christ Pantocrator for generations that followed.',
     ],
     // The board itself, standing the full height of the chapel. It takes
     // no caption: the plate under the title says everything a caption
