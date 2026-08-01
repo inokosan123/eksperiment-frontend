@@ -21,7 +21,7 @@ import Reanimated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, X } from '@/components/icons/Icons';
+import { X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import OrthodoxPlaque, { plaqueAlpha, plaqueInk } from '@/components/prayer/OrthodoxPlaque';
 import { C, F } from '@/constants/tokens';
@@ -109,7 +109,6 @@ const FOOT_GROUND = ['rgba(246,239,226,0)', '#F6EFE2', '#F3EBDB'] as const;
 const STONE = '#F8F3E8';
 const GOLD_HAIR = 'rgba(197,160,89,0.36)';
 const BODY_INK = '#4A4038';
-const LEAD_INK = '#443A31';
 const BOLD_INK = '#332C25';
 
 /**
@@ -540,12 +539,23 @@ function AboutRoom({ onClose }: { onClose: () => void }) {
         />
       </View>
 
-      {/* ── THE FOOT ───────────────────────────────────────────────
-          ⚠ THE PLAQUE, NOT A RECTANGLE OF ITS OWN INVENTION. This is
-          the app's one action — it begins a prayer on the Prayer Book
-          screen and turns the page inside the reader — and it names
-          the page it is going to, because a bare arrow says only that
-          there is more. */}
+      {/* ── THE FOOT: TWO PLAQUES, ONE SIZE ─────────────────────────
+          ⚠ IT WAS A SMALL ROUNDEL AND ONE WIDE PLAQUE, and on page one
+          the roundel was not there at all — a spacer stood in its place
+          and the plaque sat off the middle of a bar with nothing to
+          balance it. Two seats of equal width are square on every page,
+          and the pair reads as one piece of furniture rather than as a
+          control with a chip beside it.
+
+          ⚠ AND THE WAY ON NO LONGER CARRIES THE NEXT PAGE'S TITLE. Half
+          a bar cannot hold "The meaning of the icon" — it would set the
+          two seats at different weights of information even at the same
+          width, and the long ones would ellipsis. Named plainly, both
+          seats say what they do and neither is the loud one.
+
+          Left is the way back — out of the sheet on the first page,
+          where there is nothing behind it to go to. Right is the way on,
+          and on the last page it finishes. */}
       <LinearGradient
         colors={FOOT_GROUND}
         locations={[0, 0.26, 1]}
@@ -553,29 +563,20 @@ function AboutRoom({ onClose }: { onClose: () => void }) {
         pointerEvents="box-none"
       >
         <View pointerEvents="none" style={s.footRule} />
-        {page > 0 ? (
-          <TouchableOpacity
-            onPress={() => goTo(page - 1)}
-            activeOpacity={0.82}
-            haptic="selection"
-            style={s.roundel}
-            accessibilityRole="button"
-            accessibilityLabel="Previous page"
-          >
-            <View pointerEvents="none" style={[s.roundelFace, { borderColor: plaqueAlpha(here.accent, 0.42) }]} />
-            <View pointerEvents="none" style={s.roundelCatch} />
-            <ChevronLeft s={15} c={plaqueInk(here.accent, 32)} w={2.2} />
-          </TouchableOpacity>
-        ) : (
-          <View style={s.headSpacer} />
-        )}
 
         <OrthodoxPlaque
           accent={here.accent}
-          label={next ? next.title : 'Return to the icon'}
+          label={page > 0 ? 'Back' : 'Exit'}
+          onPress={page > 0 ? () => goTo(page - 1) : onClose}
+          size="compact"
+          style={s.seat}
+        />
+        <OrthodoxPlaque
+          accent={here.accent}
+          label={next ? 'Next' : 'Finish'}
           onPress={next ? () => goTo(page + 1) : onClose}
           size="compact"
-          style={s.plaque}
+          style={s.seat}
         />
       </LinearGradient>
     </View>
@@ -1343,14 +1344,28 @@ const s = StyleSheet.create({
   ornamentLine: { flex: 1, height: 1 },
   ornamentDiamond: { width: 5, height: 5, borderRadius: 1, transform: [{ rotate: '45deg' }] },
 
-  /* ⚠ THE LEADING CAME IN. The prose was set 17 over 27 and the opening
-     18 over 28 — a measure for a printed page held at reading distance,
-     not for a phone, where it left the lines swimming and cost a fifth of
-     every screen. 17 over 25 and 18 over 26 is still generous for a serif
-     and puts two more lines on the page. */
-  lead: { marginTop: 13, fontFamily: F.serif, fontSize: 18, lineHeight: 26, color: LEAD_INK },
+  /**
+   * ⚠ THE OPENING PARAGRAPH IS NO LONGER A SIZE OF ITS OWN.
+   *
+   * It was set 18 over 26 against prose at 17 over 25 — a point larger on
+   * a line a point looser, which is the classic editorial lead and is
+   * wrong here for a plain reason: EVERY SLIDE HAS ONE. What reads as a
+   * lead when it happens once at the top of an article reads, five pages
+   * running, as the first paragraph being a different size for no reason
+   * anybody can see — and it was noticed on all five.
+   *
+   * So the page is one size throughout. The opening is still marked, and
+   * marked better than a point of extra body ever did it: by the versal,
+   * which is what a prayer book uses and what this room already had.
+   *
+   * (The measure itself was brought in earlier: 17 over 27 is a printed
+   * page held at reading distance and swam on a phone.)
+   */
+  lead: { marginTop: 13, fontFamily: F.serif, fontSize: 17, lineHeight: 25, color: BODY_INK },
   leadStrong: { fontFamily: F.serifSemiBold, color: BOLD_INK },
-  versal: { fontFamily: F.serifSemiBold, fontSize: 27, lineHeight: 29 },
+  // ⚠ 1.5× ITS TEXT, which is the rule this room keeps. It was 27 against
+  // an 18-point lead; against 17 the same figure would be 1.6.
+  versal: { fontFamily: F.serifSemiBold, fontSize: 26, lineHeight: 28 },
   body: { marginTop: 11, fontFamily: F.serif, fontSize: 17, lineHeight: 25, color: BODY_INK },
   strong: { fontFamily: F.serifSemiBold, color: BOLD_INK },
 
@@ -1381,7 +1396,10 @@ const s = StyleSheet.create({
   // ── The switch ─────────────────────────────────────────────────────
   switch: {
     marginTop: 13,
-    alignSelf: 'flex-start',
+    // ⚠ CENTRED. Pinned left it hung off the corner of the title as a
+    // loose object; on the middle of the page it reads as what it is —
+    // the control for the figure standing above it, which is centred too.
+    alignSelf: 'center',
     flexDirection: 'row',
     padding: 3,
     borderRadius: 13,
@@ -1434,5 +1452,13 @@ const s = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(197,160,89,0.28)',
   },
-  plaque: { flex: 1 },
+  /**
+   * ⚠ flexBasis 0 AS WELL AS flex 1, and the pair is exactly square
+   * because of it. `flex: 1` alone distributes only the SPARE room, so
+   * two seats holding words of different lengths — "Back" and "Finish" —
+   * would come out at different widths, which is the one thing they were
+   * asked not to do. A zero basis means neither seat brings its own
+   * content width to the division and the bar is halved.
+   */
+  seat: { flex: 1, flexBasis: 0 },
 });

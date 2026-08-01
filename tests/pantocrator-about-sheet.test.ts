@@ -78,6 +78,9 @@ function bodyParagraphs(): string[] {
 
 const PARAGRAPHS = bodyParagraphs();
 
+/** How many slides the sheet actually ships. */
+const PANTOCRATOR_SLIDES_COUNT = (source.match(/^\s{4}id: '[a-z]+',$/gm) ?? []).length;
+
 test('the content file was actually read', () => {
   // A regex that quietly matches nothing would make every test below pass.
   assert.ok(PARAGRAPHS.length >= 18, `only found ${PARAGRAPHS.length} paragraphs`);
@@ -269,6 +272,51 @@ test('re-opening mid-close catches the room and rebuilds it', () => {
 
   door = settle(door);
   assert.equal(door.mounted, true, 'settling an OPEN animation unmounted the room');
+});
+
+/* ── The foot ────────────────────────────────────────────────────────
+ *
+ * Two seats of the same width on every page. Left is the way back — out
+ * of the sheet where there is nothing behind it; right is the way on, and
+ * it finishes at the end.
+ */
+function seats(page: number, total: number): { left: string; right: string } {
+  return {
+    left: page > 0 ? 'Back' : 'Exit',
+    right: page < total - 1 ? 'Next' : 'Finish',
+  };
+}
+
+test('the foot reads Exit/Next, then Back/Next, then Back/Finish', () => {
+  const total = 5;
+  assert.deepEqual(seats(0, total), { left: 'Exit', right: 'Next' });
+  assert.deepEqual(seats(1, total), { left: 'Back', right: 'Next' });
+  assert.deepEqual(seats(3, total), { left: 'Back', right: 'Next' });
+  assert.deepEqual(seats(4, total), { left: 'Back', right: 'Finish' });
+});
+
+test('every page has both seats, and neither is ever empty', () => {
+  const total = PANTOCRATOR_SLIDES_COUNT;
+  for (let page = 0; page < total; page += 1) {
+    const { left, right } = seats(page, total);
+    assert.ok(left.length > 0 && right.length > 0, `page ${page} has a bare seat`);
+  }
+});
+
+test('no seat label is long enough to crowd half a bar', () => {
+  /* ⚠ THIS IS WHY THE WAY ON NO LONGER CARRIES THE NEXT PAGE'S TITLE.
+     Half of a 393-point bar, less the foot's padding and the gap, is
+     about 165 points; the plaque spends 24 on each side and two struck
+     diamonds with their gaps on the rest, leaving roughly 95 for the
+     word. "The meaning of the icon" needs three times that. */
+  const bar = 393 - 22 * 2 - 12;
+  const seat = bar / 2;
+  const room = seat - 24 * 2 - (4.5 + 11) * 2;
+  for (const label of ['Exit', 'Back', 'Next', 'Finish']) {
+    // A serif at 16pt runs a little over half its size per character.
+    assert.ok(label.length * 9 < room, `"${label}" does not fit ${Math.round(room)}pt`);
+  }
+  assert.ok('The meaning of the icon'.length * 9 > room, 'the title would have fitted after all');
 });
 
 test('the way in is slower than the way out', () => {
