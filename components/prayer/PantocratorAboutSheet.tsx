@@ -107,16 +107,16 @@ const BODY_INK = '#4A4038';
 const LEAD_INK = '#463C33';
 
 /**
- * How much of the chapel the leaf leaves standing, and how far it laps
- * over the foot of it.
+ * How tall the chapel stands, how much of the page must survive under
+ * it, and how far the leaf laps over its foot.
  *
- * ⚠ THE CHAPEL IS SIZED FROM THE PHONE, NOT FIXED. 0.545 of a 6.1-inch
- * screen is 464 points, which is a metre of icon; on a small phone the
- * same fraction keeps the same composition rather than swallowing the
- * whole screen. It is floored at 380 so the object never becomes a stamp
- * again, and capped so a tall phone does not push the title off-screen.
+ * ⚠ THE LAP IS THE WHOLE TRICK. A page that stops short of the wall is a
+ * card pinned to it; a page that runs eight points over the wall's edge
+ * is lying on something. Eight is enough to be seen at the rounded
+ * corners and not so much that the board's foot is eaten.
  */
 const CHAPEL_SHARE = 0.545;
+const MIN_LEAF = 250;
 const LEAF_LAP = 8;
 
 /* ── The rule of three parts ────────────────────────────────────────── */
@@ -158,13 +158,25 @@ export default function PantocratorAboutSheet({
   const total = PANTOCRATOR_SLIDES.length;
 
   const metrics = useMemo(() => {
-    const chapel = Math.round(Math.min(Math.max(height * CHAPEL_SHARE, 380), 520));
+    const foot = 13 + 52 + Math.max(insets.bottom, 12) + 6;
+    /* ⚠ THE CHAPEL IS BUDGETED AGAINST THE PAGE, not taken off the top.
+       A flat share of the screen is right on a large phone and wrong on a
+       small one: 0.545 of 852 leaves a page opening on its title, its
+       plate and a line of prose, and 0.545 of 667 leaves one opening on
+       a title and nothing — which reads as a picture with a caption
+       stuck under it rather than as a page you are meant to read. So it
+       takes a little over half, and never so much that the leaf shows
+       less than MIN_LEAF. */
+    const chapel = Math.round(Math.min(
+      height * CHAPEL_SHARE,
+      height - foot - MIN_LEAF + LEAF_LAP,
+      520,
+    ));
     const headTop = insets.top + 8;
     // Where a figure that is not the whole board may stand: clear of the
     // rail above it and of the leaf's rounded edge below.
     const figureTop = headTop + 42;
     const leafTop = chapel - LEAF_LAP;
-    const foot = 13 + 52 + Math.max(insets.bottom, 12) + 6;
     return {
       chapel,
       headTop,
@@ -371,12 +383,17 @@ export default function PantocratorAboutSheet({
             accessibilityRole="button"
             accessibilityLabel={next ? `Next: ${next.title}` : 'Return to the icon'}
           >
-            <View style={s.onCopy}>
+            {/* ⚠ THE DESTINATION FADES, IT DOES NOT CUT. This plate names
+                the page it is going to, so its title changes on every
+                turn; swapped outright it flickered a new sentence into
+                place under a thumb that had just left the screen. Keyed
+                on the page, it arrives the way the page did. */}
+            <Reanimated.View key={page} entering={FadeIn.duration(240)} style={s.onCopy}>
               {!!next && <Text style={s.onKicker}>NEXT</Text>}
               <Text style={s.onTitle} numberOfLines={1}>
                 {next ? next.title : 'Return to the icon'}
               </Text>
-            </View>
+            </Reanimated.View>
             <View style={s.onChevron}>
               <ChevronRight s={16} c={GOLD_INK} w={2} />
             </View>
