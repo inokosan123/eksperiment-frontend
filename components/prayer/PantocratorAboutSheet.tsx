@@ -102,6 +102,25 @@ const WALL_SHADE = [
   'rgba(24,15,7,0.66)',
 ] as const;
 
+/* ── WHAT THE ROOM IS MADE OF BEYOND ITS EDGES ───────────────────────
+ *
+ * ⚠ A STRIP OF FLAT NEAR-BLACK OPENED WHENEVER THE PAGE WAS PULLED DOWN.
+ * At the top of a slide the leaf over-scrolls, and the chapel behind it
+ * follows at a QUARTER of the speed — so three quarters of the drag
+ * became a gap between the foot of the chapel and the head of the page,
+ * showing the room's own backing. That backing was `#16100A`; the wall
+ * above it ends at `#382417`. Nothing about the difference was subtle.
+ *
+ * ⚠ THESE TWO ARE MEASURED, NOT CHOSEN. They are the mean of the top and
+ * bottom eight rows of the wall as it actually composites — the blurred
+ * board under its shade — sampled off the shipped asset. Re-measure them
+ * if `WALL_SHADE` or the crop ever moves, or the seam will show.
+ */
+const WALL_HEAD = '#392E26';
+const WALL_FOOT = '#382417';
+/** How far the wall goes on below the page, for the drag to find. */
+const CHAPEL_FLOOR = 600;
+
 const PARCHMENT = ['#FDFBF6', '#F9F3E8', '#F4ECDD'] as const;
 const FOOT_GROUND = ['rgba(246,239,226,0)', '#F6EFE2', '#F3EBDB'] as const;
 
@@ -442,9 +461,18 @@ function AboutRoom({ onClose }: { onClose: () => void }) {
           and everything inside it is already in place. */}
       <Reanimated.View
         pointerEvents="none"
-        style={[s.chapel, { height: metrics.chapel }, chapelStyle]}
+        style={[s.chapel, { height: metrics.chapel + CHAPEL_FLOOR }, chapelStyle]}
       >
-        <PantocratorWall shade={WALL_SHADE} />
+        {/* ⚠ THE WALL KEEPS ITS OWN BOX. Its shade is a gradient across
+            exactly this height, and its blurred board overhangs and is
+            clipped by exactly these bounds — stretch either and the room
+            is lit differently. The chapel around it is what got taller. */}
+        <View style={[s.chapelWall, { height: metrics.chapel }]}>
+          <PantocratorWall shade={WALL_SHADE} />
+        </View>
+        {/* The wall going on below the page, so a drag finds more room
+            rather than the backing behind it — see WALL_FOOT. */}
+        <View style={[s.chapelFloor, { top: metrics.chapel }]} />
 
         {PANTOCRATOR_SLIDES.map((slide, index) => (
           <FigureLayer
@@ -1176,10 +1204,19 @@ const s = StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(18,11,4,0.97)' },
   roomMotion: { flex: 1 },
 
-  room: { flex: 1, backgroundColor: '#16100A' },
+  /**
+   * ⚠ THE WALL'S OWN HEAD, NOT A BACKING COLOUR. This is only ever seen
+   * in the sliver the chapel uncovers at the very top when the page is
+   * pulled down — a quarter of the drag — and against `#392E26` above it
+   * a near-black read as a hole. The foot of the same drag is answered by
+   * `chapelFloor`, which is where three quarters of it goes.
+   */
+  room: { flex: 1, backgroundColor: WALL_HEAD },
 
   // ── The chapel ─────────────────────────────────────────────────────
   chapel: { position: 'absolute', left: 0, right: 0, top: 0, overflow: 'hidden' },
+  chapelWall: { position: 'absolute', left: 0, right: 0, top: 0, overflow: 'hidden' },
+  chapelFloor: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: WALL_FOOT },
 
   /** The board — see the note in Figure. */
   board: {
@@ -1363,9 +1400,24 @@ const s = StyleSheet.create({
    */
   lead: { marginTop: 13, fontFamily: F.serif, fontSize: 17, lineHeight: 25, color: BODY_INK },
   leadStrong: { fontFamily: F.serifSemiBold, color: BOLD_INK },
-  // ⚠ 1.5× ITS TEXT, which is the rule this room keeps. It was 27 against
-  // an 18-point lead; against 17 the same figure would be 1.6.
-  versal: { fontFamily: F.serifSemiBold, fontSize: 26, lineHeight: 28 },
+  /**
+   * ⚠ NO LINE HEIGHT OF ITS OWN — this is the prayer reader's rule and it
+   * is not optional, see `PrayerBookView`'s `prayerVersal`.
+   *
+   * A nested Text carrying a TALLER line than its parent grows the line
+   * box it sits on, so the opening paragraph came out on looser lines
+   * than every paragraph after it — on all five slides, with the type
+   * sizes already identical. That was the whole of the complaint, and it
+   * survived making the sizes match because the versal was still 26 over
+   * 28 inside prose set 17 over 25.
+   *
+   * Inheriting the parent's leading fixes it, and fixes a second thing
+   * the reader had already been bitten by: anything taller than the
+   * parent's line height is CLIPPED AT THE TOP on Android. Which is also
+   * why the size must follow the leading down whenever the leading moves
+   * — 24 under 25, where the cap stands about 16pt inside the line.
+   */
+  versal: { fontFamily: F.serifSemiBold, fontSize: 24 },
   body: { marginTop: 11, fontFamily: F.serif, fontSize: 17, lineHeight: 25, color: BODY_INK },
   strong: { fontFamily: F.serifSemiBold, color: BOLD_INK },
 
