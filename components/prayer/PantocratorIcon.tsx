@@ -6,12 +6,15 @@ import Svg, { Circle, Defs, Ellipse, RadialGradient, Stop } from 'react-native-s
 import Reanimated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 /* ─────────────────────────────────────────────────────────────
- * THE SINAI PANTOCRATOR — the panel, and the two faces in it.
+ * THE SINAI PANTOCRATOR — the panel, the details in it, and the two
+ * faces made out of it.
  *
  * One component family, used in two places: the hero of the My Rule
- * prayer screen, and the figure on two slides of the About sheet. They
- * share a file because they must share a frame — the same board seen
- * twice, not two drawings of it.
+ * prayer screen, and every figure in the About sheet. They share a file
+ * because they must share a frame — the same board seen many times, not
+ * many drawings of it. Nothing here ships a second picture: the details
+ * and the composites are all windows onto the one photograph, so no crop
+ * of Christ in this app can ever drift from another.
  *
  * WHAT THE PANEL IS
  *
@@ -94,11 +97,21 @@ export const PANEL_ASPECT = 45.5 / 84;
  *              number — mirror about the wrong axis and you get two
  *              strangers rather than two readings of one man.
  *   halfWidth  how far to either side of that axis the face crop runs.
- *              0.26 takes the head and a little of the halo; the old
- *              0.33 reached past the shoulders, which put the book and
- *              the blessing hand into a crop that is meant to be a face.
  *   top        where the crop begins, above the hair.
  *   bottom     where it ends, below the beard.
+ *
+ * ⚠ THE CROP WAS PULLED BACK. It ran 0.26 / 0.06 / 0.44 — tight enough
+ * that the hair met the top edge of the box and the chin very nearly met
+ * the bottom, so each composite read as a head pressed against glass
+ * rather than as a face. 0.30 / 0.015 / 0.53 lets the halo close over the
+ * head, brings the neck and the first of the shoulders in, and makes the
+ * box taller in proportion, which is the shape a portrait wants.
+ *
+ * ⚠ THE AXIS DID NOT MOVE and must not. Widening the crop is safe
+ * precisely because it is CENTRED ON THE AXIS BY CONSTRUCTION: taking
+ * more to either side takes the same amount to both, so the mirror line
+ * still falls down the bridge of the nose and both composites still
+ * cohere. Any change to axisX is a different matter entirely — see below.
  *
  * ⚠ HOW THE AXIS WAS FOUND, because measuring a nose by eye does not
  * settle it: the composites themselves were built from the real file at
@@ -110,12 +123,49 @@ export const PANEL_ASPECT = 45.5 / 84;
  */
 export const FACE = {
   axisX: 0.44,
-  halfWidth: 0.26,
-  top: 0.06,
-  bottom: 0.44,
+  halfWidth: 0.30,
+  top: 0.015,
+  bottom: 0.53,
 } as const;
 
 export type PantocratorFaceMode = 'whole' | 'mercy' | 'judgement';
+
+/* ── THE DETAILS ──────────────────────────────────────────────────────
+ *
+ * ⚠ THREE OF THE FIVE ABOUT PAGES USED TO CARRY NO IMAGE AT ALL — a page
+ * about the blessing hand with no hand on it, a page about the Gospel
+ * book with no book, while a photograph containing both sat two swipes
+ * away. These are windows onto that one photograph, so the app still
+ * ships a single picture of Christ and every page can point at the thing
+ * it is describing.
+ *
+ * ⚠ ALL FOUR NUMBERS ARE FRACTIONS OF THE CROPPED BOARD, measured off the
+ * shipped file on a twentieth-grid rather than guessed. To re-measure
+ * after a re-crop: lay a 5%-grid over the asset and read the corners.
+ */
+export const PANTOCRATOR_DETAILS = {
+  /** The eyes, close. The panel is built to be met at this distance. */
+  gaze: { x0: 0.185, y0: 0.150, x1: 0.700, y1: 0.345 },
+  /** The right hand, opened outward. [SIN] */
+  hand: { x0: 0.125, y0: 0.600, x1: 0.395, y1: 0.885 },
+  /** The thick Gospel book, held in against the body. [SIN] */
+  book: { x0: 0.400, y0: 0.560, x1: 0.975, y1: 0.900 },
+} as const;
+
+export type PantocratorDetailName = keyof typeof PANTOCRATOR_DETAILS;
+export type PantocratorCrop = { x0: number; y0: number; x1: number; y1: number };
+
+/**
+ * How wide a detail comes out for a given height.
+ *
+ * The crop spans `x1 − x0` across the board and `y1 − y0` down it, and the
+ * board is `PANEL_ASPECT` wide for its height — so in real proportions the
+ * window is `(x1 − x0)` by `(y1 − y0) / PANEL_ASPECT`, and that ratio is
+ * what a caller needs before it can lay anything out.
+ */
+export function detailAspect(crop: PantocratorCrop): number {
+  return (crop.x1 - crop.x0) / ((crop.y1 - crop.y0) / PANEL_ASPECT);
+}
 
 /* ── The icon ────────────────────────────────────────────────────── */
 
@@ -169,8 +219,16 @@ const FIELD_EMPTY = ['#F3EADA', '#E4D6BD'] as const;
  */
 const NICHE_TINT = '#3A260C';
 
-/** How deep the field goes at its darkest, in each of the two rooms. */
-export const NICHE_DEPTH = { prayer: 0.34, sheet: 0.13 } as const;
+/**
+ * How deep the field goes at its darkest.
+ *
+ * ⚠ THERE IS ONE ROOM AGAIN. The About sheet used to hang the panel on a
+ * shallow version of this wall — a warm bloom under a small board on a
+ * bright page — because the page it stood on was parchment. That sheet's
+ * chapel is a real dark room now and carries its own light, so the only
+ * niche left in the app is the prayer screen's.
+ */
+export const NICHE_DEPTH = { prayer: 0.34 } as const;
 
 /**
  * What share of that depth stands before the prayer begins.
@@ -189,9 +247,9 @@ export function panelWidth(height: number) {
  * The wall the icon hangs on.
  *
  * `swap` brings it with the board and takes it away with it; `ignition`
- * deepens it while the prayer runs. Both are optional: the About sheet
- * has neither, because nothing else can ever be standing there and no
- * prayer is running.
+ * deepens it while the prayer runs. Both are optional, and `depth` is
+ * kept a parameter rather than folded into the body, because a wall whose
+ * darkness cannot be set is a wall that can only ever hang in one room.
  */
 export function PrayerNiche({
   depth = NICHE_DEPTH.prayer,
@@ -208,9 +266,9 @@ export function PrayerNiche({
 }) {
   const width = Math.round(panelWidth(panelHeight) * 4);
   const height = Math.round(panelHeight * 1.9);
-  // ⚠ The gradient's id carries the depth. The sheet opens over the
-  // prayer screen, so two niches at different depths are mounted at
-  // once; sharing one definition would draw the second at the first's.
+  // ⚠ The gradient's id carries the depth, so two walls of different
+  // darkness can be mounted at once without the second being drawn at the
+  // first's. Only one is, today; the cost of keeping this is one string.
   const id = `prayerNiche${Math.round(depth * 1000)}`;
 
   const style = useAnimatedStyle(() => {
@@ -374,6 +432,71 @@ export function PrayerLamp({
         <Circle cx={size / 2} cy={size / 2} r={size / 2} fill="url(#pantocratorLamp)" />
       </Svg>
     </Reanimated.View>
+  );
+}
+
+/**
+ * ONE DETAIL OF THE BOARD, enlarged.
+ *
+ * The same arithmetic the composites use, with no mirror: the board is
+ * scaled until the crop fills the window, then slid so the crop's corner
+ * sits in the window's corner.
+ *
+ *   imageW  = boxW / (x1 − x0)
+ *   imageH  = imageW / PANEL_ASPECT
+ *   offsetX = −x0 · imageW,  offsetY = −y0 · imageH
+ *
+ * ⚠ IT IS A WINDOW, NOT A FRAME — rounded and shadowed because it is a
+ * fragment lifted out of the panel and set on the chapel wall, which is
+ * what a museum does with a detail and what the whole board must never
+ * get. The board is the object; a frame around it would make it a
+ * reproduction. A detail already is one, and says so.
+ */
+export function PantocratorDetail({
+  crop,
+  height,
+  style,
+}: {
+  crop: PantocratorCrop;
+  height: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const g = useMemo(() => {
+    const width = height * detailAspect(crop);
+    const imageW = width / (crop.x1 - crop.x0);
+    const imageH = imageW / PANEL_ASPECT;
+    return {
+      width,
+      imageW,
+      imageH,
+      left: -crop.x0 * imageW,
+      top: -crop.y0 * imageH,
+    };
+  }, [crop, height]);
+
+  return (
+    <View style={[s.detail, { width: g.width, height }, style]}>
+      {PANTOCRATOR_IMAGE ? (
+        <ExpoImage
+          source={PANTOCRATOR_IMAGE}
+          style={{
+            position: 'absolute',
+            width: g.imageW,
+            height: g.imageH,
+            left: g.left,
+            top: g.top,
+          }}
+          contentFit="fill"
+        />
+      ) : (
+        <LinearGradient
+          colors={FIELD_EMPTY}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+    </View>
   );
 }
 
@@ -545,24 +668,46 @@ const s = StyleSheet.create({
   // Centred on the stage the way the lamp is, and behind everything.
   niche: { position: 'absolute', left: '50%', top: '50%' },
 
+  /** A detail lifted out of the board — see PantocratorDetail. */
+  detail: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    backgroundColor: '#1A1209',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.5,
+    shadowRadius: 26,
+    elevation: 10,
+  },
+
   faceBox: {
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 10,
+    borderRadius: 14,
     borderCurve: 'continuous',
-    backgroundColor: '#EFE5D2',
+    backgroundColor: '#1A1209',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.5,
+    shadowRadius: 26,
+    elevation: 10,
   },
   faceSplit: { flexDirection: 'row', alignItems: 'flex-start' },
   slab: { position: 'relative', overflow: 'hidden' },
   slabFlipped: { transform: [{ scaleX: -1 }] },
+  // ⚠ WARM, NOT WHITE. The composites hang on a dark, warm wall now; a
+  // neutral white hairline down the middle of a sixth-century face read
+  // as a scratch on the photograph rather than as the mark of a join.
   faceSeam: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     left: '50%',
     width: 1,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255,226,182,0.18)',
   },
 });

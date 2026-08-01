@@ -45,7 +45,28 @@
  * that localising the screen later localises this with it.
  * ───────────────────────────────────────────────────────────── */
 
-export type PantocratorFigure = 'icon' | 'faces';
+/* ── WHAT STANDS IN THE CHAPEL ────────────────────────────────────────
+ *
+ * ⚠ EVERY PAGE NOW SHOWS THE THING IT IS TALKING ABOUT, and all of it is
+ * cut from the ONE photograph — see PANTOCRATOR_DETAILS. Three of the
+ * five pages used to be prose alone on a beige page: a page about the
+ * blessing hand with no hand on it, a page about the Gospel book with no
+ * book. The reader was being told about an object they could not see
+ * while an image of it sat two swipes away.
+ *
+ *   panel   the whole board. It opens the sheet and it closes it —
+ *           the essay pulls back to the whole once it has walked
+ *           through the parts, which is also why the last page's way
+ *           out is called Return to the icon.
+ *   gaze    the eyes, close. The page about His nearness.
+ *   faces   the two mirrored composites, side by side.
+ *   hands   the open hand and the Gospel book, together — the two sides
+ *           the page is about, in one figure.
+ */
+export type PantocratorFigure = 'panel' | 'gaze' | 'faces' | 'hands';
+
+/** One line of the museum plate: what it is, and what it says. */
+export type PantocratorPlateRow = { label: string; value: string };
 
 export type PantocratorSlide = {
   id: string;
@@ -54,10 +75,22 @@ export type PantocratorSlide = {
   title: string;
   /** One or more paragraphs. The first takes the illuminated opening. */
   body: string[];
-  /** A short strip of hard values under the title, where there are any. */
-  facts?: string[];
+  /**
+   * The tombstone label — what a museum hangs beside a panel.
+   *
+   * ⚠ IT REPLACED A RUN-ON STRIP OF TRACKED CAPITALS. "MID-6TH CENTURY ◆
+   * HOT WAX ON PANEL ◆ 84 × 45.5 CM" was three unlike facts run together
+   * at nine and a half points with no way to tell which was which. Named
+   * rows read at a glance and are the form the reader has already met on
+   * every museum wall.
+   */
+  plate?: PantocratorPlateRow[];
   /** The figure this slide shows, if it shows one. */
   figure?: PantocratorFigure;
+  /** One line under the figure, naming what is being looked at. */
+  caption?: string;
+  /** The closing line of the whole sheet, set apart. */
+  envoi?: string;
 };
 
 export const PANTOCRATOR_SLIDES: PantocratorSlide[] = [
@@ -69,7 +102,11 @@ export const PANTOCRATOR_SLIDES: PantocratorSlide[] = [
     // [SIN] mid-6th century, concluded in 1962, exact date still unknown.
     // [SIN] encaustic — a medium using hot wax paint.
     // [SIN] 84 cm high, 45.5 cm wide, 1.2 cm thick.
-    facts: ['Mid-6th century', 'Hot wax on panel', '84 × 45.5 cm'],
+    plate: [
+      { label: 'Painted', value: 'Mid-6th century' },
+      { label: 'Medium', value: 'Hot wax on wood' },
+      { label: 'Panel', value: '84 × 45.5 cm' },
+    ],
     body: [
       // [SIN] mid-6th century; encaustic. [GEN] the oldest known surviving
       // example of the Pantocrator type.
@@ -81,12 +118,18 @@ export const PANTOCRATOR_SLIDES: PantocratorSlide[] = [
       // apse half-dome, nave vault.
       'This icon is especially important not only because of its age, but because it became one of the most influential representations of Christ in Christian art. Its direct gaze, raised hand, Gospel book, and solemn presence shaped the image of Christ Pantocrator for generations that followed.',
     ],
-    figure: 'icon',
+    // The board itself, standing the full height of the chapel. It takes
+    // no caption: the plate under the title says everything a caption
+    // would, and a line of italic under a full-bleed object reads as a
+    // label stuck to the painting.
+    figure: 'panel',
   },
   {
     id: 'pantocrator',
     eyebrow: 'THE NAME',
     title: 'Christ Pantocrator',
+    figure: 'gaze',
+    caption: 'The eyes, close — the whole panel is built to be met at this distance.',
     body: [
       // [GEN] Greek πᾶς (all) + κράτος (strength/power); usually rendered
       // "Almighty" or "All-powerful".
@@ -103,6 +146,8 @@ export const PANTOCRATOR_SLIDES: PantocratorSlide[] = [
     id: 'faces',
     eyebrow: 'THE TWO HALVES',
     title: 'One face. Two natures.',
+    figure: 'faces',
+    caption: 'Each half of the face, mirrored into a whole one.',
     body: [
       'The two sides of Christ’s face are noticeably different. The eyes, brows, cheeks, and mouth do not form a perfectly symmetrical portrait. One side appears gentler and more open, while the other appears darker, more solemn, and commanding.',
       // [SIN] "His right side (the viewer's left) are supposed to represent the
@@ -116,12 +161,15 @@ export const PANTOCRATOR_SLIDES: PantocratorSlide[] = [
       // this sentence a reader can leave believing Sinai holds two panels.
       'The mirrored portraits shown above are modern comparisons created from the two sides of the original face. They make the asymmetry easier to see, but they are not separate images found in the original icon.',
     ],
-    figure: 'faces',
   },
   {
     id: 'mercy',
     eyebrow: 'THE TWO SIDES',
     title: 'Mercy and judgment',
+    // The two things the page is about, standing side by side: the hand
+    // that opens outward, and the book held in against the body.
+    figure: 'hands',
+    caption: 'The hand that opens, and the book held close.',
     body: [
       // [GEN] one half read as mercy and grace, the other as the judge of
       // unrepentant sinners.
@@ -139,6 +187,11 @@ export const PANTOCRATOR_SLIDES: PantocratorSlide[] = [
     id: 'meaning',
     eyebrow: 'WHAT IT SHOWS',
     title: 'The meaning of the icon',
+    // ⚠ THE WHOLE BOARD AGAIN, and that repetition is the point. This
+    // page names the hand, the book, the eyes, the halo and the robe in
+    // turn, so the figure it wants is the one where all five can be
+    // found at once. The sheet opens on the whole icon and closes on it.
+    figure: 'panel',
     body: [
       // [SIN] "His right hand is shown opening outward, signifying his gift of
       // blessing." [GEN] the same hand is the conventional rhetorical gesture
@@ -151,8 +204,16 @@ export const PANTOCRATOR_SLIDES: PantocratorSlide[] = [
       // [GEN] some examples of the type carry a cruciform halo. ⚠ Nothing is
       // claimed here about lettering inside it — see the file header.
       'The golden cross-shaped halo proclaims Christ’s holiness and divine glory while recalling the Cross through which He entered suffering and conquered death. His deep purple garments also convey dignity and royal authority.',
-      'Every part of the icon leads toward the same vision: Christ is the merciful Saviour, the divine Teacher, the righteous Judge, and the Ruler of All.',
+      'Every part of the icon leads toward the same vision.',
     ],
+    // ⚠ THE LAST SENTENCE OF THE SHEET, LIFTED OUT OF THE PARAGRAPH IT
+    // ENDED. It was the closing line of five pages of writing set at the
+    // same size as the sentence about panel thickness, so it landed as
+    // one more clause. Given its own measure it lands as an ending —
+    // and the paragraph above keeps its opening half, so nothing here is
+    // said twice and nothing is lost.
+    envoi:
+      'Christ is the merciful Saviour, the divine Teacher, the righteous Judge, and the Ruler of All.',
   },
 ];
 
@@ -169,7 +230,9 @@ export const PANTOCRATOR_SOURCE_NOTE =
 
 /** What the two mirrored composites are called, in the order they are shown. */
 export const PANTOCRATOR_FACE_LABELS = {
-  whole: 'THE ICON',
+  // ⚠ Named as the control names it. "THE ICON" under a crop of the face
+  // says the crop is the icon, and the icon is the whole board.
+  whole: 'AS PAINTED',
   // The viewer's left half, mirrored into a whole face. [GEN] mercy and grace;
   // [SIN] the qualities of his human nature.
   mercy: 'MERCY',
@@ -180,7 +243,26 @@ export const PANTOCRATOR_FACE_LABELS = {
 
 /** One line under the composite, naming what you are looking at. */
 export const PANTOCRATOR_FACE_CAPTIONS = {
-  whole: 'The panel as it is — the halves as they were painted.',
+  whole: 'The face as it was painted — neither half repeated.',
   mercy: 'The left half of the face, mirrored into a whole one.',
   judgement: 'The right half of the face, mirrored into a whole one.',
+} as const;
+
+/** What the two states of the faces figure are called on the control. */
+export const PANTOCRATOR_FACE_VIEWS = {
+  halves: 'The two halves',
+  whole: 'As painted',
+} as const;
+
+/**
+ * The names under the two details on the Mercy and judgment page.
+ *
+ * ⚠ NAMED FOR WHAT THEY ARE, NOT FOR WHAT THEY MEAN. "Mercy" under a
+ * photograph of a hand would be telling the reader the conclusion before
+ * the paragraph has made the case, and the case is an interpretation —
+ * see the header. The prose beside them does the reading.
+ */
+export const PANTOCRATOR_DETAIL_LABELS = {
+  hand: 'The open hand',
+  book: 'The Gospel book',
 } as const;

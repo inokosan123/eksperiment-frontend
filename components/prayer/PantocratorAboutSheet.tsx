@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   ScrollView,
@@ -6,12 +6,17 @@ import {
   Text,
   View,
   useWindowDimensions,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 import Reanimated, {
+  Extrapolation,
   FadeIn,
+  FadeInDown,
+  interpolate,
+  interpolateColor,
+  runOnJS,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -23,58 +28,111 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import {
   FACE,
-  NICHE_DEPTH,
   PANEL_ASPECT,
+  PANTOCRATOR_DETAILS,
+  PANTOCRATOR_IMAGE,
+  PantocratorDetail,
   PantocratorFace,
   PantocratorPanel,
-  PANTOCRATOR_IMAGE,
-  PrayerNiche,
+  detailAspect,
 } from '@/components/prayer/PantocratorIcon';
 import {
+  PANTOCRATOR_DETAIL_LABELS,
   PANTOCRATOR_FACE_CAPTIONS,
   PANTOCRATOR_FACE_LABELS,
+  PANTOCRATOR_FACE_VIEWS,
   PANTOCRATOR_SLIDES,
   PANTOCRATOR_SOURCE_NOTE,
   type PantocratorSlide,
 } from '@/data/prayers/pantocratorContent';
 
-/* ─────────────────────────────────────────────────────────────
- * ABOUT THE ICON — five pages on the Sinai Pantocrator.
+/* ─────────────────────────────────────────────────────────────────────
+ * ABOUT THE ICON — a chapel with a book open under it.
  *
- * THE REGISTER IS THE LITURGICAL ONE. Scripture is the most serious
- * part of this app and it is drawn quieter than the coin grammar, not
- * louder: parchment rather than white, gold as hairlines rather than as
- * fills, the serif given room, and the first letter of each page raised
- * the way a prayer book raises the first letter of a prayer. Nothing on
- * these pages is a card, a plaque or a seat. This is a book.
+ * ⚠ IT WAS FIVE PAGES OF GREY SERIF ON BEIGE. One small panel at the top
+ * of page one, two mirrored faces on page three, and three pages that
+ * were prose alone — a page about the blessing hand with no hand on it, a
+ * page about the Gospel book with no book, while a photograph containing
+ * both sat two swipes away. The writing was good and nothing carried it.
  *
- * ⚠ THE PAGER IS A NATIVE SCROLL, NOT A GESTURE HANDLER. RNGH inside a
- * Modal crashes Android unless the content is wrapped in its own
- * GestureHandlerRootView, and this needs nothing RNGH gives: a
- * horizontal ScrollView with pagingEnabled brings the swipe, the snap
- * and the momentum for free, on the platform's own thread. The only
- * Reanimated here is opacity on the face composites.
+ * THE ROOM IS NOW TWO ROOMS, AND THAT IS THE WHOLE IDEA.
  *
- * ⚠ AND THE FACES ARE NOT A WIPE. A horizontal drag inside a horizontal
- * pager fights the pager — every attempt to reveal one half would
- * either turn the page or fail to. So the three states are chosen from
- * a rule of three names and cross-fade in place, which is also the only
- * form that can show the ORIGINAL beside the two composites rather than
- * only one against the other.
- * ───────────────────────────────────────────────────────────── */
+ *   THE CHAPEL, above. Dark, warm, with a lamp burning in it. The icon
+ *   stands the full height of it, edge to edge, the way the object
+ *   actually is — a metre of painted board, not a stamp on a page. This
+ *   is what the file's own PrayerLamp note has always said the panel
+ *   wants: "an icon in the dark with a lamp burning in front of it is not
+ *   a metaphor for anything, it is what the object is for."
+ *
+ *   THE LEAF, below. Parchment, rounded over the chapel's foot, carrying
+ *   the reading. It rides UP over the chapel as you read and comes back
+ *   down when you are done, so the page you are reading and the thing you
+ *   are reading about are never in competition for the screen.
+ *
+ * ⚠ THE FIGURE CHANGES WITH THE PAGE AND THE LAMP DOES NOT. Swiping
+ * cross-fades the whole board into the eyes, the eyes into the two
+ * mirrored composites, those into the hand and the book, and the last
+ * page pulls back to the whole board again. The light stays lit and the
+ * thing in it changes — the same exchange the prayer screen makes
+ * between the cross and the icon, which is why it belongs here.
+ *
+ * ⚠ AND THE CHAPEL PARALLAXES BEHIND THE LEAF at a quarter of its speed,
+ * which is the only reason the two rooms read as one deep room rather
+ * than as a picture with a card taped under it.
+ *
+ * ⚠ STILL NO GESTURE HANDLER. RNGH inside a Modal crashes Android unless
+ * the content carries its own GestureHandlerRootView, and nothing here
+ * needs it: a horizontal ScrollView with pagingEnabled brings the swipe,
+ * the snap and the momentum on the platform's own thread, and Reanimated
+ * reads its offset without owning it.
+ * ───────────────────────────────────────────────────────────────────── */
 
-const PARCHMENT = ['#FDFBF6', '#F8F2E6', '#F2E9D8'] as const;
+/* ── The chapel ─────────────────────────────────────────────────────── */
+const CHAPEL = ['#0C0703', '#1A1109', '#241708', '#2B1C0A'] as const;
+const CHAPEL_STOPS = [0, 0.4, 0.76, 1] as const;
+const LAMP_CORE = '#FFC978';
+const LAMP_MID = '#F0BE7A';
+const LAMP_EDGE = '#E9C58E';
+
+/** Ink that reads on the chapel wall. */
+const ON_DARK = 'rgba(255,236,205,0.85)';
+const ON_DARK_SOFT = 'rgba(255,236,205,0.60)';
+const GILT = '#E2BB74';
+
+/* ── The leaf ───────────────────────────────────────────────────────── */
+const PARCHMENT = ['#FDFBF6', '#F8F2E6', '#F3EBDB'] as const;
 const GOLD_INK = '#8B6B2F';
-const GOLD_HAIR = 'rgba(197,160,89,0.42)';
+const GOLD_HAIR = 'rgba(197,160,89,0.36)';
 const BODY_INK = '#4A4038';
+const LEAD_INK = '#463C33';
+
+/**
+ * How much of the chapel the leaf leaves standing, and how far it laps
+ * over the foot of it.
+ *
+ * ⚠ THE CHAPEL IS SIZED FROM THE PHONE, NOT FIXED. 0.545 of a 6.1-inch
+ * screen is 464 points, which is a metre of icon; on a small phone the
+ * same fraction keeps the same composition rather than swallowing the
+ * whole screen. It is floored at 380 so the object never becomes a stamp
+ * again, and capped so a tall phone does not push the title off-screen.
+ */
+const CHAPEL_SHARE = 0.545;
+const LEAF_LAP = 8;
+
+/* ── The rule of three parts ────────────────────────────────────────── */
+const SLIDE_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'] as const;
+
+function slideNumeral(index: number): string {
+  return SLIDE_NUMERALS[index] ?? String(index + 1);
+}
 
 /**
  * The opening letter, raised.
  *
- * The same rule the prayer reader uses (`PrayerBookView`'s `takeVersal`):
- * only a real letter takes a versal, because a raised quotation mark or
- * ellipsis is worse than no flourish at all, and a short line is left
- * alone because a versal on three words reads as a mistake.
+ * ⚠ THE SAME RULE AS THE PRAYER READER (`PrayerBookView`'s `takeVersal`):
+ * only a real letter takes one, because a raised quotation mark is worse
+ * than no flourish at all, and a short line is left alone because a
+ * versal on three words reads as a mistake.
  */
 function takeVersal(content: string): { initial: string; rest: string } | null {
   const text = content.trimStart();
@@ -94,25 +152,88 @@ export default function PantocratorAboutSheet({
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [page, setPage] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const [facesWhole, setFacesWhole] = useState(false);
+  const pager = useRef<ScrollView>(null);
+  const leaves = useRef<(ScrollView | null)[]>([]);
   const total = PANTOCRATOR_SLIDES.length;
+
+  const metrics = useMemo(() => {
+    const chapel = Math.round(Math.min(Math.max(height * CHAPEL_SHARE, 380), 520));
+    const headTop = insets.top + 8;
+    // Where a figure that is not the whole board may stand: clear of the
+    // rail above it and of the leaf's rounded edge below.
+    const figureTop = headTop + 42;
+    const leafTop = chapel - LEAF_LAP;
+    const foot = 13 + 52 + Math.max(insets.bottom, 12) + 6;
+    return {
+      chapel,
+      headTop,
+      figureTop,
+      leafTop,
+      foot,
+      /** How far the leaf travels before it has covered the chapel. */
+      cover: Math.max(1, leafTop - (headTop + 34)),
+    };
+  }, [height, insets.bottom, insets.top]);
+
+  /** Where the pager stands, in pages. Drives every cross-fade. */
+  const at = useSharedValue(0);
+  /** How far the leaf of the page in view has been read up. */
+  const leafY = useSharedValue(0);
+  /** Which page the shared value last announced — see the handler. */
+  const announced = useSharedValue(0);
 
   // Opening it again opens it at the beginning. A sheet that remembers
   // page five is a sheet that opens on a sentence with no beginning.
   useEffect(() => {
     if (!visible) return;
     setPage(0);
-    scrollRef.current?.scrollTo({ x: 0, animated: false });
-  }, [visible]);
+    setFacesWhole(false);
+    at.value = 0;
+    leafY.value = 0;
+    announced.value = 0;
+    pager.current?.scrollTo({ x: 0, animated: false });
+  }, [announced, at, leafY, visible]);
 
-  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const next = Math.round(event.nativeEvent.contentOffset.x / width);
-    setPage(current => (current === next ? current : Math.max(0, Math.min(total - 1, next))));
-  }, [total, width]);
+  /**
+   * ⚠ THE PAGE IS ANNOUNCED FROM THE UI THREAD, ONCE PER PAGE. Calling
+   * back into JavaScript on every scroll frame to keep a `useState` in
+   * step would spend a bridge hop per frame on a value that changes five
+   * times in the life of the sheet; comparing against `announced` first
+   * means the hop happens only when the answer is different.
+   */
+  const onPagerScroll = useAnimatedScrollHandler({
+    onScroll: event => {
+      at.value = event.contentOffset.x / width;
+      const next = Math.round(at.value);
+      if (next !== announced.value && next >= 0 && next < total) {
+        announced.value = next;
+        // The page arriving is at the top of its own reading, and the
+        // head has to know that while the swipe is still running or it
+        // would still be dressed for parchment over a dark chapel.
+        leafY.value = withTiming(0, { duration: 220 });
+        runOnJS(setPage)(next);
+      }
+    },
+  });
+
+  // Every page opens at its own beginning. Done once the swipe has
+  // settled, so nothing is seen jumping while it is still on screen.
+  const restOthers = useCallback((current: number) => {
+    leaves.current.forEach((leaf, index) => {
+      if (index !== current) leaf?.scrollTo({ y: 0, animated: false });
+    });
+  }, []);
 
   const goTo = useCallback((index: number) => {
-    scrollRef.current?.scrollTo({ x: index * width, animated: true });
+    pager.current?.scrollTo({ x: index * width, animated: true });
   }, [width]);
+
+  const chapelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -leafY.value * 0.25 }],
+  }), []);
+
+  const next = page < total - 1 ? PANTOCRATOR_SLIDES[page + 1] : null;
 
   return (
     <Modal
@@ -124,250 +245,434 @@ export default function PantocratorAboutSheet({
       statusBarTranslucent
     >
       <View style={s.room}>
-        <LinearGradient
-          colors={PARCHMENT}
-          locations={[0, 0.5, 1]}
-          start={{ x: 0.1, y: 0 }}
-          end={{ x: 0.9, y: 1 }}
-          style={StyleSheet.absoluteFill}
+        {/* ── THE CHAPEL ───────────────────────────────────────────────
+            Behind everything, and moving a quarter as far as the leaf
+            that covers it. */}
+        <Reanimated.View
           pointerEvents="none"
-        />
+          entering={FadeIn.duration(520)}
+          style={[s.chapel, { height: metrics.chapel }, chapelStyle]}
+        >
+          <LinearGradient
+            colors={CHAPEL}
+            locations={CHAPEL_STOPS}
+            style={StyleSheet.absoluteFill}
+          />
+          <Lamp width={width} height={metrics.chapel} />
 
-        {/* ── THE HEAD ──────────────────────────────────────────────
-            ⚠ IT NO LONGER REPEATS THE TITLE ON EVERY PAGE. "About the
-            icon / Christ Pantocrator" stood over all five slides in
-            25-point serif — a heading you read once, occupying the top
-            eighth of the screen four more times than it was wanted, on
-            a sheet whose whole business is prose.
+          {PANTOCRATOR_SLIDES.map((slide, index) => (
+            <FigureLayer
+              key={slide.id}
+              at={at}
+              index={index}
+              mounted={Math.abs(index - page) <= 1}
+              width={width}
+            >
+              <Figure
+                slide={slide}
+                width={width}
+                chapel={metrics.chapel}
+                figureTop={metrics.figureTop}
+                leafTop={metrics.leafTop}
+                whole={facesWhole}
+              />
+            </FigureLayer>
+          ))}
 
-            What belongs at the top of a five-part story is WHERE YOU
-            ARE, which is what every story format puts there and what
-            this sheet had nowhere at all. So the head is the progress,
-            the count, and the way out. The name of the thing is on the
-            first page, where it introduces the thing. */}
-        <View style={[s.head, { paddingTop: insets.top + 10 }]}>
-          <View style={s.headCopy}>
-            <ReadingProgress page={page} total={total} onGo={goTo} />
-            <Text style={s.headCount}>
-              {slideNumeral(page)} · {PANTOCRATOR_SLIDES[page]?.eyebrow ?? ''}
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={onClose}
-            activeOpacity={0.78}
-            style={s.close}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <X s={17} c={GOLD_INK} />
-          </TouchableOpacity>
-        </View>
+          {/* The lintel. A dark head is the only way the rail and the
+              way out stay legible over a gilded halo. */}
+          <LinearGradient
+            colors={['rgba(8,5,2,0.62)', 'rgba(8,5,2,0.26)', 'rgba(8,5,2,0)']}
+            locations={[0, 0.48, 1]}
+            style={[s.lintel, { height: insets.top + 110 }]}
+          />
+        </Reanimated.View>
 
-        {/* ── The pages ────────────────────────────────────────────── */}
-        <ScrollView
-          ref={scrollRef}
+        {/* ── THE PAGES ────────────────────────────────────────────────
+            Transparent, so the chapel is the ground they lie on. */}
+        <Reanimated.ScrollView
+          ref={pager as never}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
-          onScroll={onScroll}
-          scrollEventThrottle={32}
-          style={s.pager}
+          onScroll={onPagerScroll}
+          onMomentumScrollEnd={() => restOthers(page)}
+          scrollEventThrottle={16}
+          style={[s.pager, { bottom: metrics.foot }]}
         >
           {PANTOCRATOR_SLIDES.map((slide, index) => (
-            <Slide
+            <Leaf
               key={slide.id}
+              ref={leaf => { leaves.current[index] = leaf; }}
               slide={slide}
+              index={index}
               width={width}
-              screenHeight={height}
+              minLeaf={height - metrics.leafTop}
+              leafTop={metrics.leafTop}
+              bottom={metrics.foot + 26}
+              leafY={leafY}
               last={index === total - 1}
+              whole={facesWhole}
+              onWhole={setFacesWhole}
             />
           ))}
-        </ScrollView>
+        </Reanimated.ScrollView>
 
-        {/* ── THE FOOT: A WAY ON ────────────────────────────────────
-            ⚠ NOTHING TOLD YOU THERE WAS MORE. The sheet's only
-            navigation was five diamonds six points across, at the very
-            bottom, on a thread — beautiful, and unreadable as either a
-            position or a control. A reader who did not think to swipe
-            met one page and left.
+        {/* ── THE HEAD ─────────────────────────────────────────────────
+            Where you are, and the way out. Both are dressed for the
+            chapel and re-dress themselves for parchment as the leaf rises
+            over it — see RailSegment and CloseChip.
 
-            So the foot carries a real way forward, in the book's own
-            register: parchment, a gold hairline, the serif. It names
-            the page it is going to, which is the thing a bare arrow
-            can never do — you go on because you want THAT, not because
-            a button was there. */}
-        <View style={[s.foot, { paddingBottom: Math.max(insets.bottom, 12) + 6 }]}>
+            ⚠ box-none, OR IT EATS THE TOP OF EVERY SWIPE. This bar lies
+            over the head of the pager; a plain View there is a hit target
+            like any other, and the band across the top of the icon —
+            which is exactly where a thumb reaches to turn a page — would
+            answer nothing at all. */}
+        <View
+          pointerEvents="box-none"
+          style={[s.head, { paddingTop: metrics.headTop }]}
+        >
+          <ReadingRail page={page} total={total} onGo={goTo} leafY={leafY} cover={metrics.cover} />
+          <CloseChip onPress={onClose} leafY={leafY} cover={metrics.cover} />
+        </View>
+
+        {/* ── THE FOOT ─────────────────────────────────────────────────
+            ⚠ IT NAMES THE PAGE IT IS GOING TO. A bare arrow says only
+            that there is more; a title says what the more IS, and a
+            reader goes on because they want that page rather than
+            because a control existed. */}
+        <LinearGradient
+          colors={['rgba(245,237,223,0)', '#F5EDDF', '#F3EADA']}
+          locations={[0, 0.3, 1]}
+          style={[s.foot, { paddingBottom: Math.max(insets.bottom, 12) + 6 }]}
+          pointerEvents="box-none"
+        >
           <View style={s.footRule} />
           {page > 0 ? (
             <TouchableOpacity
               onPress={() => goTo(page - 1)}
               activeOpacity={0.78}
               haptic="selection"
-              style={s.footBack}
+              style={s.back}
               accessibilityRole="button"
               accessibilityLabel="Previous page"
             >
               <ChevronLeft s={17} c={GOLD_INK} w={2} />
             </TouchableOpacity>
           ) : (
-            <View style={s.footBackSpacer} />
+            <View style={s.backSpacer} />
           )}
 
-          {page < total - 1 ? (
-            <TouchableOpacity
-              onPress={() => goTo(page + 1)}
-              activeOpacity={0.86}
-              haptic="selection"
-              style={s.footOn}
-              accessibilityRole="button"
-              accessibilityLabel={`Next: ${PANTOCRATOR_SLIDES[page + 1].title}`}
-            >
-              <View style={s.footOnCopy}>
-                <Text style={s.footOnKicker}>NEXT</Text>
-                <Text style={s.footOnTitle} numberOfLines={1}>
-                  {PANTOCRATOR_SLIDES[page + 1].title}
-                </Text>
-              </View>
-              <ChevronRight s={18} c={GOLD_INK} w={2} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              onPress={onClose}
-              activeOpacity={0.86}
-              haptic="selection"
-              style={s.footOn}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <View style={s.footOnCopy}>
-                <Text style={s.footOnTitle}>Return to the icon</Text>
-              </View>
-              <ChevronRight s={18} c={GOLD_INK} w={2} />
-            </TouchableOpacity>
-          )}
-        </View>
+          <TouchableOpacity
+            onPress={next ? () => goTo(page + 1) : onClose}
+            activeOpacity={0.86}
+            haptic="selection"
+            style={s.on}
+            accessibilityRole="button"
+            accessibilityLabel={next ? `Next: ${next.title}` : 'Return to the icon'}
+          >
+            <View style={s.onCopy}>
+              {!!next && <Text style={s.onKicker}>NEXT</Text>}
+              <Text style={s.onTitle} numberOfLines={1}>
+                {next ? next.title : 'Return to the icon'}
+              </Text>
+            </View>
+            <View style={s.onChevron}>
+              <ChevronRight s={16} c={GOLD_INK} w={2} />
+            </View>
+          </TouchableOpacity>
+        </LinearGradient>
       </View>
     </Modal>
   );
 }
 
-/* ── One page ─────────────────────────────────────────────────────── */
-
-function Slide({
-  slide,
-  width,
-  screenHeight,
-  last,
-}: {
-  slide: PantocratorSlide;
-  width: number;
-  screenHeight: number;
-  last: boolean;
-}) {
-  const [first, ...rest] = slide.body;
-  const versal = takeVersal(first);
-  // The board is tall — 84 by 45.5 — so it is budgeted from the height of
-  // the phone rather than from the width of the page, or it swallows a
-  // small screen whole and leaves the prose no room at all.
-  const panelHeight = Math.min(screenHeight * 0.34, 300);
-
+/* ── The lamp ────────────────────────────────────────────────────────
+ *
+ * One warm pool, low in the chapel, drawn once. ⚠ OPACITY AND NOTHING
+ * ELSE: scaling a soft gradient on Android resamples its bitmap, and this
+ * app has been bitten by that before. It does not move at all here — the
+ * chapel it lives in is what parallaxes.
+ */
+function Lamp({ width, height }: { width: number; height: number }) {
+  const size = Math.round(Math.max(width, height) * 1.5);
   return (
-    <ScrollView
-      style={{ width }}
-      contentContainerStyle={s.page}
-      showsVerticalScrollIndicator={false}
+    <Reanimated.View
+      pointerEvents="none"
+      entering={FadeIn.duration(760)}
+      style={[
+        s.lamp,
+        { width: size, height: size, marginLeft: -size / 2, marginTop: -size / 2 },
+      ]}
+      shouldRasterizeIOS
+      renderToHardwareTextureAndroid
     >
-      {slide.figure === 'icon' && (
-        <View style={s.figure}>
-          {/* ⚠ THE SAME PROBLEM AS THE PRAYER SCREEN, IN A LIGHTER ROOM —
-              see PrayerNiche. A dark sixth-century panel fading into
-              parchment fogs at every edge exactly as it fogged into the
-              prayer page's cream, so it gets the same warm field to
-              dissolve into. Shallower than the prayer screen's: this
-              sheet is a page you read, not a room you pray in, and the
-              field has prose beside it. */}
-          <PrayerNiche depth={NICHE_DEPTH.sheet} panelHeight={panelHeight} />
-          <PantocratorPanel height={panelHeight} />
-        </View>
-      )}
-
-      {slide.figure === 'faces' && <FacesFigure width={width - 44} />}
-
-      {/* ⚠ A RULE CLOSES THE FIGURE, NOT A GAP. The plate and the prose
-          were held apart by twenty-two points of nothing, which is how
-          a page ends up looking like two pages. A hairline does the same
-          work in one point and says something a gap cannot: that what
-          is above it and what is below it belong to each other. */}
-      {!!slide.figure && <View style={s.figureRule} />}
-
-      {/* ⚠ THE EYEBROW HAS MOVED TO THE HEAD, beside the numeral, where
-          it names the page you are on while you are on it. Repeating it
-          here would be the same line twice on one screen. */}
-      <Text style={s.title}>{slide.title}</Text>
-
-      {!!slide.facts?.length && (
-        <View style={s.facts}>
-          {slide.facts.map((fact, index) => (
-            <View key={fact} style={s.factItem}>
-              {index > 0 && <View style={s.factDiamond} />}
-              <Text style={s.factText}>{fact}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {versal ? (
-        <Text style={s.body}>
-          <Text style={s.versal}>{versal.initial}</Text>
-          {versal.rest}
-        </Text>
-      ) : (
-        <Text style={s.body}>{first}</Text>
-      )}
-
-      {rest.map(paragraph => (
-        <Text key={paragraph.slice(0, 24)} style={[s.body, s.bodyAfter]}>
-          {paragraph}
-        </Text>
-      ))}
-
-      {last && (
-        <View style={s.sourceWrap}>
-          <View style={s.sourceRule} />
-          <Text style={s.source}>{PANTOCRATOR_SOURCE_NOTE}</Text>
-        </View>
-      )}
-    </ScrollView>
+      <Svg width={size} height={size}>
+        <Defs>
+          <RadialGradient id="aboutLamp" cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor={LAMP_CORE} stopOpacity={0.32} />
+            <Stop offset="0.42" stopColor={LAMP_MID} stopOpacity={0.14} />
+            <Stop offset="1" stopColor={LAMP_EDGE} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Ellipse
+          cx={size / 2}
+          cy={size / 2}
+          rx={size / 2}
+          ry={size / 2}
+          fill="url(#aboutLamp)"
+        />
+      </Svg>
+    </Reanimated.View>
   );
 }
 
-/* ── WHERE YOU ARE ────────────────────────────────────────────────────
+/* ── One figure, lying over the last ─────────────────────────────────
  *
- * ⚠ FIVE SEGMENTS ON A THREAD, NOT FIVE BEADS UNDER ONE. The old pager
- * was five diamonds six points across at the foot of the screen: it
- * could not tell you how far through you were without counting, and at
- * six points it was not a control anybody could hit.
+ * ⚠ ABSOLUTE, AND FADED BY THE PAGER'S OWN OFFSET. The cross-fade is not
+ * fired when the page changes — it IS the swipe, so a drag half way
+ * across leaves the icon and the eyes half way between each other, and
+ * letting go either finishes the exchange or takes it back.
  *
- * A segmented rail answers both at a glance — filled behind you, empty
- * ahead — which is why every story format uses one, and it is still the
- * book's own material: a gold thread, inked where you have read.
+ * ⚠ AND IT DRIFTS AT A FIFTH OF THE PAGE'S SPEED. Two objects exchanging
+ * in a fixed frame look like a slideshow; the same exchange with the
+ * incoming object still travelling looks like a room being walked
+ * through.
  *
- * ⚠ AND IT IS STILL TAPPABLE, with the hit area padded well past the
- * ink. A rail you can only swipe is a rail that has taken away the one
- * thing the diamonds did offer.
+ * Only the page in view and its two neighbours are mounted: the figures
+ * hold as many as four windows onto the board apiece, and there is no
+ * reason for the hand, the book and both composites to be decoded while
+ * somebody is reading page one.
  */
-const SLIDE_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'] as const;
+function FigureLayer({
+  at, index, mounted, width, children,
+}: {
+  at: SharedValue<number>;
+  index: number;
+  mounted: boolean;
+  width: number;
+  children: React.ReactNode;
+}) {
+  const style = useAnimatedStyle(() => {
+    const away = at.value - index;
+    return {
+      opacity: Math.max(0, 1 - Math.abs(away) * 1.25),
+      transform: [{ translateX: -away * width * 0.2 }],
+    };
+  }, [index, width]);
 
-function slideNumeral(index: number): string {
-  return SLIDE_NUMERALS[index] ?? String(index + 1);
+  if (!mounted) return null;
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, style]}
+    >
+      {children}
+    </Reanimated.View>
+  );
 }
 
-function ReadingProgress({
-  page, total, onGo,
+/* ── What stands in the chapel ───────────────────────────────────── */
+
+function Figure({
+  slide, width, chapel, figureTop, leafTop, whole,
+}: {
+  slide: PantocratorSlide;
+  width: number;
+  chapel: number;
+  figureTop: number;
+  leafTop: number;
+  whole: boolean;
+}) {
+  /* THE WHOLE BOARD, THE FULL HEIGHT OF THE CHAPEL.
+     ⚠ IT USED TO BE 34% OF THE SCREEN'S HEIGHT WITH PROSE UNDER IT — a
+     157-point-wide stamp of the most important object in the room. It is
+     the room now: floor to lintel, its foot tucked under the leaf's
+     rounded edge, which is what makes the leaf read as a page lying ON
+     something rather than as a panel with a picture above it. */
+  if (slide.figure === 'panel') {
+    return (
+      <View style={s.boardStand}>
+        <PantocratorPanel height={chapel} style={s.board} />
+      </View>
+    );
+  }
+
+  // Everything else stands between the rail and the leaf, with its
+  // caption under it — a detail on a wall, labelled.
+  const room = leafTop - figureTop - 4;
+  const stage = { top: figureTop, height: room };
+  const inner = width - 40;
+  const CAPTION = 34;
+
+  if (slide.figure === 'gaze') {
+    const crop = PANTOCRATOR_DETAILS.gaze;
+    const tall = Math.min(room - CAPTION, inner / detailAspect(crop));
+    return (
+      <FigureStand stage={stage} caption={slide.caption}>
+        <PantocratorDetail crop={crop} height={tall} />
+      </FigureStand>
+    );
+  }
+
+  if (slide.figure === 'hands') {
+    const { hand, book } = PANTOCRATOR_DETAILS;
+    const tall = Math.min(
+      room - CAPTION - 26,
+      (inner - 12) / (detailAspect(hand) + detailAspect(book)),
+    );
+    return (
+      <FigureStand stage={stage} caption={slide.caption}>
+        <View style={s.pair}>
+          <View>
+            <PantocratorDetail crop={hand} height={tall} />
+            <Text style={s.figureName}>{PANTOCRATOR_DETAIL_LABELS.hand}</Text>
+          </View>
+          <View>
+            <PantocratorDetail crop={book} height={tall} />
+            <Text style={s.figureName}>{PANTOCRATOR_DETAIL_LABELS.book}</Text>
+          </View>
+        </View>
+      </FigureStand>
+    );
+  }
+
+  if (slide.figure === 'faces') {
+    /* ⚠ ONE COLUMN SETS THE HEIGHT FOR BOTH STATES, so the pair and the
+       single board are the same box and the change between them is pure
+       opacity — nothing on the wall is laid out a second time when the
+       reader taps. */
+    const column = faceColumn(inner, room - CAPTION - 26);
+    const tall = faceHeight(column);
+    if (!PANTOCRATOR_IMAGE) {
+      return (
+        <FigureStand
+          stage={stage}
+          caption="The two composites appear here once the icon file is added to the app."
+        >
+          <PantocratorFace width={column} mode="whole" />
+        </FigureStand>
+      );
+    }
+    return (
+      <FigureStand
+        stage={stage}
+        caption={whole ? PANTOCRATOR_FACE_CAPTIONS.whole : slide.caption}
+      >
+        <View style={{ height: tall + 26 }}>
+          <FaceState show={!whole}>
+            <View style={s.pair}>
+              <View>
+                <PantocratorFace width={column} mode="mercy" />
+                <Text style={s.figureName}>{PANTOCRATOR_FACE_LABELS.mercy}</Text>
+              </View>
+              <View>
+                <PantocratorFace width={column} mode="judgement" />
+                <Text style={s.figureName}>{PANTOCRATOR_FACE_LABELS.judgement}</Text>
+              </View>
+            </View>
+          </FaceState>
+          <FaceState show={whole}>
+            <View style={s.pairCentre}>
+              <PantocratorFace width={column} mode="whole" />
+              <Text style={s.figureName}>{PANTOCRATOR_FACE_LABELS.whole}</Text>
+            </View>
+          </FaceState>
+        </View>
+      </FigureStand>
+    );
+  }
+
+  return null;
+}
+
+function FigureStand({
+  stage, caption, children,
+}: {
+  stage: { top: number; height: number };
+  caption?: string;
+  children: React.ReactNode;
+}) {
+  /* ⚠ NO ENTERING ANIMATION IN HERE. The figures mount and unmount as the
+     reader moves through the sheet — a neighbour comes into existence one
+     page before it is wanted — so an arrival animation on this would fire
+     while a swipe was already halfway across and drop the incoming figure
+     twenty points down the wall. The sheet's arrival belongs to the
+     chapel, which is mounted exactly once. */
+  /* ⚠ THE LABEL LINE IS PINNED AND THE FIGURE FLOATS ABOVE IT. Centring
+     the whole stack put the caption at a different height on every page —
+     twenty points lower under the composites than under the eyes — so
+     cross-fading from one page to the next slid a line of italic up the
+     wall for no reason. A museum's labels run at one height along a wall,
+     and for the same reason: it is the wall that is being read, not each
+     card on its own. */
+  return (
+    <View style={[s.stand, stage]}>
+      <View style={s.standRoom}>{children}</View>
+      {!!caption && <Text style={s.caption}>{caption}</Text>}
+    </View>
+  );
+}
+
+/** One of the two states of the faces figure, lying over the other. */
+function FaceState({ show, children }: { show: boolean; children: React.ReactNode }) {
+  const at = useSharedValue(show ? 1 : 0);
+  useEffect(() => {
+    at.value = withTiming(show ? 1 : 0, { duration: 260 });
+  }, [at, show]);
+  const style = useAnimatedStyle(() => ({ opacity: at.value }), []);
+  return (
+    <Reanimated.View style={[StyleSheet.absoluteFill, s.faceState, style]}>
+      {children}
+    </Reanimated.View>
+  );
+}
+
+/** The gap between the two composites, and between hand and book. */
+const PAIR_GAP = 12;
+
+/**
+ * How tall a composite of this width comes out.
+ *
+ * ⚠ THE CROP'S OWN ARITHMETIC, not a guess: the crop spans `2 × halfWidth`
+ * across the board and `bottom − top` down it, so a column of width w is
+ * `(bottom − top) × w / (2 × halfWidth) / PANEL_ASPECT` tall. Written here
+ * because the wall has to reserve the height before either state has been
+ * laid out, or the figure would settle a frame late.
+ */
+function faceHeight(column: number): number {
+  const cropW = FACE.halfWidth * 2;
+  const cropH = FACE.bottom - FACE.top;
+  return Math.round((cropH * (column / cropW)) / PANEL_ASPECT);
+}
+
+/** The widest column of the pair that still stands in the room it has. */
+function faceColumn(inner: number, room: number): number {
+  const wide = Math.floor((inner - PAIR_GAP) / 2);
+  const tall = faceHeight(wide);
+  return tall <= room ? wide : Math.floor((wide * room) / tall);
+}
+
+/* ── WHERE YOU ARE ───────────────────────────────────────────────────
+ *
+ * A segmented rail: filled behind you, empty ahead, answered at a glance.
+ * Still the book's own material — a gold thread, inked where you have
+ * read — and still tappable, with the hit area five times the ink.
+ *
+ * ⚠ IT CHANGES GROUND WITH THE PAGE. It hangs on a dark chapel until the
+ * leaf is read up over it, and then it is a gold thread on parchment.
+ * A single colour cannot be right on both, and a rail you cannot see is
+ * not a rail.
+ */
+function ReadingRail({
+  page, total, onGo, leafY, cover,
 }: {
   page: number;
   total: number;
   onGo: (index: number) => void;
+  leafY: SharedValue<number>;
+  cover: number;
 }) {
   return (
     <View style={s.rail} accessibilityRole="tablist">
@@ -382,475 +687,595 @@ function ReadingProgress({
           accessibilityLabel={`Page ${index + 1} of ${total}`}
           accessibilityState={{ selected: index === page }}
         >
-          <View style={[s.railSegment, index <= page && s.railSegmentRead]} />
+          <RailSegment read={index <= page} leafY={leafY} cover={cover} />
         </TouchableOpacity>
       ))}
     </View>
   );
 }
 
-/* ── The two faces ──────────────────────────────────────────────────
- *
- * ⚠ THEY ARE SHOWN SIDE BY SIDE NOW, WHICH IS THE WHOLE POINT OF THEM.
- *
- * The figure used to show ONE composite at a time, chosen from a rule of
- * three names set at nine and a half points. Two faults, and the first
- * is fatal to the idea: a demonstration that two halves DIFFER cannot be
- * made by showing one half at a time. You had to tap, remember, tap
- * back, and compare against a memory. Every presentation of this famous
- * comparison — including the one this sheet was written from — puts them
- * beside each other, because that is the only arrangement in which the
- * difference is a thing you SEE rather than a thing you are told.
- *
- * The second: nine and a half points of tracked capitals with a
- * twenty-two point underline is not a control anybody finds. It is now
- * two segments at readable size, and the pair is what it opens on.
- *
- * ⚠ AND THE BOX NEVER RESIZES, which is what lets the two states
- * cross-fade instead of jumping. The composites and the whole panel are
- * the same crop, so a column of one width is a column of one height:
- * two side by side, or one centred, inside a box whose height is fixed
- * by that single column. Nothing below the figure ever moves.
- * ────────────────────────────────────────────────────────────────── */
+function RailSegment({
+  read, leafY, cover,
+}: {
+  read: boolean;
+  leafY: SharedValue<number>;
+  cover: number;
+}) {
+  const style = useAnimatedStyle(() => {
+    const onLeaf = interpolate(leafY.value, [0, cover], [0, 1], Extrapolation.CLAMP);
+    return {
+      backgroundColor: read
+        ? interpolateColor(onLeaf, [0, 1], [GILT, C.gold])
+        : interpolateColor(onLeaf, [0, 1], ['rgba(255,236,205,0.24)', 'rgba(197,160,89,0.24)']),
+    };
+  }, [cover, read]);
 
-type FacesView = 'halves' | 'whole';
+  return <Reanimated.View style={[s.railSegment, style]} />;
+}
 
-const FACES_VIEWS: { id: FacesView; label: string }[] = [
-  { id: 'halves', label: 'The two halves' },
-  { id: 'whole', label: 'The icon' },
-];
+/** The way out — see the note on the rail; it changes ground the same way. */
+function CloseChip({
+  onPress, leafY, cover,
+}: {
+  onPress: () => void;
+  leafY: SharedValue<number>;
+  cover: number;
+}) {
+  const style = useAnimatedStyle(() => {
+    const onLeaf = interpolate(leafY.value, [0, cover], [0, 1], Extrapolation.CLAMP);
+    return {
+      backgroundColor: interpolateColor(
+        onLeaf, [0, 1], ['rgba(255,236,205,0.12)', 'rgba(255,255,255,0.72)'],
+      ),
+      borderColor: interpolateColor(
+        onLeaf, [0, 1], ['rgba(255,236,205,0.28)', GOLD_HAIR],
+      ),
+    };
+  }, [cover]);
 
-function FacesFigure({ width }: { width: number }) {
-  const [view, setView] = useState<FacesView>('halves');
-  const at = useSharedValue(0);
+  const inkStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leafY.value, [0, cover], [1, 0], Extrapolation.CLAMP),
+  }), [cover]);
 
-  const choose = useCallback((next: FacesView) => {
-    setView(next);
-    at.value = withTiming(next === 'whole' ? 1 : 0, { duration: 260 });
-  }, [at]);
-
-  // ⚠ One column sets the height for both states — see the note above.
-  const column = Math.floor((width - FACES_GAP) / 2);
-
-  // With no image there is nothing to mirror, and a control that changes
-  // nothing is worse than no control at all.
-  if (!PANTOCRATOR_IMAGE) {
-    return (
-      <View style={s.figure}>
-        <PantocratorFace width={column} mode="whole" />
-        <Text style={s.faceCaption}>
-          The two composites appear here once the icon file is added to the app.
-        </Text>
-      </View>
-    );
-  }
+  const goldStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(leafY.value, [0, cover], [0, 1], Extrapolation.CLAMP),
+  }), [cover]);
 
   return (
-    <View style={s.figure}>
-      <View style={[s.faceStage, { width, height: faceBoxHeight(column) }]}>
-        {/* THE PAIR */}
-        <FaceLayer at={at} show={0}>
-          <View style={s.facePair}>
-            <View>
-              <PantocratorFace width={column} mode="mercy" />
-              <Text style={s.faceName}>{PANTOCRATOR_FACE_LABELS.mercy}</Text>
-            </View>
-            <View>
-              <PantocratorFace width={column} mode="judgement" />
-              <Text style={s.faceName}>{PANTOCRATOR_FACE_LABELS.judgement}</Text>
-            </View>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.78}
+      accessibilityRole="button"
+      accessibilityLabel="Close"
+    >
+      <Reanimated.View style={[s.close, style]}>
+        {/* ⚠ TWO MARKS, ONE FADED INTO THE OTHER. An SVG stroke colour is
+            a prop rather than a style, so it cannot be driven from the UI
+            thread; two crosses at opposite opacities can. */}
+        <Reanimated.View style={[s.closeInk, inkStyle]}>
+          <X s={16} c={ON_DARK} />
+        </Reanimated.View>
+        <Reanimated.View style={[s.closeInk, goldStyle]}>
+          <X s={16} c={GOLD_INK} />
+        </Reanimated.View>
+      </Reanimated.View>
+    </TouchableOpacity>
+  );
+}
+
+/* ── One leaf ───────────────────────────────────────────────────────── */
+
+const Leaf = ({
+  ref, slide, index, width, minLeaf, leafTop, bottom, leafY, last, whole, onWhole,
+}: {
+  ref: (leaf: ScrollView | null) => void;
+  slide: PantocratorSlide;
+  index: number;
+  width: number;
+  minLeaf: number;
+  leafTop: number;
+  bottom: number;
+  /** Shared with the head and the chapel — see the note below. */
+  leafY: SharedValue<number>;
+  last: boolean;
+  whole: boolean;
+  onWhole: (whole: boolean) => void;
+}) => {
+  const [first, ...rest] = slide.body;
+  const versal = takeVersal(first);
+
+  /* ⚠ ONE HANDLER PER LEAF, WRITING INTO ONE SHARED VALUE. The five pages
+     could share a single handler — only the page in view ever scrolls, so
+     they would never contend — but a handler attached to five scroll
+     views at once is a thing to have to be sure of, and there is nothing
+     to buy by being clever here. What the head and the chapel need is the
+     offset of whichever leaf is moving, and that is exactly what this
+     writes. */
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: event => {
+      leafY.value = event.contentOffset.y;
+    },
+  });
+
+  return (
+    <Reanimated.ScrollView
+      ref={ref as never}
+      style={{ width }}
+      contentContainerStyle={{ paddingTop: leafTop }}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      showsVerticalScrollIndicator={false}
+    >
+      <Reanimated.View
+        entering={FadeInDown.duration(520).delay(110)}
+        style={[s.leaf, { minHeight: minLeaf, paddingBottom: bottom }]}
+      >
+        {/* ⚠ THE GROUND IS THE ONE THING THAT CLIPS. A shadow is drawn by
+            the layer that owns it, and a layer that clips to its own
+            bounds clips its shadow away with everything else — so the
+            leaf keeps its corners and its shadow, and the parchment and
+            the lit edge are clipped one level in. */}
+        <View pointerEvents="none" style={s.leafGround}>
+          <LinearGradient
+            colors={PARCHMENT}
+            locations={[0, 0.46, 1]}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* The lit edge every raised surface in this app has. */}
+          <View style={s.leafEdge} />
+        </View>
+
+        <Text style={s.eyebrow}>
+          {slideNumeral(index)} · {slide.eyebrow}
+        </Text>
+        <Text style={s.title}>{slide.title}</Text>
+
+        {slide.figure === 'faces' && (
+          <FacesSwitch whole={whole} onWhole={onWhole} />
+        )}
+
+        {!!slide.plate?.length && (
+          <View style={s.plate}>
+            {slide.plate.map(row => (
+              <View key={row.label} style={s.plateRow}>
+                <Text style={s.plateLabel}>{row.label}</Text>
+                <Text style={s.plateValue}>{row.value}</Text>
+              </View>
+            ))}
           </View>
-        </FaceLayer>
+        )}
 
-        {/* THE PANEL AS IT IS */}
-        <FaceLayer at={at} show={1}>
-          <View style={s.faceWhole}>
-            <PantocratorFace width={column} mode="whole" />
-            <Text style={s.faceName}>{PANTOCRATOR_FACE_LABELS.whole}</Text>
+        {/* ⚠ THE OPENING IS A LEAD, AND THE VERSAL IS SIZED TO ITS LINE.
+            The raised letter used to be set at 34 over 34 inside prose set
+            at 17 over 27 — twice the height of the text it opened, on a
+            line seven points taller than every line under it. It did not
+            read as a flourish, it read as a mistake: a giant capital
+            sitting on a line of its own making, with the rest of its word
+            stranded beside it.
+
+            A versal is one and a half times its text, not two, and its
+            line is the line it stands on. So the first paragraph is a
+            lead at 18 over 28 — which is what an opening paragraph wants
+            anyway — and the letter is 27 on a 30-point line, three points
+            of air for a capital that has none to spare. */}
+        {versal ? (
+          <Text style={s.lead}>
+            <Text style={s.versal}>{versal.initial}</Text>
+            {versal.rest}
+          </Text>
+        ) : (
+          <Text style={s.lead}>{first}</Text>
+        )}
+
+        {rest.map(paragraph => (
+          <Text key={paragraph.slice(0, 24)} style={s.body}>
+            {paragraph}
+          </Text>
+        ))}
+
+        {!!slide.envoi && (
+          <View style={s.envoiWrap}>
+            <View style={s.envoiMark} />
+            <Text style={s.envoi}>{slide.envoi}</Text>
           </View>
-        </FaceLayer>
-      </View>
+        )}
 
-      {/* ⚠ A SEGMENTED CONTROL, NOT A RULE OF NAMES. It is still a book's
-          furniture — parchment, a gold hairline, the serif — but it is
-          the size of something meant to be pressed, and the chosen side
-          is a lifted plate rather than a twenty-two point underscore. */}
-      <View style={s.faceSwitch}>
-        {FACES_VIEWS.map(candidate => {
-          const here = candidate.id === view;
-          return (
-            <TouchableOpacity
-              key={candidate.id}
-              onPress={() => choose(candidate.id)}
-              activeOpacity={0.82}
-              haptic="selection"
-              style={[s.faceSegment, here && s.faceSegmentHere]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: here }}
-            >
-              <Text style={[s.faceSegmentText, here && s.faceSegmentTextHere]}>
-                {candidate.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+        {last && (
+          <View style={s.colophon}>
+            <View style={s.colophonRule} />
+            <Text style={s.colophonText}>{PANTOCRATOR_SOURCE_NOTE}</Text>
+          </View>
+        )}
+      </Reanimated.View>
+    </Reanimated.ScrollView>
+  );
+};
 
-      <Reanimated.Text key={view} entering={FadeIn.duration(220)} style={s.faceCaption}>
-        {view === 'halves'
-          ? 'Each half of the face, mirrored into a whole one.'
-          : PANTOCRATOR_FACE_CAPTIONS.whole}
-      </Reanimated.Text>
+/**
+ * THE CONTROL OVER THE TWO COMPOSITES.
+ *
+ * ⚠ IT SITS ON THE LEAF, NOT ON THE WALL. The figure it governs hangs in
+ * the chapel, and a segmented control floating over a sixth-century face
+ * is furniture standing in front of the exhibit. Under the title it is
+ * what it actually is — the caption's own switch — and it is still the
+ * first thing on the page, so nobody meets the composites without meeting
+ * the way to check them against the original.
+ */
+function FacesSwitch({
+  whole, onWhole,
+}: {
+  whole: boolean;
+  onWhole: (whole: boolean) => void;
+}) {
+  return (
+    <View style={s.switch}>
+      {([false, true] as const).map(candidate => {
+        const here = candidate === whole;
+        return (
+          <TouchableOpacity
+            key={String(candidate)}
+            onPress={() => onWhole(candidate)}
+            activeOpacity={0.82}
+            haptic="selection"
+            style={[s.switchSeat, here && s.switchSeatHere]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: here }}
+          >
+            <Text style={[s.switchText, here && s.switchTextHere]}>
+              {candidate ? PANTOCRATOR_FACE_VIEWS.whole : PANTOCRATOR_FACE_VIEWS.halves}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
-/** The gap between the two composites. */
-const FACES_GAP = 9;
-
-/**
- * How tall a column of this width comes out.
- *
- * ⚠ IT IS THE CROP'S OWN ARITHMETIC, not a guess: the crop spans
- * `2 × halfWidth` across the board and `bottom − top` down it, so a
- * column of width w is `(bottom − top) × w / (2 × halfWidth) /
- * PANEL_ASPECT` tall. Written here because the stage has to reserve that
- * height before either state has been laid out — otherwise the figure
- * would settle a frame late and shove the prose down with it.
- */
-function faceBoxHeight(column: number): number {
-  const cropW = FACE.halfWidth * 2;
-  const cropH = FACE.bottom - FACE.top;
-  return Math.round((cropH * (column / cropW)) / PANEL_ASPECT);
-}
-
-/**
- * One state of the figure, lying over the other.
- *
- * ⚠ BOTH ARE ABSOLUTE INSIDE A STAGE OF FIXED HEIGHT, so the change is
- * pure opacity on the UI thread and nothing on the page is laid out a
- * second time when it happens.
- */
-function FaceLayer({
-  at, show, children,
-}: {
-  at: SharedValue<number>;
-  /** The value of `at` at which this layer is the one showing. */
-  show: 0 | 1;
-  children: React.ReactNode;
-}) {
-  const style = useAnimatedStyle(() => ({
-    opacity: Math.max(0, 1 - Math.abs(at.value - show)),
-  }));
-
-  return (
-    <Reanimated.View
-      style={[StyleSheet.absoluteFill, s.faceLayer, style]}
-      pointerEvents="none"
-    >
-      {children}
-    </Reanimated.View>
-  );
-}
-
 const s = StyleSheet.create({
-  room: { flex: 1, backgroundColor: '#FDFBF6' },
+  room: { flex: 1, backgroundColor: '#0C0703' },
 
-  // ── Head ───────────────────────────────────────────────────────────
+  // ── The chapel ─────────────────────────────────────────────────────
+  chapel: { position: 'absolute', left: 0, right: 0, top: 0, overflow: 'hidden' },
+  lamp: { position: 'absolute', left: '50%', top: '52%' },
+  lintel: { position: 'absolute', left: 0, right: 0, top: 0 },
+
+  /** The board, standing the full height of the chapel. */
+  boardStand: { ...StyleSheet.absoluteFillObject, alignItems: 'center' },
+  // ⚠ DEEPER THAN THE PRAYER SCREEN'S. The same shadow that sets the
+  // panel in a bright room is invisible against a dark one; on this wall
+  // it has to be near-black to read as a board standing off it at all.
+  board: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.7,
+    shadowRadius: 36,
+    elevation: 18,
+  },
+
+  /** A detail, standing between the rail and the leaf. */
+  stand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  /** The wall above the label line — the figure hangs in the middle of it. */
+  standRoom: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  pair: { flexDirection: 'row', gap: PAIR_GAP, alignItems: 'flex-end' },
+  pairCentre: { alignItems: 'center' },
+  faceState: { alignItems: 'center', justifyContent: 'flex-start' },
+  /** The name under one window. */
+  figureName: {
+    marginTop: 10,
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 1.9,
+    textAlign: 'center',
+    color: 'rgba(226,187,116,0.88)',
+    textTransform: 'uppercase',
+  },
+  /** What you are looking at, said once, in the chapel's own light. */
+  caption: {
+    marginTop: 14,
+    fontFamily: F.serifItalic,
+    fontSize: 13,
+    lineHeight: 18,
+    color: ON_DARK_SOFT,
+    textAlign: 'center',
+    paddingHorizontal: 14,
+  },
+
+  // ── The head ───────────────────────────────────────────────────────
   head: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    paddingHorizontal: 22,
-    paddingBottom: 14,
+    paddingHorizontal: 20,
   },
-  headCopy: { flex: 1, minWidth: 0, gap: 9 },
-  /**
-   * The numeral and the part's name, on one line.
-   *
-   * ⚠ A ROMAN NUMERAL, because this is a book and a book numbers its
-   * parts that way. It also solves a real problem: "1 · SAINT
-   * CATHERINE'S MONASTERY, SINAI" reads as a list item, where
-   * "I · SAINT CATHERINE'S MONASTERY, SINAI" reads as a chapter.
-   */
-  headCount: {
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.9,
-    color: 'rgba(139,107,47,0.78)',
-    textTransform: 'uppercase',
-  },
-
-  /** The rail — see ReadingProgress. */
-  rail: { flexDirection: 'row', marginLeft: -5 },
-  // ⚠ The hit area is five times the ink. A 3-point rail is a mark, not
+  rail: { flex: 1, flexDirection: 'row', marginLeft: -4 },
+  // ⚠ The hit area is five times the ink. A 2.5-point rail is a mark, not
   // a button; this is what makes it one.
-  railHit: { flex: 1, paddingHorizontal: 5, paddingVertical: 9 },
-  railSegment: {
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: 'rgba(197,160,89,0.22)',
-  },
-  railSegmentRead: { backgroundColor: C.gold },
+  railHit: { flex: 1, paddingHorizontal: 4, paddingVertical: 9 },
+  railSegment: { height: 2.5, borderRadius: 1.5 },
 
   close: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 1,
-    borderColor: GOLD_HAIR,
-    backgroundColor: 'rgba(255,255,255,0.66)',
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
   },
+  closeInk: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
 
-  // ── Pages ──────────────────────────────────────────────────────────
-  pager: { flex: 1 },
+  // ── The pages ──────────────────────────────────────────────────────
+  pager: { position: 'absolute', left: 0, right: 0, top: 0, backgroundColor: 'transparent' },
+
   /**
-   * ⚠ THE PAGE WAS HELD APART BY GAPS AND IT READ AS SEVERAL PAGES.
+   * THE LEAF.
    *
-   * Twenty-two points under the figure, eighteen over the first
-   * paragraph, fourteen between every pair after it, twelve over the
-   * facts — every block on this page was separated by a space large
-   * enough to be mistaken for the end of something. The prose is set at
-   * 17 over 27, so a 22-point gap is most of a blank line: the reader
-   * kept arriving at what looked like a finish.
-   *
-   * The reference pages this was rebuilt against — the artwork pages in
-   * Google Arts & Culture, the plate-and-caption pages in Blue Bottle —
-   * do the opposite everywhere: metadata is pinned tight under its
-   * title, two to four points, and SEPARATION IS DONE BY A HAIRLINE.
-   * A rule costs one point and says what a gap cannot, which is that
-   * the things on either side of it belong together.
-   *
-   * So: the gaps come in, the rules go in, and the page reads as one
-   * page. The type sizes are untouched — nothing here was too small.
+   * ⚠ ROUNDED AT THE HEAD AND NOWHERE ELSE, and lapped over the chapel's
+   * foot. That single overlap is what makes the two rooms one room: a
+   * page that stops short of the wall is a card pinned to it, and a page
+   * that runs over the wall's edge is lying on something.
    */
-  page: {
-    paddingHorizontal: 22,
-    paddingTop: 18,
-    paddingBottom: 32,
+  leaf: {
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderCurve: 'continuous',
+    // The shadow needs a shape to be cast by, and a transparent view has
+    // none. The gradient lies over this and is never seen.
+    backgroundColor: '#FDFBF6',
+    paddingHorizontal: 24,
+    paddingTop: 22,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -14 },
+    shadowOpacity: 0.34,
+    shadowRadius: 30,
+    // ⚠ NO ELEVATION. Android draws elevation shadows downward whatever
+    // the offset says, so this one would be invisible — and elevation
+    // also reorders siblings, which would put the page over the way out.
   },
-  figure: { alignItems: 'center', marginBottom: 14 },
-  // The hairline that closes the figure block — see the note in Slide.
-  figureRule: {
+  leafGround: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+  },
+  leafEdge: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
     height: 1,
-    marginBottom: 16,
     backgroundColor: GOLD_HAIR,
-    opacity: 0.55,
   },
 
-  /**
-   * ⚠ THE SUBJECT IS NOT NAMED AGAIN ON THE PAGE. It used to stand over
-   * all five slides as a running head in 25-point serif — the top eighth
-   * of four screens spent repeating something said once. Moving it onto
-   * the opening page only was the first fix, and it was still one too
-   * many: page one then read CHRIST PANTOCRATOR at the top and
-   * "NEXT · Christ Pantocrator" at the foot, the same name twice on one
-   * screen. Page two is titled with it, which is where it belongs — the
-   * page that is actually about the name.
-   */
+  eyebrow: {
+    fontFamily: F.sansBold,
+    fontSize: 8.5,
+    letterSpacing: 2,
+    color: 'rgba(139,107,47,0.85)',
+    textTransform: 'uppercase',
+  },
   title: {
+    marginTop: 9,
     fontFamily: F.serifMedium,
-    fontSize: 30,
-    lineHeight: 35,
+    fontSize: 31,
+    lineHeight: 36,
     letterSpacing: -0.4,
     color: C.text,
   },
 
-  facts: {
+  /**
+   * THE MUSEUM PLATE.
+   *
+   * ⚠ IT REPLACED A RUN-ON STRIP OF TRACKED CAPITALS — "MID-6TH CENTURY ◆
+   * HOT WAX ON PANEL ◆ 84 × 45.5 CM", three unlike facts at nine and a
+   * half points with nothing saying which was which. Named rows, ruled
+   * apart, are what hangs beside a panel in every room the reader has
+   * ever stood in, and they are read rather than scanned past.
+   */
+  plate: { marginTop: 15, borderTopWidth: 1, borderTopColor: GOLD_HAIR },
+  plateRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    marginTop: 9,
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(197,160,89,0.26)',
   },
-  factItem: { flexDirection: 'row', alignItems: 'center' },
-  // The prayer book's own ornament, doing the work a bullet would do
-  // badly: it separates without listing.
-  factDiamond: {
-    width: 4,
-    height: 4,
-    marginHorizontal: 9,
-    borderRadius: 0.8,
-    opacity: 0.6,
-    backgroundColor: C.gold,
-    transform: [{ rotate: '45deg' }],
-  },
-  factText: {
+  plateLabel: {
     fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 1.2,
+    fontSize: 8,
+    letterSpacing: 1.6,
+    color: 'rgba(139,107,47,0.68)',
     textTransform: 'uppercase',
-    color: 'rgba(74,64,56,0.66)',
+  },
+  plateValue: {
+    fontFamily: F.serifMedium,
+    fontSize: 16,
+    lineHeight: 20,
+    color: BODY_INK,
   },
 
+  // The opening paragraph, and the letter that opens it — see the note
+  // where they are rendered.
+  lead: {
+    marginTop: 16,
+    fontFamily: F.serif,
+    fontSize: 18,
+    lineHeight: 28,
+    color: LEAD_INK,
+  },
+  versal: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 27,
+    lineHeight: 30,
+    color: GOLD_INK,
+  },
   body: {
-    marginTop: 14,
+    marginTop: 13,
     fontFamily: F.serif,
     // 17 over 27: this is prose to be read, not a caption under a
-    // control, and it is the one place in the app that asks for a
-    // reading measure rather than a glancing one.
+    // control, and it is the one place in the app that asks for a reading
+    // measure rather than a glancing one.
     fontSize: 17,
     lineHeight: 27,
     color: BODY_INK,
   },
-  // ⚠ TIGHTER THAN THE BLOCK ABOVE IT. Paragraph spacing that equals
-  // block spacing tells the reader every paragraph is a new section.
-  bodyAfter: { marginTop: 11 },
-  versal: {
+
+  /** The last line of the sheet, given its own measure. */
+  envoiWrap: { marginTop: 22, alignItems: 'center' },
+  envoiMark: {
+    width: 5,
+    height: 5,
+    marginBottom: 14,
+    borderRadius: 1,
+    backgroundColor: C.gold,
+    opacity: 0.72,
+    transform: [{ rotate: '45deg' }],
+  },
+  envoi: {
     fontFamily: F.serifMedium,
-    fontSize: 34,
-    lineHeight: 34,
+    fontSize: 19,
+    lineHeight: 28,
     color: GOLD_INK,
+    textAlign: 'center',
+    paddingHorizontal: 6,
   },
 
-  // ⚠ The one gap on this page that stays large. It is not separating
-  // two blocks of the same page — it is separating the page from the
-  // note about where the page came from.
-  sourceWrap: { marginTop: 22, alignItems: 'center', gap: 10 },
-  sourceRule: { width: 32, height: 1, opacity: 0.5, backgroundColor: C.gold },
-  source: {
+  // ⚠ The one gap on this page that stays large. It is not separating two
+  // blocks of the same page — it is separating the page from the note
+  // about where the page came from.
+  colophon: { marginTop: 24, alignItems: 'center', gap: 10 },
+  colophonRule: { width: 34, height: 1, opacity: 0.6, backgroundColor: C.gold },
+  colophonText: {
     fontFamily: F.serifItalic,
-    fontSize: 13,
-    lineHeight: 19,
-    color: 'rgba(74,64,56,0.6)',
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: 'rgba(74,64,56,0.58)',
     textAlign: 'center',
   },
 
-  // ── The faces ──────────────────────────────────────────────────────
-  /** The stage both states lie in — see FacesFigure. */
-  faceStage: { position: 'relative' },
-  faceLayer: { alignItems: 'center', justifyContent: 'flex-start' },
-  facePair: { flexDirection: 'row', gap: 9 },
-  faceWhole: { alignItems: 'center' },
-  /** The name under each composite. */
-  faceName: {
-    marginTop: 7,
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 1.8,
-    textAlign: 'center',
-    color: GOLD_INK,
-    textTransform: 'uppercase',
-  },
-  /**
-   * THE CONTROL.
-   *
-   * ⚠ STILL A BOOK'S FURNITURE — parchment, a gold hairline, the serif —
-   * but the size of something meant to be pressed. It replaced three
-   * names at 9.5 with a 22-point underscore, which nobody found and
-   * nobody could hit.
-   */
-  faceSwitch: {
-    marginTop: 16,
+  // ── The switch ─────────────────────────────────────────────────────
+  switch: {
+    marginTop: 15,
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     padding: 3,
-    borderRadius: 14,
+    borderRadius: 13,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: GOLD_HAIR,
-    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderColor: 'rgba(197,160,89,0.38)',
+    backgroundColor: 'rgba(255,255,255,0.55)',
   },
-  faceSegment: {
-    minHeight: 34,
-    paddingHorizontal: 15,
-    borderRadius: 11,
+  switchSeat: {
+    minHeight: 32,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  faceSegmentHere: {
+  switchSeatHere: {
     backgroundColor: '#FFFFFF',
     shadowColor: '#8C7A4F',
-    shadowOpacity: 0.13,
+    shadowOpacity: 0.14,
     shadowOffset: { width: 0, height: 3 },
     shadowRadius: 7,
     elevation: 1,
   },
-  faceSegmentText: {
+  switchText: {
     fontFamily: F.serifMedium,
     fontSize: 14.5,
-    color: 'rgba(74,64,56,0.5)',
+    color: 'rgba(74,64,56,0.52)',
   },
-  faceSegmentTextHere: { color: GOLD_INK },
-  faceCaption: {
-    marginTop: 12,
-    fontFamily: F.serifItalic,
-    fontSize: 14,
-    lineHeight: 20,
-    color: 'rgba(74,64,56,0.68)',
-    textAlign: 'center',
-    paddingHorizontal: 16,
-  },
+  switchTextHere: { color: GOLD_INK },
 
-  // ── Foot ───────────────────────────────────────────────────────────
-  // ── Foot ───────────────────────────────────────────────────────────
+  // ── The foot ───────────────────────────────────────────────────────
   foot: {
-    paddingTop: 12,
-    paddingHorizontal: 22,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 13,
+    paddingHorizontal: 24,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  // The rule runs the full width above the foot, which is what tells you
-  // the foot is furniture and the page above it is the book.
   footRule: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
+    left: 24,
+    right: 24,
     height: 1,
-    backgroundColor: GOLD_HAIR,
-    opacity: 0.7,
+    backgroundColor: 'rgba(197,160,89,0.32)',
   },
-  footBack: {
-    width: 44,
+  back: {
+    width: 46,
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
+    borderRadius: 15,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: GOLD_HAIR,
-    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderColor: 'rgba(197,160,89,0.40)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
   },
-  // Holds the forward plate in the same place on page one, so it does
-  // not jump left the moment you turn back.
-  footBackSpacer: { width: 44 },
+  // Holds the forward plate in the same place on page one, so it does not
+  // jump left the moment you turn back.
+  backSpacer: { width: 46 },
   /**
-   * THE WAY ON.
-   *
-   * ⚠ IT NAMES THE PAGE IT IS GOING TO. A bare arrow says only that
-   * there is more; a title says what the more IS, and a reader goes on
-   * because they want that page rather than because a control existed.
-   *
-   * ⚠ AND IT IS PARCHMENT, NOT A FILLED PLATE. This is a book. A gold
-   * button at the foot of it would be the coin grammar walking into the
-   * one room in the app that keeps it out.
+   * ⚠ PARCHMENT, NOT A FILLED PLATE. This is a book. A gold button at the
+   * foot of it would be the coin grammar walking into the one room in the
+   * app that keeps it out.
    */
-  footOn: {
+  on: {
     flex: 1,
-    minHeight: 52,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingLeft: 16,
-    paddingRight: 12,
-    borderRadius: 16,
+    paddingLeft: 15,
+    paddingRight: 10,
+    borderRadius: 15,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.5)',
-    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderColor: 'rgba(197,160,89,0.52)',
+    backgroundColor: 'rgba(255,255,255,0.86)',
   },
-  footOnCopy: { flex: 1, minWidth: 0 },
-  footOnKicker: {
+  onCopy: { flex: 1, minWidth: 0 },
+  onKicker: {
     fontFamily: F.sansBold,
-    fontSize: 8,
+    fontSize: 7.5,
     letterSpacing: 1.9,
     color: 'rgba(139,107,47,0.62)',
     textTransform: 'uppercase',
   },
-  footOnTitle: {
+  onTitle: {
     marginTop: 1,
     fontFamily: F.serifMedium,
     fontSize: 16.5,
+    lineHeight: 20,
     color: GOLD_INK,
+  },
+  onChevron: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(197,160,89,0.15)',
   },
 });
