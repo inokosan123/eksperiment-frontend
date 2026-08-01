@@ -198,6 +198,89 @@ test('the chapel never runs past the foot of the screen', () => {
   }
 });
 
+/* ── Going in, and coming back out ───────────────────────────────────
+ *
+ * ⚠ THE DOOR IS A LITTLE STATE MACHINE AND ITS FAILURES ARE UGLY ONES:
+ * a room that unmounts before its own leaving animation has run (the
+ * platform slide all over again), or one that survives a close and
+ * re-opens on page five. Both are cheap to check and neither is
+ * noticeable in a screenshot, so they are checked here.
+ *
+ * The reducer below is the component's effect written as pure data. It
+ * has to be kept in step with it by hand, which is worth saying plainly —
+ * what it buys is that the SEQUENCE is stated once, in a form that can be
+ * run.
+ */
+type Door = { mounted: boolean; visit: number; target: 0 | 1; animating: boolean };
+
+const shut: Door = { mounted: false, visit: 0, target: 0, animating: false };
+
+/** `visible` changed. */
+function press(door: Door, visible: boolean): Door {
+  if (visible) {
+    // Mount, bump the visit — which re-keys and therefore rebuilds the
+    // room — zero the value, and animate in on the next frame.
+    return { mounted: true, visit: door.visit + 1, target: 1, animating: true };
+  }
+  // The room stays mounted while it leaves.
+  return { ...door, target: 0, animating: true };
+}
+
+/** The animation reached its target. */
+function settle(door: Door): Door {
+  if (!door.animating) return door;
+  // Only the closing animation unmounts, and only when it finishes.
+  return { ...door, animating: false, mounted: door.target === 1 };
+}
+
+test('the room stays mounted for the whole of its leaving', () => {
+  let door = settle(press(shut, true));
+  assert.equal(door.mounted, true);
+
+  door = press(door, false);
+  assert.equal(door.mounted, true, 'the room was pulled at the press, with nothing left to animate');
+  assert.equal(door.target, 0);
+
+  door = settle(door);
+  assert.equal(door.mounted, false, 'the room never left');
+});
+
+test('every opening builds a new room', () => {
+  let door = settle(press(shut, true));
+  const first = door.visit;
+
+  door = settle(press(door, false));
+  door = settle(press(door, true));
+
+  assert.notEqual(door.visit, first, 'the second visit reused the first room');
+  assert.equal(door.mounted, true);
+});
+
+test('re-opening mid-close catches the room and rebuilds it', () => {
+  let door = settle(press(shut, true));
+  const first = door.visit;
+
+  door = press(door, false);        // leaving, not yet gone
+  door = press(door, true);         // opened again before it finished
+
+  assert.equal(door.mounted, true, 'the room was lost between the two presses');
+  assert.equal(door.target, 1);
+  assert.notEqual(door.visit, first, 'the caught room kept its old page');
+
+  door = settle(door);
+  assert.equal(door.mounted, true, 'settling an OPEN animation unmounted the room');
+});
+
+test('the way in is slower than the way out', () => {
+  // The prayer screen's own asymmetry — see `prayerMotion`. Arriving
+  // settles; going back to rest is quicker.
+  const OPEN_MS = 420;
+  const CLOSE_MS = 300;
+  assert.ok(OPEN_MS > CLOSE_MS, 'leaving should not take longer than arriving');
+  // And neither should be long enough to feel like waiting.
+  assert.ok(OPEN_MS <= 500 && CLOSE_MS >= 200);
+});
+
 /* ── The authored bold phrases ───────────────────────────────────── */
 
 test('every bold mark in the copy is closed', () => {

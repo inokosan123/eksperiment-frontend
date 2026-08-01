@@ -10,12 +10,12 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
-  FadeIn,
-  FadeInDown,
+  Easing,
   interpolateColor,
   runOnJS,
   useAnimatedScrollHandler,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withTiming,
   type SharedValue,
@@ -78,12 +78,14 @@ import {
  *   the board carries the gold of its halo and the umber of its robe
  *   rather than a designer's brown.
  *
- * ⚠ THE PAGE CAN NO LONGER SCROLL PAST THE HEAD-BAND, and that fixes a
- * plain bug as well as a composition: the leaf used to rise until its
- * foot cleared the screen and left the room's black backing showing
- * under it. The pager now begins BELOW the band and runs to the very
- * bottom of the screen, so the parchment reaches the foot at every
- * offset and the band is never covered.
+ * ⚠ THE PAGE USED TO SCROLL CLEAR OF THE FOOT OF THE SCREEN, leaving the
+ * room's dark backing showing under the text. The pager begins BELOW the
+ * band and runs to the very bottom, and the spacer above the page and
+ * the scroller's own height cancel — so the parchment reaches the foot at
+ * every offset, by construction rather than by a clamp.
+ *
+ * The page does pass UNDER the band, which is right: it is a bound book's
+ * head-band, not a lid. That is what `BandGround` is for.
  *
  * ⚠ STILL NO GESTURE HANDLER. RNGH inside a Modal crashes Android unless
  * the content carries its own GestureHandlerRootView, and nothing here
@@ -167,6 +169,34 @@ function takeVersal(
   };
 }
 
+/* ── GOING IN, AND COMING BACK OUT ───────────────────────────────────
+ *
+ * ⚠ IT WAS THE PLATFORM'S SHEET SLIDE, AND IT WAS WRONG IN BOTH
+ * DIRECTIONS. `animationType="slide"` throws a full-screen room up from
+ * the bottom edge and drops it back down there — the gesture for a
+ * sheet, and this is not a sheet, it is a room you walk into. Worse, the
+ * control that leaves it is called RETURN TO THE ICON: it promises you
+ * are going back to a particular object, and what it did was fling the
+ * whole chapel at the floor.
+ *
+ * So the room is opened and closed here, in the prayer screen's own
+ * motion vocabulary — see `prayerMotion`, which the whole of that screen
+ * lights from: ARRIVING IS SLOW AND EASES OUT, the way something coming
+ * to life settles; GOING BACK TO REST IS QUICKER AND EASES AT BOTH ENDS,
+ * the way a lamp turned down does. One asymmetric pair, used here for
+ * exactly what it was written for.
+ *
+ * And the move is DEPTH, not travel. The room comes toward you a little
+ * and settles; leaving, it steps back the same distance and dissolves,
+ * and the prayer screen — with the same icon standing on it — is behind
+ * the whole time. You went into a chapel and you stepped back out of it.
+ */
+const OPEN_MS = 420;
+const CLOSE_MS = 300;
+/** How far back the room stands before it arrives, and after it leaves. */
+const AWAY = 0.94;
+const RISE = 14;
+
 export default function PantocratorAboutSheet({
   visible,
   onClose,
@@ -174,6 +204,146 @@ export default function PantocratorAboutSheet({
   visible: boolean;
   onClose: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
+  /** Mounted covers the way out too — the room has to be there to leave. */
+  const [mounted, setMounted] = useState(visible);
+  /**
+   * ⚠ A FRESH ROOM EVERY TIME, AND THAT IS WHAT KEEPS IT IN PLACE.
+   *
+   * The sheet used to hold the page number, the pager's offset and every
+   * leaf's scroll across a close, then put them back in a `useEffect` —
+   * which runs AFTER the first paint. Re-opening therefore showed page
+   * five, or a page scrolled to its colophon, for a frame before it
+   * snapped to the beginning. Keying the room on the visit throws all of
+   * that away at the door: page one, top of the page, halves not
+   * mirrored, with nothing to reset because nothing survived.
+   */
+  const [visit, setVisit] = useState(0);
+  const open = useSharedValue(visible ? 1 : 0);
+
+  /**
+   * ⚠ THE SHAPE OF THIS EFFECT IS THE APP'S OWN — see `SetAsTaskSheet`,
+   * `ScriptureReaderView`, `SmoothBottomSheet`: mount, zero the value,
+   * and only then, ON THE NEXT FRAME, animate. That
+   * `requestAnimationFrame` is the whole of "everything in its place":
+   * it lets the room mount and lay out before a single point of the
+   * arrival has been spent, so nothing is ever seen finding its position
+   * while the room is already coming toward you.
+   */
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      setVisit(count => count + 1);
+      open.value = 0;
+      if (reduceMotion) {
+        open.value = 1;
+        return;
+      }
+      const frame = requestAnimationFrame(() => {
+        open.value = withTiming(1, { duration: OPEN_MS, easing: Easing.out(Easing.cubic) });
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+
+    if (reduceMotion) {
+      open.value = 0;
+      setMounted(false);
+      return;
+    }
+    // ⚠ The room is unmounted by the animation that removes it, not by
+    // the press — pull it at the press and there is nothing left to
+    // animate, which is the slide-down all over again.
+    open.value = withTiming(
+      0,
+      { duration: CLOSE_MS, easing: Easing.inOut(Easing.quad) },
+      finished => {
+        if (finished) runOnJS(setMounted)(false);
+      },
+    );
+  }, [open, reduceMotion, visible]);
+
+  /**
+   * ⚠ THE ROOM AND THE SCRIM DO NOT SHARE A FADE, THEY HAND OVER.
+   *
+   * The room is gone by three tenths of the way through and the scrim
+   * does not begin to lift until four tenths, so THE TWO ARE NEVER BOTH
+   * ON THE SCREEN — which is the whole of the double-exposure problem
+   * described below. What sits between them is a blink of the chapel's
+   * own darkness: a doorway, at this speed, rather than a flash.
+   *
+   * The scale and the rise still run on the raw value, so the object you
+   * are watching keeps travelling smoothly across the hand-over rather
+   * than stopping while its opacity does something else.
+   */
+  const roomStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, (open.value - 0.3) / 0.7),
+    transform: [
+      { translateY: (1 - open.value) * RISE },
+      { scale: AWAY + open.value * (1 - AWAY) },
+    ],
+  }), []);
+
+  /**
+   * ⚠ THE SCRIM IS WHAT KEEPS THERE FROM BEING TWO CHRISTS ON THE SCREEN.
+   *
+   * The prayer screen behind this one has the SAME PANEL standing on it,
+   * at a different size and a different height. Cross-fade the room
+   * straight into it and for a third of a second you have a double
+   * exposure of the face — the one thing this transition must not do.
+   *
+   * So the scrim is nearly OPAQUE and it is still solid at four tenths,
+   * by which point the room above has already gone — see `roomStyle`.
+   * The order is: the chapel steps back and dims into its own darkness,
+   * and only then does the prayer screen rise out of that darkness.
+   * Neither is ever seen through the other.
+   *
+   * ⚠ AND IT IS THE CHAPEL'S OWN DARK, not a neutral black. You are
+   * leaving a dark room for a lit one; passing through the dark of the
+   * room you were in is the truthful way to do that, and a neutral scrim
+   * over warm paper reads as the phone dimming.
+   *
+   * It is the same on the way in, and wanted there too: the paper goes
+   * down first, then the chapel arrives out of the dark.
+   */
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, open.value / 0.4),
+  }), []);
+
+  /* ⚠ AFTER THE HOOKS, NEVER BEFORE THEM — the effect above is what sets
+     `mounted`, so an early return over it would shut the door and throw
+     away the key. It is here because nothing of this room should exist
+     while it is closed: no blurred wall, no four crops of a
+     sixth-century panel, for a screen nobody has opened. */
+  if (!mounted) return null;
+
+  return (
+    <Modal
+      visible={mounted}
+      // ⚠ The platform animates nothing. Everything above does.
+      animationType="none"
+      presentationStyle="overFullScreen"
+      transparent
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Reanimated.View pointerEvents="none" style={[s.backdrop, backdropStyle]} />
+      <Reanimated.View
+        style={[s.roomMotion, roomStyle]}
+        pointerEvents={visible ? 'auto' : 'none'}
+      >
+        <AboutRoom key={visit} onClose={onClose} />
+      </Reanimated.View>
+    </Modal>
+  );
+}
+
+/**
+ * THE ROOM ITSELF.
+ *
+ * Mounted fresh on every visit and thrown away on the way out — see the
+ * note on `visit` above. Nothing in here has to remember anything.
+ */
+function AboutRoom({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [page, setPage] = useState(0);
@@ -221,18 +391,6 @@ export default function PantocratorAboutSheet({
   /** Which page the shared value last announced — see the handler. */
   const announced = useSharedValue(0);
 
-  // Opening it again opens it at the beginning. A sheet that remembers
-  // page five is a sheet that opens on a sentence with no beginning.
-  useEffect(() => {
-    if (!visible) return;
-    setPage(0);
-    setFacesWhole(false);
-    at.value = 0;
-    leafY.value = 0;
-    announced.value = 0;
-    pager.current?.scrollTo({ x: 0, animated: false });
-  }, [announced, at, leafY, visible]);
-
   /**
    * ⚠ THE PAGE IS ANNOUNCED FROM THE UI THREAD, ONCE PER PAGE. Calling
    * back into JavaScript on every scroll frame to keep a `useState` in
@@ -274,156 +432,153 @@ export default function PantocratorAboutSheet({
   const next = page < total - 1 ? PANTOCRATOR_SLIDES[page + 1] : null;
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="overFullScreen"
-      transparent={false}
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <View style={s.room}>
-        {/* ── THE CHAPEL ─────────────────────────────────────────────── */}
-        <Reanimated.View
-          pointerEvents="none"
-          entering={FadeIn.duration(520)}
-          style={[s.chapel, { height: metrics.chapel }, chapelStyle]}
-        >
-          <PantocratorWall shade={WALL_SHADE} />
+    <View style={s.room}>
+      {/* ── THE CHAPEL ───────────────────────────────────────────────
+          ⚠ NOTHING IN THIS ROOM ARRIVES ON ITS OWN ANY MORE. The chapel
+          faded in over half a second and every leaf dropped in behind
+          it, while the platform was still throwing the whole modal up
+          from the bottom edge — three clocks running at once on one
+          appearance, which is why nothing was ever where it should be
+          when you first looked at it. The room arrives as one object,
+          and everything inside it is already in place. */}
+      <Reanimated.View
+        pointerEvents="none"
+        style={[s.chapel, { height: metrics.chapel }, chapelStyle]}
+      >
+        <PantocratorWall shade={WALL_SHADE} />
 
-          {PANTOCRATOR_SLIDES.map((slide, index) => (
-            <FigureLayer
-              key={slide.id}
-              at={at}
-              index={index}
-              mounted={Math.abs(index - page) <= 1}
-              width={width}
-            >
-              <Figure
-                slide={slide}
-                width={width}
-                room={metrics.room}
-                figureTop={metrics.figureTop}
-                whole={facesWhole}
-              />
-            </FigureLayer>
-          ))}
-        </Reanimated.View>
-
-        {/* ── THE PAGES ───────────────────────────────────────────────
-            ⚠ IT BEGINS BELOW THE HEAD-BAND AND RUNS TO THE FOOT OF THE
-            SCREEN. Beginning at the top let the leaf climb over the
-            folio; ending above the foot let it climb clear of the
-            bottom and show the room's backing under it. */}
-        <Reanimated.ScrollView
-          ref={pager as never}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onScroll={onPagerScroll}
-          onMomentumScrollEnd={() => restOthers(page)}
-          scrollEventThrottle={16}
-          style={[s.pager, { top: metrics.band }]}
-        >
-          {PANTOCRATOR_SLIDES.map((slide, index) => (
-            <Leaf
-              key={slide.id}
-              ref={leaf => { leaves.current[index] = leaf; }}
+        {PANTOCRATOR_SLIDES.map((slide, index) => (
+          <FigureLayer
+            key={slide.id}
+            at={at}
+            index={index}
+            mounted={Math.abs(index - page) <= 1}
+            width={width}
+          >
+            <Figure
               slide={slide}
               width={width}
-              head={metrics.leafTop - metrics.band}
-              minLeaf={height - metrics.leafTop}
-              bottom={metrics.foot + 22}
-              leafY={leafY}
-              last={index === total - 1}
+              room={metrics.room}
+              figureTop={metrics.figureTop}
               whole={facesWhole}
-              onWhole={setFacesWhole}
             />
-          ))}
-        </Reanimated.ScrollView>
+          </FigureLayer>
+        ))}
+      </Reanimated.View>
 
-        {/* ── THE HEAD-BAND ──────────────────────────────────────────
-            The reader's own: folio, roundel, ruled channel.
-
-            ⚠ IT IS A BOUND BOOK'S HEAD-BAND AND THE PAGE PASSES UNDER
-            IT. A long slide read to its end lifts the parchment right up
-            to here — so the band takes a parchment ground of its own as
-            that happens, and its ink darkens from the pale gold that
-            reads on a dark wall into the part's own colour, which is
-            what reads on paper. One or the other alone would be
-            invisible half the time. */}
-        <View
-          pointerEvents="box-none"
-          style={[s.head, { paddingTop: insets.top + 2 }]}
-        >
-          <BandGround leafY={leafY} cover={metrics.cover} height={metrics.band} />
-
-          <View style={s.headRow} pointerEvents="box-none">
-            <View pointerEvents="none" style={s.headSpacer} />
-            <Folio index={page} total={total} at={at} leafY={leafY} cover={metrics.cover} />
-            <TouchableOpacity
-              onPress={onClose}
-              activeOpacity={0.82}
-              style={s.roundel}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <View pointerEvents="none" style={[s.roundelFace, { borderColor: plaqueAlpha(here.accent, 0.42) }]} />
-              <View pointerEvents="none" style={s.roundelCatch} />
-              <X s={13} c={plaqueInk(here.accent, 32)} w={2.2} />
-            </TouchableOpacity>
-          </View>
-
-          <RuledChannel
-            at={at}
-            total={total}
-            track={track}
-            onTrack={setTrack}
+      {/* ── THE PAGES ───────────────────────────────────────────────
+          ⚠ IT BEGINS BELOW THE HEAD-BAND AND RUNS TO THE FOOT OF THE
+          SCREEN. Beginning at the top let the leaf climb over the
+          folio; ending above the foot let it climb clear of the
+          bottom and show the room's backing under it. */}
+      <Reanimated.ScrollView
+        ref={pager as never}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={onPagerScroll}
+        onMomentumScrollEnd={() => restOthers(page)}
+        scrollEventThrottle={16}
+        style={[s.pager, { top: metrics.band }]}
+      >
+        {PANTOCRATOR_SLIDES.map((slide, index) => (
+          <Leaf
+            key={slide.id}
+            ref={leaf => { leaves.current[index] = leaf; }}
+            slide={slide}
+            width={width}
+            head={metrics.leafTop - metrics.band}
+            minLeaf={height - metrics.leafTop}
+            bottom={metrics.foot + 22}
             leafY={leafY}
-            cover={metrics.cover}
+            last={index === total - 1}
+            whole={facesWhole}
+            onWhole={setFacesWhole}
           />
+        ))}
+      </Reanimated.ScrollView>
+
+      {/* ── THE HEAD-BAND ──────────────────────────────────────────
+          The reader's own: folio, roundel, ruled channel.
+
+          ⚠ IT IS A BOUND BOOK'S HEAD-BAND AND THE PAGE PASSES UNDER
+          IT. A long slide read to its end lifts the parchment right up
+          to here — so the band takes a parchment ground of its own as
+          that happens, and its ink darkens from the pale gold that
+          reads on a dark wall into the part's own colour, which is
+          what reads on paper. One or the other alone would be
+          invisible half the time. */}
+      <View
+        pointerEvents="box-none"
+        style={[s.head, { paddingTop: insets.top + 2 }]}
+      >
+        <BandGround leafY={leafY} cover={metrics.cover} height={metrics.band} />
+
+        <View style={s.headRow} pointerEvents="box-none">
+          <View pointerEvents="none" style={s.headSpacer} />
+          <Folio index={page} total={total} at={at} leafY={leafY} cover={metrics.cover} />
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.82}
+            style={s.roundel}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <View pointerEvents="none" style={[s.roundelFace, { borderColor: plaqueAlpha(here.accent, 0.42) }]} />
+            <View pointerEvents="none" style={s.roundelCatch} />
+            <X s={13} c={plaqueInk(here.accent, 32)} w={2.2} />
+          </TouchableOpacity>
         </View>
 
-        {/* ── THE FOOT ───────────────────────────────────────────────
-            ⚠ THE PLAQUE, NOT A RECTANGLE OF ITS OWN INVENTION. This is
-            the app's one action — it begins a prayer on the Prayer Book
-            screen and turns the page inside the reader — and it names
-            the page it is going to, because a bare arrow says only that
-            there is more. */}
-        <LinearGradient
-          colors={FOOT_GROUND}
-          locations={[0, 0.26, 1]}
-          style={[s.foot, { paddingBottom: Math.max(insets.bottom, 12) + 6 }]}
-          pointerEvents="box-none"
-        >
-          <View pointerEvents="none" style={s.footRule} />
-          {page > 0 ? (
-            <TouchableOpacity
-              onPress={() => goTo(page - 1)}
-              activeOpacity={0.82}
-              haptic="selection"
-              style={s.roundel}
-              accessibilityRole="button"
-              accessibilityLabel="Previous page"
-            >
-              <View pointerEvents="none" style={[s.roundelFace, { borderColor: plaqueAlpha(here.accent, 0.42) }]} />
-              <View pointerEvents="none" style={s.roundelCatch} />
-              <ChevronLeft s={15} c={plaqueInk(here.accent, 32)} w={2.2} />
-            </TouchableOpacity>
-          ) : (
-            <View style={s.headSpacer} />
-          )}
-
-          <OrthodoxPlaque
-            accent={here.accent}
-            label={next ? next.title : 'Return to the icon'}
-            onPress={next ? () => goTo(page + 1) : onClose}
-            size="compact"
-            style={s.plaque}
-          />
-        </LinearGradient>
+        <RuledChannel
+          at={at}
+          total={total}
+          track={track}
+          onTrack={setTrack}
+          leafY={leafY}
+          cover={metrics.cover}
+        />
       </View>
-    </Modal>
+
+      {/* ── THE FOOT ───────────────────────────────────────────────
+          ⚠ THE PLAQUE, NOT A RECTANGLE OF ITS OWN INVENTION. This is
+          the app's one action — it begins a prayer on the Prayer Book
+          screen and turns the page inside the reader — and it names
+          the page it is going to, because a bare arrow says only that
+          there is more. */}
+      <LinearGradient
+        colors={FOOT_GROUND}
+        locations={[0, 0.26, 1]}
+        style={[s.foot, { paddingBottom: Math.max(insets.bottom, 12) + 6 }]}
+        pointerEvents="box-none"
+      >
+        <View pointerEvents="none" style={s.footRule} />
+        {page > 0 ? (
+          <TouchableOpacity
+            onPress={() => goTo(page - 1)}
+            activeOpacity={0.82}
+            haptic="selection"
+            style={s.roundel}
+            accessibilityRole="button"
+            accessibilityLabel="Previous page"
+          >
+            <View pointerEvents="none" style={[s.roundelFace, { borderColor: plaqueAlpha(here.accent, 0.42) }]} />
+            <View pointerEvents="none" style={s.roundelCatch} />
+            <ChevronLeft s={15} c={plaqueInk(here.accent, 32)} w={2.2} />
+          </TouchableOpacity>
+        ) : (
+          <View style={s.headSpacer} />
+        )}
+
+        <OrthodoxPlaque
+          accent={here.accent}
+          label={next ? next.title : 'Return to the icon'}
+          onPress={next ? () => goTo(page + 1) : onClose}
+          size="compact"
+          style={s.plaque}
+        />
+      </LinearGradient>
+    </View>
   );
 }
 
@@ -875,10 +1030,7 @@ const Leaf = ({
       scrollEventThrottle={16}
       showsVerticalScrollIndicator={false}
     >
-      <Reanimated.View
-        entering={FadeInDown.duration(520).delay(110)}
-        style={[s.leaf, { minHeight: minLeaf, paddingBottom: bottom }]}
-      >
+      <View style={[s.leaf, { minHeight: minLeaf, paddingBottom: bottom }]}>
         {/* ⚠ THE GROUND IS THE ONE THING THAT CLIPS. A shadow is drawn by
             the layer that owns it, and a layer that clips to its own
             bounds clips its shadow away with everything else. */}
@@ -961,7 +1113,7 @@ const Leaf = ({
             <Text style={s.colophonText}>{PANTOCRATOR_SOURCE_NOTE}</Text>
           </View>
         )}
-      </Reanimated.View>
+      </View>
     </Reanimated.ScrollView>
   );
 };
@@ -1012,6 +1164,17 @@ function FacesSwitch({
 }
 
 const s = StyleSheet.create({
+  /**
+   * ⚠ THE MODAL IS TRANSPARENT AND THE PRAYER SCREEN IS BEHIND IT, which
+   * is what lets the room step back into depth rather than fall out of
+   * the bottom of the phone. The scrim is what keeps the edges of a
+   * scaled room from flashing bright paper on the way in and out — warm,
+   * like every other shadow on these screens, because a neutral one over
+   * warm paper reads as the phone dimming.
+   */
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(18,11,4,0.97)' },
+  roomMotion: { flex: 1 },
+
   room: { flex: 1, backgroundColor: '#16100A' },
 
   // ── The chapel ─────────────────────────────────────────────────────

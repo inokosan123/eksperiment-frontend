@@ -482,6 +482,10 @@ export function PantocratorWall({ shade }: { shade: readonly [string, string, st
         style={s.wall}
         contentFit="cover"
         blurRadius={WALL_BLUR}
+        // The room is mounted fresh on every visit, so on the first one
+        // this is a cold decode. It arrives rather than appearing —
+        // after that it is in memory and the fade never runs.
+        transition={240}
         // ⚠ Kept in memory. It is the same file the panel in front of it
         // draws, under a different transformation and therefore a
         // different key; decoding it again on every page of the sheet
