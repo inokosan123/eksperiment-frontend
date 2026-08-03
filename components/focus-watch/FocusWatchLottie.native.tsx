@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { StyleProp, ViewStyle } from 'react-native';
 import LottieView from 'lottie-react-native';
 
@@ -13,7 +13,7 @@ const sources: Record<FocusWatchAnimation, any> = {
 
 // mode 'loop' plays forever; 'periodic' plays once, rests, then plays again;
 // 'once' plays a single time and freezes until the screen is entered again.
-export default function FocusWatchLottie({
+function FocusWatchLottie({
   name,
   style,
   mode = 'loop',
@@ -62,6 +62,18 @@ export default function FocusWatchLottie({
     };
   }, []);
 
+  const handleAnimationFinish = useCallback((isCancelled: boolean) => {
+    if (mode !== 'periodic' || isCancelled) return;
+    resting.current = true;
+    if (!playingRef.current) return;
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      if (!playingRef.current) return;
+      resting.current = false;
+      ref.current?.play();
+    }, restMs);
+  }, [mode, restMs]);
+
   return (
     <LottieView
       ref={ref}
@@ -72,17 +84,9 @@ export default function FocusWatchLottie({
       style={style}
       renderMode="HARDWARE"
       cacheComposition
-      onAnimationFinish={isCancelled => {
-        if (mode !== 'periodic' || isCancelled) return;
-        resting.current = true;
-        if (!playingRef.current) return;
-        timer.current = setTimeout(() => {
-          timer.current = null;
-          if (!playingRef.current) return;
-          resting.current = false;
-          ref.current?.play();
-        }, restMs);
-      }}
+      onAnimationFinish={handleAnimationFinish}
     />
   );
 }
+
+export default memo(FocusWatchLottie);

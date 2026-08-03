@@ -1,14 +1,16 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Reanimated, {
   Easing,
   FadeInDown,
   FadeOutUp,
   LinearTransition,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -18,6 +20,8 @@ import NotificationSettings, { NotificationMode } from '@/components/shared/Noti
 import TaskFrequencyEditor from '@/components/shared/TaskFrequencyEditor';
 import TaskTimeEditor, { TaskDayTimes } from '@/components/shared/TaskTimeEditor';
 import { useTasks } from '@/components/tasks/TaskProvider';
+import TaskAnalyticsSheet, { TaskConsistencyDials } from '@/components/tasks/TaskAnalyticsSheet';
+import { getTaskAnalytics, type TaskAnalyticsData } from '@/components/tasks/taskAnalytics';
 import { buildInstanceId, getLocalDateKey } from '@/components/tasks/taskScheduler';
 import type { TaskDraft } from '@/components/tasks/taskTypes';
 import {
@@ -33,10 +37,9 @@ import {
 } from '@/components/habits/habitDb';
 import {
   BarChart3,
-  Calendar,
   CheckSmall,
   ChevronDown,
-  Flame,
+  ChevronRight,
   Pause,
   Pencil,
   Play,
@@ -47,6 +50,7 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
+import EmojiPicker from '@/components/shared/EmojiPicker';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import type { HabitEmojiName } from '@/components/shared/notoEmoji/habits';
 import { AnyTaskCard, type TaskData, type TaskState } from '@/components/shared/TaskCards';
@@ -59,6 +63,10 @@ import {
   useGuideTarget,
 } from '@/components/onboarding/guided/GuidedSetupContext';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
+import {
+  aggregateHabitAnalytics,
+  type HabitStepAnalyticsEntry,
+} from '@/components/habits/habitAnalytics';
 
 
 const HABIT_COLORS = [
@@ -239,79 +247,6 @@ function habitStepToTaskDraft(habit: HabitItem, step: HabitStep): TaskDraft {
       habitId: habit.id,
       habitStepId: step.id,
     },
-  };
-}
-
-function buildCalendarSeed(step: HabitStep) {
-  return {
-    done: new Set(step.history?.completed ?? []),
-    skipped: new Set(step.history?.skipped ?? []),
-    missed: new Set(step.history?.missed ?? []),
-  };
-}
-
-// Real per-window completion rates derived from a step's history. Mirrors the
-// universal rule used elsewhere: skipped tasks are neutral and don't count in
-// either numerator or denominator.
-type WindowStats = { completed: number; scheduled: number; pct: number };
-type StepWindowStats = { thisWeek: WindowStats; thisMonth: WindowStats; allTime: WindowStats };
-
-function computeStepWindowStats(step: HabitStep, todayStr: string): StepWindowStats {
-  const completed = step.history?.completed ?? [];
-  const skipped = step.history?.skipped ?? [];
-  const missed = step.history?.missed ?? [];
-  const completedSet = new Set(completed);
-  const skippedSet = new Set(skipped);
-  const missedSet = new Set(missed);
-  const allDates = new Set<string>([...completed, ...skipped, ...missed]);
-
-  const monthStart = todayStr.slice(0, 7) + '-01';
-
-  // ISO-style week (Mon-start), computed from todayStr.
-  const [y, m, d] = todayStr.split('-').map(Number);
-  const today = new Date(y, m - 1, d);
-  const jsDay = today.getDay();
-  const offsetToMonday = jsDay === 0 ? 6 : jsDay - 1;
-  const weekStartDate = new Date(today.getTime() - offsetToMonday * 86_400_000);
-  const weekStart = `${weekStartDate.getFullYear()}-${String(weekStartDate.getMonth() + 1).padStart(2, '0')}-${String(weekStartDate.getDate()).padStart(2, '0')}`;
-
-  const summarize = (predicate: (date: string) => boolean): WindowStats => {
-    let c = 0;
-    let s = 0;
-    let totalNonSkipped = 0;
-    for (const date of allDates) {
-      if (!predicate(date)) continue;
-      if (date > todayStr) continue;
-      if (skippedSet.has(date)) { s += 1; continue; }
-      totalNonSkipped += 1;
-      if (completedSet.has(date)) c += 1;
-    }
-    void s;
-    void missedSet;
-    return {
-      completed: c,
-      scheduled: totalNonSkipped,
-      pct: totalNonSkipped > 0 ? Math.round((c / totalNonSkipped) * 100) : 0,
-    };
-  };
-
-  return {
-    thisWeek: summarize(date => date >= weekStart),
-    thisMonth: summarize(date => date >= monthStart),
-    allTime: summarize(() => true),
-  };
-}
-
-function aggregateWindowStats(perStep: StepWindowStats[]): StepWindowStats {
-  const sumWindow = (key: keyof StepWindowStats): WindowStats => {
-    const c = perStep.reduce((acc, s) => acc + s[key].completed, 0);
-    const t = perStep.reduce((acc, s) => acc + s[key].scheduled, 0);
-    return { completed: c, scheduled: t, pct: t > 0 ? Math.round((c / t) * 100) : 0 };
-  };
-  return {
-    thisWeek: sumWindow('thisWeek'),
-    thisMonth: sumWindow('thisMonth'),
-    allTime: sumWindow('allTime'),
   };
 }
 
@@ -809,7 +744,14 @@ const HabitsView = forwardRef<HabitsViewHandle, HabitsViewProps>(function Habits
       <HabitAnalyticsSheet
         habit={analyticsTarget}
         onClose={() => setAnalyticsTarget(null)}
-        onOpenStep={step => analyticsTarget && setTaskDetail({ habit: analyticsTarget, step })}
+        onOpenStep={step => {
+          const habit = analyticsTarget;
+          if (!habit) return;
+          // Native iOS will not stack a second Modal over the goal sheet.
+          // Dismiss it first, then open the same task analytics used on Home.
+          setAnalyticsTarget(null);
+          setTimeout(() => setTaskDetail({ habit, step }), 240);
+        }}
       />
 
       <TaskDetailSheet
@@ -976,11 +918,9 @@ function HabitEditorSheet({
   const [name, setName] = useState('');
   const [color, setColor] = useState(HABIT_COLORS[0]);
   const [icon, setIcon] = useState<HabitEmojiName>(HABIT_ICONS[0]);
-  const [iconExpanded, setIconExpanded] = useState(false);
   const [steps, setSteps] = useState<HabitStep[]>([]);
   const [taskOpen, setTaskOpen] = useState(false);
   const [editStep, setEditStep] = useState<HabitStep | null>(null);
-  const [habitIconGridWidth, setHabitIconGridWidth] = useState(0);
   const [pendingDeleteStep, setPendingDeleteStep] = useState<HabitStep | null>(null);
   const [pendingNoSteps, setPendingNoSteps] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -989,7 +929,6 @@ function HabitEditorSheet({
 
   useEffect(() => {
     if (!visible) return;
-    setIconExpanded(false);
     submittingRef.current = false;
     setSubmitting(false);
     setPendingNoSteps(false);
@@ -1104,10 +1043,6 @@ function HabitEditorSheet({
 
   if (!visible) return null;
 
-  const habitIconGap = 8;
-  const habitIconChipSize = habitIconGridWidth > 0
-    ? Math.max(42, Math.min(58, Math.floor((habitIconGridWidth - habitIconGap * 4) / 5)))
-    : 50;
 
   // The task editor and confirm dialog are rendered as overlayChildren of
   // the outer sheet so they share the same Modal — iOS UIKit refuses to
@@ -1280,71 +1215,19 @@ function HabitEditorSheet({
 
               <View style={s.sheetBlock}>
                 <Text style={s.sheetBlockLabel}>Icon</Text>
-                {(() => {
-                  const COLLAPSED = 25; // 5 rows x 5 chips
-                  const total = HABIT_ICONS.length;
-                  const hasMore = total > COLLAPSED;
-                  let visibleIcons = iconExpanded ? HABIT_ICONS : HABIT_ICONS.slice(0, COLLAPSED);
-                  if (!iconExpanded && hasMore && !visibleIcons.includes(icon)) {
-                    // Always keep the currently selected icon visible even when collapsed.
-                    visibleIcons = [icon, ...visibleIcons.slice(0, COLLAPSED - 1)];
-                  }
-                  return (
-                    <>
-                      <View
-                        ref={iconsTarget.ref}
-                        style={s.iconGrid}
-                        onLayout={event => {
-                          setHabitIconGridWidth(event.nativeEvent.layout.width);
-                          iconsTarget.onLayout(event);
-                        }}
-                      >
-                        {visibleIcons.map(item => {
-                          const active = icon === item;
-                          return (
-                            <TouchableOpacity
-                              key={item}
-                              onPress={() => {
-                                setIcon(item);
-                                if (isGuided && guidePhase === 'icon') patchSession({ phase: 'step' });
-                              }}
-                              accessibilityRole="button"
-                              accessibilityState={{ selected: active }}
-                              activeOpacity={0.84}
-                              style={[
-                                s.iconChip,
-                                { width: habitIconChipSize, height: habitIconChipSize },
-                                active && s.iconChipActive,
-                                active && { borderColor: color, backgroundColor: hexToRgba(color, 0.12), shadowColor: color },
-                              ]}
-                            >
-                              <View style={s.iconGlyphBox}>
-                                <NotoEmoji name={item} size={29} />
-                              </View>
-                              {active && (
-                                <View pointerEvents="none" style={[s.iconSelectedBadge, { backgroundColor: color }]}>
-                                  <CheckSmall s={12} c="#FFFFFF" w={3} />
-                                </View>
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                      {hasMore && (
-                        <TouchableOpacity
-                          onPress={() => setIconExpanded(value => !value)}
-                          activeOpacity={0.7}
-                          style={s.iconMoreBtn}
-                        >
-                          <Text style={[s.iconMoreText, { color }]}>
-                            {iconExpanded ? 'Show less' : `Show more (${total - COLLAPSED})`}
-                          </Text>
-                          <Text style={[s.iconMoreArrow, { color, transform: [{ rotate: iconExpanded ? '180deg' : '0deg' }] }]}>›</Text>
-                        </TouchableOpacity>
-                      )}
-                    </>
-                  );
-                })()}
+                <EmojiPicker
+                  ref={iconsTarget.ref}
+                  onGridLayout={iconsTarget.onLayout}
+                  value={icon}
+                  icons={HABIT_ICONS}
+                  onChange={item => {
+                    setIcon(item);
+                    if (isGuided && guidePhase === 'icon') patchSession({ phase: 'step' });
+                  }}
+                  accent={color}
+                  tint={hexToRgba(color, 0.12)}
+                  deferExtras
+                />
               </View>
 
               <View style={s.sheetBlock}>
@@ -1747,14 +1630,49 @@ function HabitAnalyticsSheet({
   onClose: () => void;
   onOpenStep: (step: HabitStep) => void;
 }) {
+  const [entries, setEntries] = useState<HabitStepAnalyticsEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!habit) {
+      setEntries([]);
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    setLoading(true);
+    void Promise.all(habit.steps.map(async step => {
+      try {
+        return {
+          stepId: step.id,
+          analytics: await getTaskAnalytics(habitStepTaskId(habit.id, step.id)),
+        } satisfies HabitStepAnalyticsEntry;
+      } catch (error) {
+        console.warn('Habit step analytics failed:', { habitId: habit.id, stepId: step.id, error });
+        return { stepId: step.id, analytics: null } satisfies HabitStepAnalyticsEntry;
+      }
+    })).then(nextEntries => {
+      if (cancelled) return;
+      setEntries(nextEntries);
+      setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [habit]);
+
+  const aggregated = useMemo(() => aggregateHabitAnalytics(entries), [entries]);
+  const analyticsByStep = useMemo(
+    () => new Map<string, TaskAnalyticsData | null>(entries.map(entry => [entry.stepId, entry.analytics])),
+    [entries],
+  );
+
   if (!habit) return null;
 
-  const todayStr = getLocalDateKey();
-  const perStepWindow = habit.steps.map(step => computeStepWindowStats(step, todayStr));
-  const aggregated = aggregateWindowStats(perStepWindow);
-  const overallPct = aggregated.allTime.pct;
-  const bestStep = [...habit.steps].sort((a, b) => b.completionRate - a.completionRate)[0];
-  const worstStep = [...habit.steps].sort((a, b) => a.completionRate - b.completionRate)[0];
+  const hasOverall = aggregated.sinceStart.scheduled > 0;
+  const hasOverallActivity = hasOverall || aggregated.totalSkips > 0;
+  const overallMissed = Math.max(0, aggregated.sinceStart.scheduled - aggregated.sinceStart.completed);
+  const trackedStepCount = entries.filter(entry => entry.analytics !== null).length;
 
   return (
     <SmoothBottomSheet visible={!!habit} onClose={onClose} sheetStyle={s.analyticsSheet}>
@@ -1772,65 +1690,140 @@ function HabitAnalyticsSheet({
           </View>
 
           <ScrollView contentContainerStyle={s.analyticsContent} showsVerticalScrollIndicator={false}>
-            <View style={[s.analyticsHero, { backgroundColor: hexToRgba(habit.color, 0.1) }]}>
-              <Text style={[s.analyticsPct, { color: habit.color }]}>{overallPct}%</Text>
-              <Text style={s.analyticsHeroLabel}>OVERALL CONSISTENCY</Text>
-            </View>
-
-            <View style={s.analyticsStatRow}>
-              <AnalyticsStatCard label="This Week" value={`${aggregated.thisWeek.pct}%`} accent={habit.color} />
-              <AnalyticsStatCard label="This Month" value={`${aggregated.thisMonth.pct}%`} accent={habit.color} />
-              <AnalyticsStatCard label="All Time" value={`${aggregated.allTime.pct}%`} accent={habit.color} />
-            </View>
-
-            {bestStep && worstStep && habit.steps.length > 1 && (
-              <View style={s.analyticsPair}>
-                <View style={s.analyticsBest}>
-                  <Text style={s.analyticsMiniKicker}>BEST PERFORMING</Text>
-                  <Text style={s.analyticsMiniTitle}>{bestStep.title}</Text>
-                  <Text style={s.analyticsMiniPct}>{bestStep.completionRate}%</Text>
-                </View>
-                <View style={s.analyticsWorst}>
-                  <Text style={s.analyticsMiniKicker}>WORST PERFORMING</Text>
-                  <Text style={s.analyticsMiniTitle}>{worstStep.title}</Text>
-                  <Text style={[s.analyticsMiniPct, { color: '#EF4444' }]}>{worstStep.completionRate}%</Text>
-                </View>
+            {loading ? (
+              <View style={s.analyticsLoading}>
+                <ActivityIndicator color={habit.color} />
+                <Text style={s.analyticsLoadingText}>Calculating every habit / step...</Text>
               </View>
-            )}
+            ) : (
+              <>
+                <View style={[s.analyticsHero, { backgroundColor: hexToRgba(habit.color, 0.1) }]}>
+                  <Text style={[s.analyticsPct, { color: habit.color }]}>
+                    {hasOverall ? `${aggregated.sinceStart.pct}%` : '—'}
+                  </Text>
+                  <Text style={s.analyticsHeroLabel}>OVERALL CONSISTENCY</Text>
+                  <Text style={s.analyticsHeroDetail}>
+                    {hasOverallActivity
+                      ? `${aggregated.sinceStart.completed} completed · ${overallMissed} missed · ${aggregated.totalSkips} skipped across ${trackedStepCount} ${trackedStepCount === 1 ? 'habit / step' : 'habits / steps'}`
+                      : 'Complete a scheduled habit / step to begin your goal analytics.'}
+                  </Text>
+                </View>
 
-            <Text style={s.breakdownLabel}>HABITS / STEPS</Text>
-            <View style={s.breakdownList}>
-              {habit.steps.map(step => (
-                <TouchableOpacity key={step.id} onPress={() => onOpenStep(step)} activeOpacity={0.84} style={s.breakdownCard}>
-                  <View style={s.breakdownHead}>
-                    <Text style={s.breakdownTitle}>{step.title}</Text>
-                    <View style={s.breakdownMeta}>
-                      {step.currentStreak > 0 && (
-                        <View style={s.breakdownStreak}>
-                          <Flame s={10} color={habit.color} filled />
-                          <Text style={[s.breakdownStreakText, { color: habit.color }]}>{step.currentStreak}</Text>
+                <View style={s.analyticsStatRow}>
+                  <AnalyticsStatCard label="This week" bucket={aggregated.thisWeek} accent={habit.color} />
+                  <AnalyticsStatCard label="This month" bucket={aggregated.thisMonth} accent={habit.color} />
+                  <AnalyticsStatCard label="All time" bucket={aggregated.sinceStart} accent={habit.color} />
+                </View>
+
+                <View style={s.analyticsSectionDivider}>
+                  <View style={s.analyticsSectionLine} />
+                  <View style={[s.analyticsSectionDiamond, { backgroundColor: hexToRgba(habit.color, 0.55) }]} />
+                  <View style={s.analyticsSectionLine} />
+                </View>
+
+                <Text style={s.breakdownLabel}>HABITS / STEPS</Text>
+                <View style={s.breakdownList}>
+                  {habit.steps.map(step => {
+                    const analytics = analyticsByStep.get(step.id) ?? null;
+                    const previewTask = {
+                      ...habitStepTaskCardData(habit, step, 'pending'),
+                      reservedRightSpace: 0,
+                    } satisfies TaskData;
+                    return (
+                      <View
+                        key={step.id}
+                        style={s.breakdownCard}
+                      >
+                        <View pointerEvents="none" style={s.breakdownTaskPreview}>
+                          <AnyTaskCard task={previewTask} />
                         </View>
-                      )}
-                      <Text style={[s.breakdownPct, { color: habit.color }]}>{step.completionRate}%</Text>
-                    </View>
-                  </View>
-                  <View style={s.breakdownBar}>
-                    <View style={[s.breakdownFill, { width: `${step.completionRate}%`, backgroundColor: habit.color }]} />
-                  </View>
-                  <Text style={s.breakdownFooter}>{step.time} / {getFreqLabel(step)}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+
+                        {analytics ? (
+                          <TaskConsistencyDials
+                            analytics={analytics}
+                            accent={habit.color}
+                            title="CONSISTENCY"
+                            sinceStartLabel="All time"
+                          />
+                        ) : (
+                          <View style={s.breakdownEmptyAnalytics}>
+                            <Text style={s.breakdownEmptyTitle}>CONSISTENCY</Text>
+                            <Text style={s.breakdownEmptyText}>Analytics will appear after this step is scheduled.</Text>
+                          </View>
+                        )}
+
+                        <AnalyticsDetailButton
+                          onPress={() => onOpenStep(step)}
+                          accent={habit.color}
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
           </ScrollView>
     </SmoothBottomSheet>
   );
 }
 
-function AnalyticsStatCard({ label, value, accent }: { label: string; value: string; accent: string }) {
+function AnalyticsDetailButton({ accent, onPress }: { accent: string; onPress: () => void }) {
+  const pressedScale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: pressedScale.value }] }));
+  const tapGesture = useMemo(
+    () => Gesture.Tap()
+      .maxDuration(500)
+      .onBegin(() => {
+        pressedScale.value = withSpring(0.975, { damping: 20, stiffness: 360 });
+      })
+      .onEnd((_event, success) => {
+        if (success) runOnJS(onPress)();
+      })
+      .onFinalize(() => {
+        pressedScale.value = withSpring(1, { damping: 18, stiffness: 320 });
+      }),
+    [onPress, pressedScale],
+  );
+
+  return (
+    <GestureDetector gesture={tapGesture}>
+      <Reanimated.View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel="Open detailed analytics"
+        onAccessibilityTap={onPress}
+        style={[
+          s.breakdownDetailsButton,
+          { backgroundColor: hexToRgba(accent, 0.08) },
+          animatedStyle,
+        ]}
+      >
+        <Text style={[s.breakdownDetailsButtonText, { color: accent }]}>DETAILED VIEW</Text>
+        <ChevronRight s={14} c={accent} w={2} />
+      </Reanimated.View>
+    </GestureDetector>
+  );
+}
+
+function AnalyticsStatCard({
+  label,
+  bucket,
+  accent,
+}: {
+  label: string;
+  bucket: TaskAnalyticsData['thisWeek'];
+  accent: string;
+}) {
+  const hasData = bucket.scheduled > 0;
   return (
     <View style={s.analyticsStatCard}>
       <Text style={s.analyticsStatLabel}>{label}</Text>
-      <Text style={[s.analyticsStatValue, { color: accent }]}>{value}</Text>
+      <Text style={[s.analyticsStatValue, { color: hasData ? accent : '#C8C5BD' }]}>
+        {hasData ? `${bucket.pct}%` : '—'}
+      </Text>
+      <Text style={s.analyticsStatCount}>
+        {hasData ? `${bucket.completed} of ${bucket.scheduled}` : 'none set'}
+      </Text>
     </View>
   );
 }
@@ -1842,109 +1835,14 @@ function TaskDetailSheet({
   detail: { habit: HabitItem; step: HabitStep } | null;
   onClose: () => void;
 }) {
-  if (!detail) return null;
-
-  const { habit, step } = detail;
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDay = new Date(year, month, 1).getDay();
-  const seed = buildCalendarSeed(step);
-  const todayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  const stepWindow = computeStepWindowStats(step, todayStr);
-
-  const cells: (number | null)[] = [];
-  for (let index = 0; index < (firstDay === 0 ? 6 : firstDay - 1); index += 1) cells.push(null);
-  for (let day = 1; day <= daysInMonth; day += 1) cells.push(day);
-
   return (
-    <SmoothBottomSheet visible={!!detail} onClose={onClose} sheetStyle={s.analyticsSheet}>
-          <View style={s.sheetHandle} />
-          <View style={s.analyticsHead}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.analyticsTitle}>{step.title}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <NotoEmoji name={normalizeHabitIcon(habit.icon)} size={14} />
-                <Text style={s.analyticsMeta}>{habit.name}</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.84} style={s.taskClose}>
-              <X s={18} c="#9CA3AF" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView contentContainerStyle={s.analyticsContent} showsVerticalScrollIndicator={false}>
-            <View style={s.streakRow}>
-              <View style={s.streakCard}>
-                <Text style={[s.streakValue, { color: habit.color }]}>{step.currentStreak}</Text>
-                <Text style={s.streakLabel}>CURRENT STREAK</Text>
-              </View>
-              <View style={s.streakCard}>
-                <Text style={s.streakValueMuted}>{step.bestStreak}</Text>
-                <Text style={s.streakLabel}>BEST STREAK</Text>
-              </View>
-            </View>
-
-            <View style={s.consistencyCard}>
-              <View style={s.consistencyHead}>
-                <Target s={14} c={habit.color} />
-                <Text style={s.breakdownLabel}>CONSISTENCY</Text>
-              </View>
-              <ConsistencyRow label="This Week" pct={stepWindow.thisWeek.pct} color={habit.color} />
-              <ConsistencyRow label="This Month" pct={stepWindow.thisMonth.pct} color={habit.color} />
-              <ConsistencyRow label="Since Start" pct={stepWindow.allTime.pct} color={habit.color} />
-            </View>
-
-            <View style={s.calendarCard}>
-              <View style={s.consistencyHead}>
-                <Calendar s={14} c={habit.color} />
-                <Text style={s.breakdownLabel}>{today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase()}</Text>
-              </View>
-              <View style={s.calendarWeekRow}>
-                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(label => (
-                  <Text key={label} style={s.calendarWeekLabel}>{label}</Text>
-                ))}
-              </View>
-              <View style={s.calendarGrid}>
-                {cells.map((day, index) => {
-                  if (day === null) return <View key={`empty-${index}`} style={s.calendarCell} />;
-                  const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const done = seed.done.has(dateKey);
-                  const skipped = seed.skipped.has(dateKey);
-                  const missed = seed.missed.has(dateKey);
-                  const isToday = dateKey === todayStr;
-                  return (
-                    <View
-                      key={dateKey}
-                      style={[
-                        s.calendarCell,
-                        done && { backgroundColor: hexToRgba(habit.color, 0.14), borderColor: hexToRgba(habit.color, 0.24), borderWidth: 1 },
-                        skipped && s.calendarCellSkipped,
-                        missed && s.calendarCellMissed,
-                        isToday && !done && !skipped && !missed && { borderWidth: 1.5, borderColor: habit.color },
-                      ]}
-                    >
-                      {done ? <Flame s={11} color={habit.color} filled /> : <Text style={[s.calendarCellText, (skipped || missed) && s.calendarCellTextDim]}>{day}</Text>}
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          </ScrollView>
-    </SmoothBottomSheet>
-  );
-}
-
-function ConsistencyRow({ label, pct, color }: { label: string; pct: number; color: string }) {
-  return (
-    <View style={s.consistencyRow}>
-      <Text style={s.consistencyLabel}>{label}</Text>
-      <View style={s.consistencyBar}>
-        <View style={[s.consistencyFill, { width: `${Math.max(pct, 4)}%`, backgroundColor: color, opacity: pct >= 80 ? 1 : pct >= 50 ? 0.7 : 0.35 }]} />
-      </View>
-      <Text style={s.consistencyPct}>{pct}%</Text>
-    </View>
+    <TaskAnalyticsSheet
+      visible={!!detail}
+      taskId={detail ? habitStepTaskId(detail.habit.id, detail.step.id) : undefined}
+      taskTitle={detail?.step.title ?? ''}
+      taskSubtitle={detail?.habit.name}
+      onClose={onClose}
+    />
   );
 }
 
@@ -2159,45 +2057,6 @@ const s = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 8, rowGap: 10 },
-  iconChip: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible',
-    shadowColor: '#8C7A4F',
-    shadowOpacity: 0.035,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  iconChipActive: {
-    borderWidth: 2,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.18,
-    shadowRadius: 11,
-    elevation: 4,
-  },
-  iconGlyphBox: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
-  iconSelectedBadge: {
-    position: 'absolute',
-    right: -4,
-    bottom: -4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconChipText: { fontSize: 26, textAlign: 'center', includeFontPadding: false, marginTop: -3 },
-  iconMoreBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 12, alignSelf: 'flex-start' },
-  iconMoreText: { fontFamily: F.sansSemiBold, fontSize: 12, letterSpacing: 0.4 },
-  iconMoreArrow: { fontFamily: F.serifMedium, fontSize: 18, lineHeight: 18 },
   blockTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   blockTitleCol: { marginBottom: 12, gap: 3 },
   editStepsHelper: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.4, color: '#A8A29E', textTransform: 'uppercase' },
@@ -2305,31 +2164,29 @@ const s = StyleSheet.create({
   analyticsTitle: { fontFamily: F.serifMedium, fontSize: 22, color: '#111827' },
   analyticsMeta: { marginTop: 3, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.4, color: '#9CA3AF', textTransform: 'uppercase' },
   analyticsContent: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 18, gap: 16 },
+  analyticsLoading: { minHeight: 260, alignItems: 'center', justifyContent: 'center', gap: 13 },
+  analyticsLoadingText: { fontFamily: F.serifItalic, fontSize: 15, color: '#9CA3AF' },
   analyticsHero: { borderRadius: 26, paddingVertical: 22, alignItems: 'center' },
   analyticsPct: { fontFamily: F.serifMedium, fontSize: 42, lineHeight: 44 },
   analyticsHeroLabel: { marginTop: 6, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 2, color: '#A8A29E' },
+  analyticsHeroDetail: { maxWidth: 285, marginTop: 8, paddingHorizontal: 14, fontFamily: F.serif, fontSize: 14, lineHeight: 19, color: '#78716C', textAlign: 'center' },
   analyticsStatRow: { flexDirection: 'row', gap: 10 },
-  analyticsStatCard: { flex: 1, borderRadius: 20, borderWidth: 1, borderColor: '#F0EDE6', backgroundColor: '#FFFFFF', alignItems: 'center', paddingVertical: 14 },
+  analyticsStatCard: { flex: 1, minWidth: 0, borderRadius: 20, borderWidth: 1, borderColor: '#F0EDE6', backgroundColor: '#FFFFFF', alignItems: 'center', paddingHorizontal: 5, paddingVertical: 14 },
   analyticsStatLabel: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.5, color: '#A8A29E', textTransform: 'uppercase' },
-  analyticsStatValue: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 22 },
-  analyticsPair: { gap: 10 },
-  analyticsBest: { borderRadius: 20, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#DCFCE7', padding: 16 },
-  analyticsWorst: { borderRadius: 20, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FEE2E2', padding: 16 },
-  analyticsMiniKicker: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.6, color: '#A8A29E', textTransform: 'uppercase' },
-  analyticsMiniTitle: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 18, color: '#111827' },
-  analyticsMiniPct: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 22, color: '#16A34A' },
+  analyticsStatValue: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 22, fontVariant: ['lining-nums', 'tabular-nums'] },
+  analyticsStatCount: { marginTop: 2, fontFamily: F.serif, fontSize: 11.5, color: '#8F897E', fontVariant: ['lining-nums'] },
+  analyticsSectionDivider: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 },
+  analyticsSectionLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#E7E3DA' },
+  analyticsSectionDiamond: { width: 6, height: 6, borderRadius: 1, transform: [{ rotate: '45deg' }] },
   breakdownLabel: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.8, color: '#A8A29E', textTransform: 'uppercase' },
-  breakdownList: { gap: 10 },
-  breakdownCard: { borderRadius: 20, borderWidth: 1, borderColor: '#F0EDE6', backgroundColor: '#FFFFFF', padding: 14 },
-  breakdownHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 9 },
-  breakdownTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 18, color: '#111827' },
-  breakdownMeta: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  breakdownStreak: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  breakdownStreakText: { fontFamily: F.sansBold, fontSize: 10 },
-  breakdownPct: { fontFamily: F.serifMedium, fontSize: 18 },
-  breakdownBar: { height: 6, borderRadius: 999, backgroundColor: '#F3F4F6', overflow: 'hidden' },
-  breakdownFill: { height: '100%', borderRadius: 999 },
-  breakdownFooter: { marginTop: 9, fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.3, color: '#A8A29E', textTransform: 'uppercase' },
+  breakdownList: { gap: 14 },
+  breakdownCard: { borderRadius: 24, borderWidth: 1, borderColor: '#ECE8DE', backgroundColor: '#FFFFFF', padding: 14, gap: 17, overflow: 'hidden' },
+  breakdownTaskPreview: { marginHorizontal: -2 },
+  breakdownEmptyAnalytics: { minHeight: 116, borderRadius: 18, backgroundColor: '#FAF9F6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, gap: 6 },
+  breakdownEmptyTitle: { fontFamily: F.sansBold, fontSize: 9.5, letterSpacing: 1.8, color: '#A8A29E' },
+  breakdownEmptyText: { fontFamily: F.serif, fontSize: 14, lineHeight: 19, color: '#8F897E', textAlign: 'center' },
+  breakdownDetailsButton: { minHeight: 42, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  breakdownDetailsButtonText: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.6 },
   streakRow: { flexDirection: 'row', gap: 10 },
   streakCard: { flex: 1, borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F0EDE6', alignItems: 'center', paddingVertical: 18 },
   streakValue: { fontFamily: F.serifMedium, fontSize: 40, lineHeight: 42 },

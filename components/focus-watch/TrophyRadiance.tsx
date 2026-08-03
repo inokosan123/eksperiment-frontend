@@ -5,15 +5,14 @@ import { F } from '@/constants/tokens';
 import { BANKED, BankedWeave, EmberPulse, LedgerCartouche } from '@/components/shared/BankedEmber';
 import Animated, {
   useAnimatedStyle,
-  useReducedMotion,
   type SharedValue,
 } from 'react-native-reanimated';
 import { useFocusMainMotion } from './focus-main-motion';
 import { FocusMedallion, FOCUS_MEDALLION_RATIO, MEDALLION } from '@/components/focus-watch/FocusMedallion';
 import {
   pingPongPhase,
-  useContinuousAnimationClock,
 } from '@/components/shared/use-continuous-animation-clock';
+import { useAmbientMotion } from '@/components/shared/ambient-motion';
 
 // The streak card's own language — not an instrument, a small celebration.
 // Golden rays burst from behind the medallion, the ground it was struck on
@@ -143,6 +142,7 @@ const MEDAL_DUST: MoteSpec[] = [
   { kind: 'dot', size: 2, style: { left: 74, bottom: 13 }, tone: 'deep', still: true, peak: 0.18 },
   { kind: 'diamond', size: 3, style: { right: 46, bottom: 9 }, tone: 'deep', still: true, peak: 0.22, quiet: true },
 ];
+const QUIET_MEDAL_DUST = MEDAL_DUST.filter(spec => spec.quiet);
 
 // THE GROUND, and what it learned the hard way.
 //
@@ -214,11 +214,13 @@ function AnimatedMote({
   color,
   slow,
   clock,
+  running,
 }: {
   spec: MoteSpec;
   color: string;
   slow: boolean;
   clock: SharedValue<number>;
+  running: boolean;
 }) {
   // Banked: the sparks are half as bright and take nearly twice as long.
   const cycle = (spec.cycle ?? 2600) * (slow ? 1.9 : 1);
@@ -228,6 +230,7 @@ function AnimatedMote({
   const reach = (spec.peak ?? 0.3) * (slow ? 0.5 : 1);
 
   const twinkle = useAnimatedStyle(() => {
+    if (!running) return { opacity: moteRest(spec, slow) };
     const wave = pingPongPhase(clock.value, cycle, delay);
     return { opacity: floor + (sharp ? wave * wave * wave : wave) * reach };
   });
@@ -252,14 +255,14 @@ function Mote({
   slow: boolean;
   clock: SharedValue<number>;
 }) {
-  if (spec.still || !active) {
+  if (spec.still) {
     return (
       <View pointerEvents="none" style={[dust.mote, spec.style, { opacity: moteRest(spec, slow) }]}>
         <MoteShape kind={spec.kind} size={spec.size} color={color} />
       </View>
     );
   }
-  return <AnimatedMote spec={spec} color={color} slow={slow} clock={clock} />;
+  return <AnimatedMote spec={spec} color={color} slow={slow} clock={clock} running={active} />;
 }
 
 const dust = StyleSheet.create({
@@ -290,14 +293,14 @@ export function TrophyShineBackdrop({
   strike?: { right: number; top: number; crest: number };
 }) {
   const [box, setBox] = useState({ w: 0, h: 0 });
-  const reduceMotion = useReducedMotion();
   const mainMotionEnabled = useFocusMainMotion();
-  const motionEnabled = mainMotionEnabled && !reduceMotion;
-  const clock = useContinuousAnimationClock(motionEnabled);
+  const runtime = useAmbientMotion(mainMotionEnabled);
+  const motionEnabled = runtime.enabled;
+  const clock = runtime.clock;
   const laid = !muted && box.w > 0;
   const rakeCount = laid ? Math.ceil((box.w + box.h) / RAKE_STEP) + 1 : 0;
   const moteColor = (spec: MoteSpec) => muted ? BANKED.ember : MOTE_TONES[spec.tone ?? 'gold'];
-  const specs = muted ? MEDAL_DUST.filter(spec => spec.quiet) : MEDAL_DUST;
+  const specs = muted ? QUIET_MEDAL_DUST : MEDAL_DUST;
 
   return (
     <View
@@ -888,10 +891,10 @@ export function RadiantTrophy({
   stage?: boolean;
 }) {
   const mainMotionEnabled = useFocusMainMotion();
-  const reduceMotion = useReducedMotion();
   const mounted = stage && !banked;
-  const breathing = (halo || stage) && !banked && mainMotionEnabled && !reduceMotion;
-  const clock = useContinuousAnimationClock(breathing);
+  const runtime = useAmbientMotion((halo || stage) && !banked && mainMotionEnabled);
+  const breathing = runtime.enabled;
+  const clock = runtime.clock;
   const field = size * 1.9;
   const cx = field / 2;
   const inner = size * 0.62;

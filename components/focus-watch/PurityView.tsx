@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
@@ -19,6 +20,8 @@ import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { CheckSmall, ChevronRight, Clock, Globe, Hourglass, Lock, Plus, Shield, Trash2, X } from '@/components/icons/Icons';
+import HardLock from '@/components/icons/HardLock';
+import FocusGlass from '@/components/icons/FocusGlass';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
@@ -38,7 +41,6 @@ import {
   cancelPendingChange,
   createCustomWebPack,
   formatEndsAt,
-  HARD_LOCK_DISABLE_DELAY_MS,
   hardLockDelayMs,
   normalizeDomain,
   removeCustomDomain,
@@ -46,7 +48,6 @@ import {
   removeDomainFromCustomWebPack,
   removeCustomWebPack,
   setCustomWebPackMode,
-  setDomainNever,
   setPackMode,
   updateWebHardLock,
   useDayPlan,
@@ -70,11 +71,9 @@ const PACK_BODY_EXIT = FadeOut
   .duration(150)
   .easing(PACK_COLLAPSE_EASE);
 const COOLDOWNS: { id: LockCooldown; label: string; detail: string }[] = [
-  { id: '45m', label: '45 minutes', detail: 'The minimum impulse-protection delay' },
-  { id: '1h', label: '1 hour', detail: 'A short pause before protection can weaken' },
-  { id: '6h', label: '6 hours', detail: 'Keep today’s vulnerable hours protected' },
   { id: '12h', label: '12 hours', detail: 'Half a day between impulse and access' },
   { id: '24h', label: '24 hours', detail: 'Sleep on every weakening decision' },
+  { id: '2d', label: '2 days', detail: 'Give the impulse time to lose its urgency' },
   { id: '3d', label: '3 days', detail: 'The strongest removable delay in this version' },
 ];
 
@@ -356,7 +355,7 @@ function PackRow({
             onPress={onNever}
             haptic="selection"
             accessibilityRole="button"
-            accessibilityLabel="Never allowed. Request unlock."
+            accessibilityLabel="Never Allowed. Read your promise."
           >
             <Lock s={15} c="#FFFFFF" w={2.3} />
           </TouchableOpacity>
@@ -447,9 +446,9 @@ function PackRow({
                   <Lock s={13} c={mode === 'never' ? '#FFFFFF' : '#A24351'} w={2.2} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={s.neverButtonText}>{mode === 'never' ? 'Request unlock' : 'Never allow'}</Text>
+                  <Text style={s.neverButtonText}>{mode === 'never' ? 'Read promise' : 'Never allow'}</Text>
                   <Text style={s.neverButtonSub} numberOfLines={1}>
-                    {mode === 'never' ? 'Hard Lock protects the exit' : 'Locked even from yourself'}
+                    {mode === 'never' ? 'Permanent inside Anasta' : 'Make a permanent promise'}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -466,7 +465,15 @@ function PackRow({
   );
 }
 
-function NewPackSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function NewPackSheet({
+  visible,
+  onClose,
+  onCreate,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCreate: (name: string, domains: string[]) => boolean;
+}) {
   const [name, setName] = useState('');
   const [domainDraft, setDomainDraft] = useState('');
   const [domains, setDomains] = useState<string[]>([]);
@@ -477,7 +484,7 @@ function NewPackSheet({ visible, onClose }: { visible: boolean; onClose: () => v
     setDomainDraft('');
   };
   const close = () => { setName(''); setDomainDraft(''); setDomains([]); onClose(); };
-  const save = () => { if (createCustomWebPack(name, domains)) close(); };
+  const save = () => { if (onCreate(name, domains)) close(); };
 
   return (
     <SmoothBottomSheet visible={visible} onClose={close} sheetStyle={s.newPackSheet} keyboardAware>
@@ -631,7 +638,7 @@ function DomainCard({
             style={s.domainLockBtn}
             onPress={onToggleNever}
             haptic="selection"
-            accessibilityLabel={never ? 'Unlock this site' : 'Lock this site'}
+            accessibilityLabel={never ? 'Read the permanent promise for this site' : 'Make this site Never Allowed'}
           >
             <Animated.View pointerEvents="none" style={[s.domainLockFill, lockFillStyle]} />
             <Animated.View pointerEvents="none" style={[s.domainChipIcon, lockGreyOp]}><Lock s={14} c="#8A8378" w={2.2} /></Animated.View>
@@ -655,6 +662,14 @@ type PackTurnOffRequest =
   | { kind: 'builtin'; id: WebPackId; name: string; domainCount: number }
   | { kind: 'custom'; id: string; name: string; domainCount: number };
 
+type HardLockAddition =
+  | { kind: 'domain'; domain: string; label: string }
+  | { kind: 'builtin-pack-enable'; packId: WebPackId; label: string }
+  | { kind: 'custom-pack-enable'; packId: string; label: string }
+  | { kind: 'builtin-domain'; packId: WebPackId; domain: string; label: string }
+  | { kind: 'custom-domain'; packId: string; domain: string; label: string }
+  | { kind: 'custom-pack'; name: string; domains: string[]; label: string };
+
 export default function PurityView({
   guided = false,
   guidedPackId = 'social',
@@ -664,6 +679,7 @@ export default function PurityView({
   guidedPackId?: WebPackId;
   onGuidedComplete?: () => void;
 } = {}) {
+  const router = useRouter();
   const { height: screenHeight } = useWindowDimensions();
   const state = useDayPlan();
   const { purity, pendingChanges } = state;
@@ -685,14 +701,19 @@ export default function PurityView({
   const [pendingOpen, setPendingOpen] = useState(false);
   const [cooldownOpen, setCooldownOpen] = useState(false);
   const [hardLockExpanded, setHardLockExpanded] = useState(false);
+  const [confirmHardLockOn, setConfirmHardLockOn] = useState(false);
   const [confirmHardLockOff, setConfirmHardLockOff] = useState(false);
+  const [confirmHardLockAddition, setConfirmHardLockAddition] = useState<HardLockAddition | null>(null);
   const [confirmPackOff, setConfirmPackOff] = useState<PackTurnOffRequest | null>(null);
   const [confirmDomainRemoval, setConfirmDomainRemoval] = useState<string | null>(null);
   const [draftDomain, setDraftDomain] = useState('');
-  const [confirmNeverPack, setConfirmNeverPack] = useState<WebPackId | null>(null);
   const [confirmRemovePack, setConfirmRemovePack] = useState<CustomWebPack | null>(null);
   const [domainsFor, setDomainsFor] = useState<{ kind: 'builtin'; id: WebPackId } | { kind: 'custom'; id: string } | null>(null);
   const activePacks = purity.packs.filter(pack => pack.mode !== 'off').length + purity.customPacks.filter(pack => pack.mode !== 'off').length;
+  const activePackNames = [
+    ...WEB_PACKS.filter(pack => purity.packs.some(statePack => statePack.id === pack.id && statePack.mode !== 'off')).map(pack => pack.name),
+    ...purity.customPacks.filter(pack => pack.mode !== 'off').map(pack => pack.name),
+  ];
   const configured = activePacks + purity.customDomains.length > 0;
   const enforced = configured
     && state.permission === 'approved'
@@ -705,17 +726,6 @@ export default function PurityView({
   const nativeError = configured
     && state.permission === 'approved'
     && state.nativeProtection.status === 'error';
-  const statusLabel = enforced
-    ? 'ON'
-    : previewReady
-      ? 'PREVIEW'
-      : nativeError
-        ? 'ERROR'
-        : nativeApplying
-          ? 'STARTING'
-          : configured
-            ? 'SAVED'
-            : 'OFF';
   const statusTitle = enforced
     ? 'Harmful sites stay out.'
     : previewReady
@@ -738,7 +748,6 @@ export default function PurityView({
           : configured
             ? 'Allow Screen Time access to activate these rules.'
             : 'Turn on a ready-made pack or add one specific domain.';
-  const statusReady = enforced || previewReady;
   // One hero card covers every state: live, armed (preview / saved / applying),
   // couldn't-start, and resting (nothing chosen yet).
   const heroState: WebProtectionHeroState = enforced
@@ -946,6 +955,10 @@ export default function PurityView({
       return;
     }
     if (mode === 'off') {
+      if (purity.locks.enabled) {
+        setConfirmHardLockAddition({ kind: 'builtin-pack-enable', packId: id, label: name });
+        return;
+      }
       request(() => {
         setPackMode(id, 'on');
         if (isGuided && guidePhase === 'webPack' && id === guidePackId) {
@@ -959,8 +972,26 @@ export default function PurityView({
   };
 
   const addOneDomain = () => {
-    if (!normalizeDomain(draftDomain).includes('.')) return;
-    request(() => { addCustomDomain(draftDomain); setDraftDomain(''); });
+    const domain = normalizeDomain(draftDomain);
+    if (!domain.includes('.')) return;
+    if (purity.locks.enabled) {
+      setConfirmHardLockAddition({ kind: 'domain', domain, label: domain });
+      return;
+    }
+    request(() => { addCustomDomain(domain); setDraftDomain(''); });
+  };
+
+  const openNeverAllowed = (
+    targetKind: 'builtin-pack' | 'custom-pack' | 'domain',
+    targetId: string,
+    commitmentId?: string,
+  ) => {
+    router.push({
+      pathname: '/focus-never-allowed',
+      params: commitmentId
+        ? { mode: 'reminder', commitment: commitmentId }
+        : { mode: 'create', targetKind, targetId },
+    } as never);
   };
 
   // Live data for the full-domain-list sheet, so add/remove reflect instantly.
@@ -971,6 +1002,11 @@ export default function PurityView({
       if (!pack) return null;
       const packState = purity.packs.find(entry => entry.id === pack.id);
       const addedDomains = packState?.extraDomains ?? [];
+      const commitments = purity.neverAllowed.filter(entry =>
+        entry.targetKind === 'builtin-pack' && entry.targetId === pack.id
+      );
+      const permanent = commitments.length > 0;
+      const sealedDomains = Array.from(new Set(commitments.flatMap(entry => entry.domainsSnapshot)));
       const pendingRemovals: Record<string, { id: string; text: string }> = {};
       pendingChanges.forEach(change => {
         if (change.action.kind !== 'pack-domain-remove' || change.action.packId !== pack.id) return;
@@ -981,12 +1017,15 @@ export default function PurityView({
       });
       return {
         title: pack.name,
-        domains: [...pack.sites, ...addedDomains],
-        note: pack.sitesNote,
-        addedDomains,
+        domains: permanent ? sealedDomains : [...pack.sites, ...addedDomains],
+        note: permanent
+          ? 'This is the exact sealed snapshot. Any new catalog domain requires a new promise.'
+          : pack.sitesNote,
+        addedDomains: permanent ? sealedDomains : addedDomains,
         appleFilter: pack.id === 'adult',
         builtInId: pack.id,
         customId: null,
+        permanent,
         pendingRemovals,
         removalDelayLabel: purity.locks.enabled && packState?.mode !== 'off' ? hardLockDelay.label : undefined,
       };
@@ -1009,10 +1048,11 @@ export default function PurityView({
       appleFilter: false,
       builtInId: null,
       customId: pack.id,
+      permanent: purity.neverAllowed.some(entry => entry.targetKind === 'custom-pack' && entry.targetId === pack.id),
       pendingRemovals,
       removalDelayLabel: purity.locks.enabled && pack.mode !== 'off' ? hardLockDelay.label : undefined,
     };
-  }, [domainsFor, hardLockDelay.label, pendingChanges, purity.customPacks, purity.locks.enabled, purity.packs]);
+  }, [domainsFor, hardLockDelay.label, pendingChanges, purity.customPacks, purity.locks.enabled, purity.neverAllowed, purity.packs]);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -1099,22 +1139,29 @@ export default function PurityView({
           <View style={s.packList}>
             {WEB_PACKS.map(pack => {
               const mode = packMode(pack.id);
+              const commitments = purity.neverAllowed.filter(entry =>
+                entry.targetKind === 'builtin-pack' && entry.targetId === pack.id
+              );
+              const commitment = commitments[0];
+              const displayMode: PackMode = commitment ? 'never' : mode;
               const pending = builtInPackPending(pack.id);
-              const domains = domainsForBuiltInPack(pack.id);
+              const domains = commitment
+                ? Array.from(new Set(commitments.flatMap(entry => entry.domainsSnapshot)))
+                : domainsForBuiltInPack(pack.id);
               const row = (
                 <PackRow
                   key={pack.id}
                   name={pack.name}
                   detail={pack.detail}
                   domains={domains}
-                  mode={mode}
+                  mode={displayMode}
                   emoji={pack.emoji}
                   slashed={pack.slashed}
                   appleFilter={pack.id === 'adult'}
-                  onToggle={() => handleBuiltInPackToggle(pack.id, pack.name, mode, pending, domains.length)}
-                  onNever={() => mode === 'never'
-                    ? setConfirmPackOff({ kind: 'builtin', id: pack.id, name: pack.name, domainCount: domains.length })
-                    : setConfirmNeverPack(pack.id)}
+                  onToggle={() => commitment
+                    ? openNeverAllowed('builtin-pack', pack.id, commitment.id)
+                    : handleBuiltInPackToggle(pack.id, pack.name, mode, pending, domains.length)}
+                  onNever={() => openNeverAllowed('builtin-pack', pack.id, commitment?.id)}
                   onSeeAll={() => setDomainsFor({ kind: 'builtin', id: pack.id })}
                   pendingText={pendingPackText(pending)}
                   onCancelPending={pending ? () => cancelPendingChange(pending.id) : undefined}
@@ -1126,28 +1173,37 @@ export default function PurityView({
             })}
             {purity.customPacks.map(pack => {
               const pending = customPackPending(pack.id);
+              const commitment = purity.neverAllowed.find(entry =>
+                entry.targetKind === 'custom-pack' && entry.targetId === pack.id
+              );
               return (
                 <PackRow
                   key={pack.id}
                   name={pack.name}
                   detail="Your custom domain collection"
                   domains={pack.domains}
-                  mode={pack.mode}
+                  mode={commitment ? 'never' : pack.mode}
                   emoji={CUSTOM_PACK_EMOJI}
                   onToggle={() => {
+                    if (commitment) {
+                      openNeverAllowed('custom-pack', pack.id, commitment.id);
+                      return;
+                    }
                     if (pending) {
                       cancelPendingChange(pending.id);
                     } else if (pack.mode === 'off') {
-                      request(() => setCustomWebPackMode(pack.id, 'on'));
+                      if (purity.locks.enabled) {
+                        setConfirmHardLockAddition({ kind: 'custom-pack-enable', packId: pack.id, label: pack.name });
+                      } else {
+                        request(() => setCustomWebPackMode(pack.id, 'on'));
+                      }
                     } else {
                       setConfirmPackOff({ kind: 'custom', id: pack.id, name: pack.name, domainCount: pack.domains.length });
                     }
                   }}
-                  onNever={() => pack.mode === 'never'
-                    ? setConfirmPackOff({ kind: 'custom', id: pack.id, name: pack.name, domainCount: pack.domains.length })
-                    : setCustomWebPackMode(pack.id, 'never')}
+                  onNever={() => openNeverAllowed('custom-pack', pack.id, commitment?.id)}
                   onSeeAll={() => setDomainsFor({ kind: 'custom', id: pack.id })}
-                  onRemove={() => setConfirmRemovePack(pack)}
+                  onRemove={commitment ? undefined : () => setConfirmRemovePack(pack)}
                   pendingText={pendingPackText(pending)}
                   onCancelPending={pending ? () => cancelPendingChange(pending.id) : undefined}
                 />
@@ -1231,9 +1287,13 @@ export default function PurityView({
                   purity.locks.locked && s.hardLockIconPermanent,
                   hardLockTurningOff && s.hardLockIconPending,
                 ]}>
+                  {/* Drawn marks, at the 33-in-46 the protection pillar's own
+                      emblem seat already uses. While a weakening change is
+                      pending the slot shows the glass instead: the delay is
+                      the whole subject, and it is the app's one hourglass. */}
                   {hardLockTurningOff
-                    ? <Hourglass s={19} c="#66635D" w={2.2} />
-                    : <Lock s={20} c={purity.locks.locked ? '#FFFFFF' : C.goldDark} w={2.3} />}
+                    ? <FocusGlass s={31} c="#66635D" w={1.45} />
+                    : <HardLock s={33} c={purity.locks.locked ? '#FFFFFF' : C.goldDark} w={1.55} />}
                 </View>
                 <View style={s.hardLockCopy}>
                   <Text style={[s.hardLockEyebrow, hardLockTurningOff && s.hardLockEyebrowPending]}>
@@ -1278,7 +1338,7 @@ export default function PurityView({
                     } else if (purity.locks.enabled) {
                       setConfirmHardLockOff(true);
                     } else {
-                      updateWebHardLock({ enabled: true });
+                      setConfirmHardLockOn(true);
                     }
                   }}
                   activeColor={hardLockTurningOff ? '#77736B' : C.gold}
@@ -1344,6 +1404,62 @@ export default function PurityView({
               </Animated.View>
             )}
           </Animated.View>
+          <View style={s.neverSection}>
+            <View style={s.neverSectionHead}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.neverSectionKicker}>NEVER ALLOWED</Text>
+                <Text style={s.neverSectionTitle}>Promises that do not unlock here.</Text>
+                <Text style={s.neverSectionBody}>
+                  Keep a web boundary permanently inside Anasta, with a message from you for the difficult moment.
+                </Text>
+              </View>
+              <View style={s.neverMiniSeal}><Lock s={17} c="#FFFFFF" w={2.3} /></View>
+            </View>
+            {purity.neverAllowed.length === 0 ? (
+              <View style={s.neverEmpty}>
+                <Text style={s.neverEmptyTitle}>No permanent promises yet</Text>
+                <Text style={s.neverEmptyBody}>Hard Lock remains temporary. Never Allowed is a separate decision.</Text>
+              </View>
+            ) : (
+              <View style={s.neverList}>
+                {purity.neverAllowed.map(commitment => {
+                  const needsRecovery = commitment.status === 'pending-native'
+                    || state.permission !== 'approved'
+                    || state.nativeProtection.status !== 'applied';
+                  return <TouchableOpacity
+                    key={commitment.id}
+                    haptic="light"
+                    activeOpacity={0.78}
+                    style={s.neverRow}
+                    onPress={() => openNeverAllowed(commitment.targetKind, commitment.targetId, commitment.id)}
+                  >
+                    <View style={[s.neverRowSeal, needsRecovery && s.neverRowSealPending]}>
+                      {needsRecovery
+                        ? <Hourglass s={14} c="#8A6C34" w={2.1} />
+                        : <Lock s={13} c="#8F2638" w={2.2} />}
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={s.neverRowTitle} numberOfLines={1}>{commitment.targetLabel}</Text>
+                      <Text style={s.neverRowMeta} numberOfLines={1}>
+                        {commitment.domainsSnapshot.length} domains · {needsRecovery ? 'permission recovery needed' : 'promise active'}
+                      </Text>
+                    </View>
+                    <ChevronRight s={16} c="#9A7B64" w={2} />
+                  </TouchableOpacity>;
+                })}
+              </View>
+            )}
+            <TouchableOpacity
+              haptic="medium"
+              activeOpacity={0.8}
+              style={s.makePromiseButton}
+              onPress={() => router.push('/focus-never-allowed' as never)}
+            >
+              <LinearGradient colors={['#9D3D4C', '#792536']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+              <Lock s={15} c="#FFF9EF" w={2.2} />
+              <Text style={s.makePromiseText}>Make a permanent promise</Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>,
 
         <Animated.View key="individual-domains" entering={enter(135)} style={s.sectionBlock}>
@@ -1384,6 +1500,9 @@ export default function PurityView({
           ) : (
             <View style={s.domainCardStack}>
               {purity.customDomains.map(entry => {
+                const commitment = purity.neverAllowed.find(item =>
+                  item.targetKind === 'domain' && item.targetId === entry.domain
+                ) ?? purity.neverAllowed.find(item => item.domainsSnapshot.includes(entry.domain));
                 const pending = pendingChanges.find(change =>
                   (change.action.kind === 'domain-remove' || change.action.kind === 'domain-never')
                     && change.action.domain === entry.domain
@@ -1397,11 +1516,13 @@ export default function PurityView({
                   <DomainCard
                     key={entry.domain}
                     domain={entry.domain}
-                    never={!!entry.never}
+                    never={!!commitment}
                     pending={!!pending}
                     pendingText={pendingText}
-                    onToggleNever={() => setDomainNever(entry.domain, !entry.never)}
-                    onRemove={() => setConfirmDomainRemoval(entry.domain)}
+                    onToggleNever={() => openNeverAllowed('domain', entry.domain, commitment?.id)}
+                    onRemove={() => commitment
+                      ? openNeverAllowed('domain', entry.domain, commitment.id)
+                      : setConfirmDomainRemoval(entry.domain)}
                     onKeep={() => pending && cancelPendingChange(pending.id)}
                   />
                 );
@@ -1413,7 +1534,17 @@ export default function PurityView({
 
       </ScrollView>
 
-      <NewPackSheet visible={newPackOpen} onClose={() => setNewPackOpen(false)} />
+      <NewPackSheet
+        visible={newPackOpen}
+        onClose={() => setNewPackOpen(false)}
+        onCreate={(name, domains) => {
+          if (purity.locks.enabled) {
+            setConfirmHardLockAddition({ kind: 'custom-pack', name, domains, label: name.trim() });
+            return true;
+          }
+          return !!createCustomWebPack(name, domains);
+        }}
+      />
       <PackDomainsSheet
         visible={domainsSheet !== null}
         title={domainsSheet?.title ?? ''}
@@ -1422,12 +1553,40 @@ export default function PurityView({
         addedDomains={domainsSheet?.addedDomains}
         pendingRemovals={domainsSheet?.pendingRemovals}
         removalDelayLabel={domainsSheet?.removalDelayLabel}
-        onAdd={domainsSheet?.builtInId
-          ? domain => addDomainToWebPack(domainsSheet.builtInId!, domain)
-          : domainsSheet?.customId
-            ? domain => addDomainToCustomWebPack(domainsSheet.customId!, domain)
-            : undefined}
-        onRemove={domainsSheet?.builtInId
+        onAdd={domainsSheet?.permanent
+          ? domain => {
+              const targetKind = domainsSheet.builtInId ? 'builtin-pack' : 'custom-pack';
+              const targetId = domainsSheet.builtInId ?? domainsSheet.customId;
+              if (!targetId) return false;
+              setDomainsFor(null);
+              router.push({
+                pathname: '/focus-never-allowed',
+                params: { mode: 'create', targetKind, targetId, candidateDomain: normalizeDomain(domain) },
+              } as never);
+              return true;
+            }
+          : domainsSheet?.builtInId
+            ? domain => {
+                const normalized = normalizeDomain(domain);
+                if (purity.locks.enabled) {
+                  setConfirmHardLockAddition({ kind: 'builtin-domain', packId: domainsSheet.builtInId!, domain: normalized, label: normalized });
+                  setDomainsFor(null);
+                  return true;
+                }
+                return addDomainToWebPack(domainsSheet.builtInId!, normalized);
+              }
+            : domainsSheet?.customId
+              ? domain => {
+                  const normalized = normalizeDomain(domain);
+                  if (purity.locks.enabled) {
+                  setConfirmHardLockAddition({ kind: 'custom-domain', packId: domainsSheet.customId!, domain: normalized, label: normalized });
+                  setDomainsFor(null);
+                  return true;
+                }
+                  return addDomainToCustomWebPack(domainsSheet.customId!, normalized);
+                }
+              : undefined}
+        onRemove={domainsSheet?.permanent ? undefined : domainsSheet?.builtInId
           ? domain => { removeDomainFromWebPack(domainsSheet.builtInId!, domain); }
           : domainsSheet?.customId
             ? domain => removeDomainFromCustomWebPack(domainsSheet.customId!, domain)
@@ -1521,12 +1680,63 @@ export default function PurityView({
       </SmoothBottomSheet>
       {gate}
       <ConfirmModal
+        visible={confirmHardLockOn}
+        icon={<HardLock s={23} c="#8B6B2F" w={1.7} />}
+        iconBg="#F5ECD7"
+        title={`Turn on a ${hardLockDelay.label} Hard Lock?`}
+        body={`Hard Lock will protect ${webResolution.domains.length} blocked domains${activePackNames.length ? ` across ${activePackNames.join(', ')}` : ''}. Turning it off, disabling a pack, removing a domain, deleting a custom pack, or choosing a shorter delay will wait ${hardLockDelay.label}. Stronger changes still apply immediately.`}
+        subject="Every new pack or domain added while Hard Lock is active inherits the same protection delay."
+        cancelLabel="Not Yet"
+        confirmLabel="Turn On"
+        confirmColor="#9A762F"
+        naturalButtonLabels
+        onCancel={() => setConfirmHardLockOn(false)}
+        onConfirm={() => {
+          updateWebHardLock({ enabled: true });
+          setConfirmHardLockOn(false);
+        }}
+      />
+      <ConfirmModal
+        visible={confirmHardLockAddition !== null}
+        icon={<HardLock s={23} c="#8B6B2F" w={1.7} />}
+        iconBg="#F5ECD7"
+        title="Add this behind Hard Lock?"
+        body={`This strengthens protection immediately. If you later remove or disable it, the change will wait ${hardLockDelay.label}.`}
+        subject={confirmHardLockAddition?.label}
+        cancelLabel="Cancel"
+        confirmLabel="Add & Protect"
+        confirmColor="#9A762F"
+        naturalButtonLabels
+        onCancel={() => setConfirmHardLockAddition(null)}
+        onConfirm={() => {
+          const addition = confirmHardLockAddition;
+          if (!addition) return;
+          request(() => {
+            if (addition.kind === 'domain') {
+              addCustomDomain(addition.domain);
+              setDraftDomain('');
+            } else if (addition.kind === 'builtin-pack-enable') {
+              setPackMode(addition.packId, 'on');
+            } else if (addition.kind === 'custom-pack-enable') {
+              setCustomWebPackMode(addition.packId, 'on');
+            } else if (addition.kind === 'builtin-domain') {
+              addDomainToWebPack(addition.packId, addition.domain);
+            } else if (addition.kind === 'custom-domain') {
+              addDomainToCustomWebPack(addition.packId, addition.domain);
+            } else {
+              createCustomWebPack(addition.name, addition.domains);
+            }
+          });
+          setConfirmHardLockAddition(null);
+        }}
+      />
+      <ConfirmModal
         visible={confirmHardLockOff}
         icon={<Hourglass s={21} c="#765F37" w={2.2} />}
         iconBg="#F1ECE2"
         title="Turn off Hard Lock?"
-        body="Hard Lock will remain active for the next 24 hours. Blocked websites and every unlock delay stay protected during that time. You can cancel the turn-off at any moment."
-        subject={`Turns off ${pendingWhen(Date.now() + HARD_LOCK_DISABLE_DELAY_MS)}`}
+        body={`Hard Lock will remain active for ${hardLockDelay.label}. Blocked websites and every unlock delay stay protected during that time. You can cancel the turn-off at any moment.`}
+        subject={`Turns off ${pendingWhen(Date.now() + hardLockDelayMs(purity.locks.cooldown))}`}
         cancelLabel="Cancel"
         confirmLabel="Turn Off"
         confirmColor="#A24351"
@@ -1580,18 +1790,6 @@ export default function PurityView({
           if (confirmDomainRemoval) removeCustomDomain(confirmDomainRemoval);
           setConfirmDomainRemoval(null);
         }}
-      />
-      <ConfirmModal
-        visible={confirmNeverPack !== null}
-        icon={<Lock s={21} c="#A24351" w={2.2} />}
-        iconBg="#F8E7EA"
-        title="Make this pack Never Allowed?"
-        body="It stays active without an ordinary unlock. If Hard Lock is on, a later weakening request must wait through its selected delay."
-        subject={WEB_PACKS.find(pack => pack.id === confirmNeverPack)?.name}
-        confirmLabel="MAKE NEVER"
-        confirmColor="#A24351"
-        onCancel={() => setConfirmNeverPack(null)}
-        onConfirm={() => { if (confirmNeverPack) request(() => setPackMode(confirmNeverPack, 'never')); setConfirmNeverPack(null); }}
       />
       <ConfirmModal
         visible={confirmRemovePack !== null}
@@ -1851,6 +2049,23 @@ const s = StyleSheet.create({
   hardLockExplanation: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 14.5, lineHeight: 20.5, color: C.textSecondary },
   permanentNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderRadius: 16, borderCurve: 'continuous', backgroundColor: 'rgba(246,234,202,0.72)', paddingHorizontal: 11, paddingVertical: 10 },
   permanentNoteText: { flex: 1, fontFamily: F.serifMedium, fontSize: 13, lineHeight: 18, color: '#71551E' },
+  neverSection: { marginTop: 16, overflow: 'hidden', borderRadius: 24, borderCurve: 'continuous', borderWidth: 1, borderColor: '#D9B9B8', backgroundColor: '#FFF9F6', padding: 15, boxShadow: '0 9px 24px rgba(105,38,53,0.08)' },
+  neverSectionHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  neverSectionKicker: { fontFamily: F.sansBold, fontSize: 9, letterSpacing: 1.9, color: '#8F2638' },
+  neverSectionTitle: { marginTop: 5, fontFamily: F.serifSemiBold, fontSize: 21, lineHeight: 24, color: C.text },
+  neverSectionBody: { marginTop: 4, fontFamily: F.serifMedium, fontSize: 13.5, lineHeight: 18.5, color: '#75645F' },
+  neverMiniSeal: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, borderColor: '#B86B78', backgroundColor: '#8F2638', alignItems: 'center', justifyContent: 'center', boxShadow: '0 5px 12px rgba(116,29,47,0.2)' },
+  neverEmpty: { marginTop: 14, borderRadius: 17, borderWidth: 1, borderColor: '#E7D8D2', backgroundColor: 'rgba(255,255,255,0.65)', paddingHorizontal: 13, paddingVertical: 12 },
+  neverEmptyTitle: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.text },
+  neverEmptyBody: { marginTop: 3, fontFamily: F.serif, fontSize: 12.5, lineHeight: 17, color: C.textSecondary },
+  neverList: { marginTop: 13, gap: 8 },
+  neverRow: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 17, borderWidth: 1, borderColor: '#E5D3CE', backgroundColor: 'rgba(255,255,255,0.78)', paddingHorizontal: 11, paddingVertical: 9 },
+  neverRowSeal: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#E0B8C0', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
+  neverRowSealPending: { borderColor: '#DDC493', backgroundColor: '#F7EEDC' },
+  neverRowTitle: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.text },
+  neverRowMeta: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 10.5, color: '#907A73' },
+  makePromiseButton: { marginTop: 12, height: 50, overflow: 'hidden', borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, boxShadow: '0 6px 14px rgba(116,29,47,0.18)' },
+  makePromiseText: { fontFamily: F.serifSemiBold, fontSize: 16.5, letterSpacing: 0.15, color: '#FFF9EF' },
   bottomNote: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 18, borderCurve: 'continuous', borderWidth: 1, borderColor: '#CDE3DA', backgroundColor: '#EAF5F0', paddingHorizontal: 13, paddingVertical: 12 },
   bottomNoteIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#D7EBE2', alignItems: 'center', justifyContent: 'center' },
   bottomNoteText: { flex: 1, fontFamily: F.sansMedium, fontSize: 13, lineHeight: 18, color: '#35685C' },

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { LayoutAnimation, StyleSheet, Text, View } from 'react-native';
 import { F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { useReadableFontScale } from '@/components/shared/typographyScale';
 
 
 type Inline = {
@@ -234,13 +235,19 @@ export default function RichCommentText({
   collapsedLines = DEFAULT_COLLAPSED_LINES,
   rightSlot,
 }: Props) {
+  const readableScale = useReadableFontScale();
   const blocks = useMemo(() => parseRichComment(html ?? ''), [html]);
   const [expanded, setExpanded] = useState(false);
   const [needsTruncate, setNeedsTruncate] = useState<boolean | null>(null);
 
   // Pixel cap aligned to whole lines so truncation never slices a glyph
-  const collapsedHeight = LINE_HEIGHT * collapsedLines;
-  const baseTextStyle = { fontFamily: F.serif, fontSize: FONT_SIZE, lineHeight: LINE_HEIGHT, color };
+  const collapsedHeight = LINE_HEIGHT * readableScale * collapsedLines;
+  const baseTextStyle = {
+    fontFamily: F.serif,
+    fontSize: FONT_SIZE * readableScale,
+    lineHeight: LINE_HEIGHT * readableScale,
+    color,
+  };
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.create(220, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));

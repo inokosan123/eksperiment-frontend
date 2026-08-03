@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Keyboard,
   Modal,
@@ -41,6 +41,7 @@ import {
 } from '@/components/icons/Icons';
 import { C, F } from '@/constants/tokens';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
+import EmojiPicker from '@/components/shared/EmojiPicker';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
 import type { HabitEmojiName } from '@/components/shared/notoEmoji/habits';
@@ -77,8 +78,6 @@ const NativeDateTimePickerAndroid = DateTimePickerModule?.DateTimePickerAndroid 
 const BG = '#FAF7F0';
 const GOLD = '#C5A059';
 const DEFAULT_EVENT_COLOR = GOLD;
-const EVENT_ICON_CHIP_SIZE = 54;
-const EVENT_ICON_MIN_GAP = 9;
 const EVENT_ICON_COLLAPSED_ROWS = 5;
 const EVENT_TYPE_GOLD = '#8A5A1A';
 const EVENT_TYPE_GREEN = '#2A6E5F';
@@ -464,63 +463,6 @@ function ReminderSwitch({ enabled }: { enabled: boolean }) {
   );
 }
 
-function IconGridChevron({ expanded }: { expanded: boolean }) {
-  const progress = useSharedValue(expanded ? 1 : 0);
-
-  useEffect(() => {
-    progress.value = withTiming(expanded ? 1 : 0, {
-      duration: 190,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [expanded, progress]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${progress.value * 180}deg` }],
-  }));
-
-  return (
-    <View style={ef.showMoreArrowShell}>
-      <Animated.View style={animatedStyle}>
-        <ChevronDown s={16} c="#786C5E" w={2.2} />
-      </Animated.View>
-    </View>
-  );
-}
-
-function EventIconChoice({
-  icon,
-  active,
-  onSelect,
-}: {
-  icon: HabitEmojiName;
-  active: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <View style={ef.iconCell}>
-      <Pressable
-        onPress={onSelect}
-        accessibilityRole="button"
-        accessibilityState={{ selected: active }}
-        style={({ pressed }) => [
-          ef.iconChip,
-          active && ef.iconChipActive,
-          pressed && { opacity: 0.78 },
-        ]}
-      >
-        <View style={ef.iconGlyphBox}>
-          <NotoEmoji name={icon} size={32} />
-        </View>
-        {active && (
-          <View pointerEvents="none" style={ef.iconSelectedBadge}>
-            <CheckSmall s={12} c="#FFFFFF" w={3} />
-          </View>
-        )}
-      </Pressable>
-    </View>
-  );
-}
-
 function EventForm({
   form,
   onChange,
@@ -559,74 +501,6 @@ function EventForm({
   ) && (!customLeadOpen || customLeadValid);
   const isEdit = form.id !== null;
   const guidePhase = session?.phase;
-  const [iconGridWidth, setIconGridWidth] = useState(0);
-  const [iconsExpanded, setIconsExpanded] = useState(false);
-  const [extraIconsReady, setExtraIconsReady] = useState(!sheetMode);
-  const iconExpansionInitialized = useRef(false);
-  const iconRevealProgress = useSharedValue(0);
-  const extraIconsHeight = useSharedValue(0);
-  const iconColumns = iconGridWidth > 0
-    ? Math.max(3, Math.floor((iconGridWidth + EVENT_ICON_MIN_GAP) / (EVENT_ICON_CHIP_SIZE + EVENT_ICON_MIN_GAP)))
-    : 5;
-  const collapsedIconCount = iconColumns * EVENT_ICON_COLLAPSED_ROWS;
-  const collapsedIcons = useMemo(
-    () => EVENT_ICONS.slice(0, collapsedIconCount),
-    [collapsedIconCount],
-  );
-  const extraIcons = useMemo(
-    () => EVENT_ICONS.slice(collapsedIconCount),
-    [collapsedIconCount],
-  );
-  const hiddenIconCount = extraIcons.length;
-  const collapsedSpacerCount = (iconColumns - (collapsedIcons.length % iconColumns)) % iconColumns;
-  const extraSpacerCount = (iconColumns - (extraIcons.length % iconColumns)) % iconColumns;
-  const collapsedSpacers = useMemo(
-    () => Array.from({ length: collapsedSpacerCount }, (_, index) => index),
-    [collapsedSpacerCount],
-  );
-  const extraSpacers = useMemo(
-    () => Array.from({ length: extraSpacerCount }, (_, index) => index),
-    [extraSpacerCount],
-  );
-
-  useEffect(() => {
-    if (!iconGridWidth || iconExpansionInitialized.current) return;
-    iconExpansionInitialized.current = true;
-    if (EVENT_ICONS.indexOf(form.icon) >= collapsedIconCount) {
-      setIconsExpanded(true);
-    }
-  }, [collapsedIconCount, form.icon, iconGridWidth]);
-
-  useEffect(() => {
-    if (!sheetMode) {
-      setExtraIconsReady(true);
-      return undefined;
-    }
-
-    // The hidden icon set is intentionally warmed after the sheet has begun
-    // moving. Rendering every emoji in the opening tap used to hold the JS
-    // thread long enough to create a visible pause before the sheet appeared.
-    const timer = setTimeout(() => setExtraIconsReady(true), 300);
-    return () => clearTimeout(timer);
-  }, [sheetMode]);
-
-  useEffect(() => {
-    iconRevealProgress.value = withTiming(iconsExpanded ? 1 : 0, {
-      duration: iconsExpanded ? 285 : 220,
-      easing: iconsExpanded
-        ? Easing.bezier(0.22, 1, 0.36, 1)
-        : Easing.bezier(0.4, 0, 0.2, 1),
-    });
-  }, [iconRevealProgress, iconsExpanded]);
-
-  const extraIconsRevealStyle = useAnimatedStyle(() => ({
-    height: extraIconsHeight.value * iconRevealProgress.value,
-    opacity: interpolate(iconRevealProgress.value, [0, 0.14, 1], [0, 0.34, 1]),
-    transform: [{
-      translateY: interpolate(iconRevealProgress.value, [0, 1], [-5, 0]),
-    }],
-  }));
-
   useEffect(() => {
     onCanSaveChange?.(canSave);
   }, [canSave, onCanSaveChange]);
@@ -647,12 +521,6 @@ function EventForm({
     if (isGuided && guidePhase === 'icon') {
       patchSession({ phase: 'save' });
     }
-  };
-
-  const toggleIconExpansion = () => {
-    const nextExpanded = !iconsExpanded;
-    if (nextExpanded && !extraIconsReady) setExtraIconsReady(true);
-    setIconsExpanded(nextExpanded);
   };
 
   const setCustomLeadDays = (value: number) => {
@@ -931,93 +799,19 @@ function EventForm({
 
       <View>
         <Text style={ef.sectionLabel}>ICON</Text>
-        <View
+        <EmojiPicker
           ref={iconsTarget.ref}
-          style={ef.iconGrid}
-          onLayout={event => {
-            setIconGridWidth(Math.floor(event.nativeEvent.layout.width));
-            iconsTarget.onLayout(event);
+          onGridLayout={iconsTarget.onLayout}
+          value={form.icon}
+          icons={EVENT_ICONS}
+          onChange={ic => {
+            onChange({ ...form, icon: ic });
+            advanceAfterIcon();
           }}
-        >
-          {collapsedIcons.map(ic => (
-            <EventIconChoice
-              key={ic}
-              icon={ic}
-              active={form.icon === ic}
-              onSelect={() => {
-                Haptics.selectionAsync();
-                onChange({ ...form, icon: ic });
-                advanceAfterIcon();
-              }}
-            />
-          ))}
-          {collapsedSpacers.map(index => (
-            <View key={`collapsed-icon-spacer-${index}`} pointerEvents="none" style={ef.iconGridSpacer} />
-          ))}
-        </View>
-
-        <Animated.View
-          pointerEvents={iconsExpanded ? 'auto' : 'none'}
-          accessibilityElementsHidden={!iconsExpanded}
-          importantForAccessibility={iconsExpanded ? 'auto' : 'no-hide-descendants'}
-          style={[ef.extraIconClip, extraIconsRevealStyle]}
-        >
-          {extraIconsReady && (
-            <View
-              style={ef.extraIconMeasure}
-              onLayout={event => {
-                extraIconsHeight.value = Math.ceil(event.nativeEvent.layout.height);
-                if (iconsExpanded) {
-                  iconRevealProgress.value = 0;
-                  iconRevealProgress.value = withTiming(1, {
-                    duration: 285,
-                    easing: Easing.bezier(0.22, 1, 0.36, 1),
-                  });
-                }
-              }}
-            >
-              <View style={ef.iconGrid}>
-                {extraIcons.map(ic => (
-                  <EventIconChoice
-                    key={ic}
-                    icon={ic}
-                    active={form.icon === ic}
-                    onSelect={() => {
-                      Haptics.selectionAsync();
-                      onChange({ ...form, icon: ic });
-                      advanceAfterIcon();
-                    }}
-                  />
-                ))}
-                {extraSpacers.map(index => (
-                  <View key={`extra-icon-spacer-${index}`} pointerEvents="none" style={ef.iconGridSpacer} />
-                ))}
-              </View>
-            </View>
-          )}
-        </Animated.View>
-
-        {hiddenIconCount > 0 && (
-          <Pressable
-            onPress={toggleIconExpansion}
-            accessibilityRole="button"
-            accessibilityLabel={iconsExpanded ? 'Show fewer event icons' : 'Show more event icons'}
-            accessibilityState={{ expanded: iconsExpanded }}
-            style={({ pressed }) => [
-              ef.showMoreButton,
-              iconsExpanded && ef.showMoreButtonExpanded,
-              pressed && ef.pressed,
-            ]}
-          >
-            <View style={ef.showMoreCopy}>
-              <Text style={ef.showMoreTitle}>{iconsExpanded ? 'SHOW LESS' : 'SHOW MORE'}</Text>
-              <Text style={ef.showMoreMeta}>
-                {iconsExpanded ? 'Back to the first five rows' : `${hiddenIconCount} more icons`}
-              </Text>
-            </View>
-            <IconGridChevron expanded={iconsExpanded} />
-          </Pressable>
-        )}
+          collapsedRows={EVENT_ICON_COLLAPSED_ROWS}
+          deferExtras={sheetMode}
+          noun="icons"
+        />
       </View>
 
       <TouchableOpacity
@@ -1210,84 +1004,6 @@ const ef = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.14, shadowRadius: 2, elevation: 2,
   },
 
-  iconGrid: {
-    width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    columnGap: EVENT_ICON_MIN_GAP,
-    rowGap: EVENT_ICON_MIN_GAP,
-  },
-  extraIconClip: { width: '100%', overflow: 'hidden' },
-  extraIconMeasure: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingTop: EVENT_ICON_MIN_GAP,
-  },
-  iconCell: { width: EVENT_ICON_CHIP_SIZE, height: EVENT_ICON_CHIP_SIZE },
-  iconChip: {
-    width: EVENT_ICON_CHIP_SIZE, height: EVENT_ICON_CHIP_SIZE,
-    borderRadius: 19, borderWidth: 1, borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center', justifyContent: 'center', overflow: 'visible',
-    shadowColor: '#8C7A4F', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.035, shadowRadius: 8, elevation: 1,
-  },
-  iconChipActive: {
-    borderWidth: 2,
-    borderColor: GOLD,
-    backgroundColor: '#FFF4D6',
-    shadowColor: GOLD,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.26,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  iconGlyphBox: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
-  iconSelectedBadge: {
-    position: 'absolute',
-    right: -4,
-    bottom: -4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    backgroundColor: GOLD,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconGridSpacer: { width: EVENT_ICON_CHIP_SIZE, height: 0 },
-  showMoreButton: {
-    minHeight: 54,
-    marginTop: 12,
-    borderRadius: 17,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: '#E7E0D4',
-    backgroundColor: '#F8F5EE',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    columnGap: 12,
-  },
-  showMoreButtonExpanded: { borderColor: '#E7D6B1', backgroundColor: '#FFF9EC' },
-  showMoreCopy: { flex: 1, minWidth: 0 },
-  showMoreTitle: { fontFamily: F.sansBold, fontSize: 11, lineHeight: 14, letterSpacing: 1.5, color: '#6F6253' },
-  showMoreMeta: { marginTop: 2, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: '#9A9085' },
-  showMoreArrowShell: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5DCCB',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', columnGap: 8,

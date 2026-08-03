@@ -31,6 +31,7 @@ import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore
 import { ESSENTIAL_APP_OPTIONS, PREVIEW_APPS, type PreviewApp } from './focusContent';
 import { usePermissionGate } from './usePermissionGate';
 import { PLAN_VISUALS, planVisualForTheme } from './planVisuals';
+import { validateFocusLimitBudget } from './focusLimitBudget';
 import {
   APP_CATEGORIES,
   DEFAULT_GROUP_APP_IDS,
@@ -40,6 +41,7 @@ import {
   deleteDayPlan,
   formatMinutesShort,
   getEffectivePlan,
+  groupIcon,
   groupName,
   recordLimitExceeded,
   saveDayPlan,
@@ -59,7 +61,7 @@ function makeId(prefix: string) {
 function defaultRule(groupId: string): GroupRule {
   return {
     groupId,
-    mode: 'noLimit',
+    mode: 'limit',
     dailyMinutes: null,
     strength: 'loose',
     practice: 'prayer',
@@ -222,9 +224,14 @@ export default function PlanEditorView({
   const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
   const [groupSheetOpen, setGroupSheetOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Taking a group off the plan discards its rule, so it is asked for first.
+  const [pendingGroupRemoval, setPendingGroupRemoval] = useState<string | null>(null);
   const [targetConfirmation, setTargetConfirmation] = useState<'known-loss' | 'native-reconcile' | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [checkingSelections, setCheckingSelections] = useState(false);
+  // The action bar floats over the scroll, so the page has to clear whatever it
+  // actually measures — it grows with the delete button and the save error.
+  const [footerHeight, setFooterHeight] = useState(0);
 
   const alwaysBlockedIds = useMemo(
     () => new Set(state.alwaysBlockedApps.map(entry => entry.appId)),
@@ -256,6 +263,10 @@ export default function PlanEditorView({
   // Session Planning is intentionally dormant in Focus v1. The editor owns a
   // single Daily rule set; any legacy zones are preserved only when saving.
   const activeRules = rules;
+  const completeActiveRules = useMemo(
+    () => completeRules(activeRules, groupIds),
+    [activeRules, groupIds]
+  );
   const activeRule = activeRules.find(rule => rule.groupId === ruleGroupId) ?? null;
   const groupAppCounts = useMemo(
     () => Object.fromEntries(groupIds.map(groupId => [groupId, (planningGroupCatalog[groupId] ?? []).length])),
@@ -265,10 +276,10 @@ export default function PlanEditorView({
   const draftRequiresNative = useMemo(() => {
     const ruleSets = rules;
     const hasBoundary = ruleSets.some(rule => {
-      const mode = rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
+      const mode = rule.mode === 'blocked' ? 'blocked' : 'limit';
       if (mode === 'blocked' || (mode === 'limit' && rule.dailyMinutes != null)) return true;
       return (rule.appRules ?? []).some(appRule => {
-        const appMode = appRule.mode ?? (appRule.minutes == null ? 'noLimit' : 'limit');
+        const appMode = appRule.mode === 'blocked' ? 'blocked' : 'limit';
         return appMode === 'blocked' || (appMode === 'limit' && appRule.minutes != null);
       });
     });
@@ -278,8 +289,30 @@ export default function PlanEditorView({
   const isActivePlan = !!existing && currentPlan?.id === existing.id;
   const essentialsTargetReady = !essentialsOnlyDay
     || (target.target != null && target.target > 0 && draftToleranceEnd != null);
+  const budgetIssues = useMemo(
+    () => essentialsOnlyDay
+      ? []
+      : validateFocusLimitBudget({
+          dailyTargetMinutes: target.target,
+          rules: completeActiveRules,
+        }),
+    [completeActiveRules, essentialsOnlyDay, target.target]
+  );
+  const budgetIssueText = useMemo(() => {
+    const issue = budgetIssues[0];
+    if (!issue) return null;
+    if (issue.code === 'groups-over-target') {
+      return `Group limits exceed the Daily Target by ${formatMinutesShort(issue.allocatedMinutes - issue.availableMinutes)}.`;
+    }
+    if (issue.code === 'apps-over-group' && issue.groupId) {
+      return `${groupName(state, issue.groupId)} app limits exceed their group by ${formatMinutesShort(issue.allocatedMinutes - issue.availableMinutes)}.`;
+    }
+    if (issue.groupId) return `${groupName(state, issue.groupId)} has a limit that no longer fits its parent boundary.`;
+    return issue.message;
+  }, [budgetIssues, state]);
   const canSave = name.trim().length > 0
-    && essentialsTargetReady;
+    && essentialsTargetReady
+    && budgetIssues.length === 0;
 
   const clearGuideTimers = useCallback(() => {
     guideTimersRef.current.forEach(clearTimeout);
@@ -450,30 +483,36 @@ export default function PlanEditorView({
   };
 
   const doSave = () => {
-    retainNativeSelections.current = true;
     const toleranceEnd = target.target == null
       ? null
       : Math.max(target.target, target.essentialOnly ?? target.tolerable ?? target.target);
-    const saved = saveDayPlan({
-      id: draftPlanId,
-      name: name.trim(),
-      kind: 'daily',
-      themeId,
-      essentialsOnly: essentialsOnlyDay,
-      essentialAppIds: planEssentialAppIds,
-      budgetMinutes: target.target,
-      // v4 has one post-Goal Tolerance period. Its endpoint is also the
-      // existing native Essentials-only threshold; these must never diverge.
-      tolerableMinutes: toleranceEnd,
-      essentialOnlyMinutes: toleranceEnd,
-      strength: planStrength,
-      customGroupIds,
-      groupCatalog,
-      // Keep an old Session draft intact without allowing it to participate in
-      // v1 runtime. A later release can explicitly offer to restore it.
-      zones: existing?.zones ?? [],
-      rules: completeRules(rules, groupIds),
-    });
+    let saved: ReturnType<typeof saveDayPlan>;
+    try {
+      saved = saveDayPlan({
+        id: draftPlanId,
+        name: name.trim(),
+        kind: 'daily',
+        themeId,
+        essentialsOnly: essentialsOnlyDay,
+        essentialAppIds: planEssentialAppIds,
+        budgetMinutes: target.target,
+        // v4 has one post-Goal Tolerance period. Its endpoint is also the
+        // existing native Essentials-only threshold; these must never diverge.
+        tolerableMinutes: toleranceEnd,
+        essentialOnlyMinutes: toleranceEnd,
+        strength: planStrength,
+        customGroupIds,
+        groupCatalog,
+        // Keep an old Session draft intact without allowing it to participate in
+        // v1 runtime. A later release can explicitly offer to restore it.
+        zones: existing?.zones ?? [],
+        rules: completeRules(rules, groupIds),
+      });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'These limits cannot be saved together.');
+      return;
+    }
+    retainNativeSelections.current = true;
     if (isActivePlan) {
       const actual = state.usageByDate[dateKey(new Date())]?.totalMinutes ?? 0;
       if (saved.budgetMinutes != null && actual > saved.budgetMinutes) recordLimitExceeded('daily-target');
@@ -498,8 +537,11 @@ export default function PlanEditorView({
     const ruleSets = [{ rules }];
     for (const ruleSet of ruleSets) {
       for (const draftRule of ruleSet.rules) {
-        const appRules = (draftRule.appRules ?? []).filter(appRule => appRule.mode !== 'noLimit');
-        const groupMode = draftRule.mode ?? (draftRule.dailyMinutes == null ? 'noLimit' : 'limit');
+        const appRules = (draftRule.appRules ?? []).filter(
+          appRule => appRule.mode === 'blocked'
+            || appRule.minutes != null
+        );
+        const groupMode = draftRule.mode === 'blocked' ? 'blocked' : 'limit';
         const groupHasBoundary = groupMode === 'blocked'
           || (groupMode === 'limit' && draftRule.dailyMinutes != null);
         if (groupHasBoundary || appRules.length > 0) {
@@ -562,7 +604,7 @@ export default function PlanEditorView({
         ref={isGuided ? guideScrollRef : undefined}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[s.page, { paddingBottom: 130 + insets.bottom }]}
+        contentContainerStyle={[s.page, { paddingBottom: (footerHeight || 130 + insets.bottom) + 20 }]}
         scrollEventThrottle={isGuided ? 16 : undefined}
         onScroll={isGuided ? event => { guideScrollY.current = event.nativeEvent.contentOffset.y; } : undefined}
       >
@@ -793,17 +835,18 @@ export default function PlanEditorView({
           <AppRulesBoard
             goalMinutes={target.target}
             lockAtMinutes={draftToleranceEnd}
-            rules={completeRules(activeRules, groupIds)}
+            rules={completeActiveRules}
             groupIds={groupIds}
             customGroupIds={customGroupIds}
             groupAppCounts={groupAppCounts}
             alwaysBlockedAppCount={alwaysBlockedAppCount}
             alwaysBlockedAppNames={alwaysBlockedAppNames}
             resolveGroupName={groupId => groupName(state, groupId)}
+            resolveGroupIcon={groupId => groupIcon(state, groupId)}
             nativeAvailable={nativeAvailable}
             selectionIdForGroup={groupId => `plan.${draftPlanId}.group.${groupId}`}
             onOpenRule={setRuleGroupId}
-            onRemoveGroup={removeGroup}
+            onRemoveGroup={setPendingGroupRemoval}
             onAddGroup={() => setGroupSheetOpen(true)}
             onOpenAlwaysBlocked={() => setAlwaysBlockedOpen(true)}
           />
@@ -811,16 +854,37 @@ export default function PlanEditorView({
         </View>
         )}
 
+      </ScrollView>
+
+      <View
+        style={[s.footer, { paddingBottom: Math.max(12, insets.bottom) }]}
+        onLayout={event => setFooterHeight(Math.ceil(event.nativeEvent.layout.height))}
+      >
+        {(saveError || budgetIssueText) && (
+          <Text style={s.saveError}>{saveError ?? budgetIssueText}</Text>
+        )}
+
+        {/* Deleting the plan lives with the action bar, at a fixed distance
+            above Save — it used to trail the last group, so where it sat
+            depended on how many groups the plan had and it was easy to meet by
+            accident while scrolling. Struck in the blocked register so it reads
+            as the serious one, and kept clearly quieter than the gold Save.
+            The confirmation is what stands between a mis-tap and the deed. */}
         {existing && (
-          <TouchableOpacity style={s.deletePlanButton} onPress={() => setConfirmDelete(true)}>
-            <Trash2 s={14} c="#A24351" w={2.1} />
+          <TouchableOpacity
+            style={s.deletePlanButton}
+            onPress={() => setConfirmDelete(true)}
+            haptic="selection"
+            activeOpacity={0.78}
+            accessibilityRole="button"
+            accessibilityLabel="Delete this plan"
+          >
+            <View style={s.deletePlanSeal}>
+              <Trash2 s={12} c="#A24351" w={2.1} />
+            </View>
             <Text style={s.deletePlanText}>Delete this plan</Text>
           </TouchableOpacity>
         )}
-      </ScrollView>
-
-      <View style={[s.footer, { paddingBottom: Math.max(12, insets.bottom) }]}>
-        {saveError && <Text style={s.saveError}>{saveError}</Text>}
         {isGuided ? (
           <View {...saveTarget}>
             <GoldButton
@@ -860,6 +924,8 @@ export default function PlanEditorView({
         groupLabel={ruleGroupId ? groupName(state, ruleGroupId) : ''}
         apps={ruleGroupId ? appsForGroup(planningGroupCatalog, ruleGroupId) : []}
         planStrength={planStrength}
+        dailyTargetMinutes={target.target}
+        allRules={completeActiveRules}
         nativeSelectionBaseId={`plan.${draftPlanId}`}
         onChange={partial => { if (ruleGroupId) updateActiveRule(ruleGroupId, partial); }}
         onClose={() => setRuleGroupId(null)}
@@ -876,6 +942,22 @@ export default function PlanEditorView({
         confirmColor="#A24351"
         onCancel={() => setTargetConfirmation(null)}
         onConfirm={() => { setTargetConfirmation(null); commitSave(); }}
+      />
+
+      <ConfirmModal
+        visible={pendingGroupRemoval !== null}
+        icon={<Trash2 s={21} c="#A24351" w={2.1} />}
+        iconBg="#F8E7EA"
+        title="Remove this group from the plan?"
+        body="Its limit is discarded and its apps return to their default groups. The saved group itself is kept, so you can add it again."
+        subject={pendingGroupRemoval ? groupName(state, pendingGroupRemoval) : undefined}
+        confirmLabel="REMOVE GROUP"
+        confirmColor="#A24351"
+        onCancel={() => setPendingGroupRemoval(null)}
+        onConfirm={() => {
+          if (pendingGroupRemoval) removeGroup(pendingGroupRemoval);
+          setPendingGroupRemoval(null);
+        }}
       />
 
       <ConfirmModal
@@ -997,8 +1079,31 @@ const s = StyleSheet.create({
   structuralButtonText: { fontFamily: F.sansSemiBold, fontSize: 10.5, color: C.goldDark },
   buttonDisabled: { opacity: 0.35 },
   structuralError: { marginTop: 8, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10, color: '#A24351' },
-  deletePlanButton: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 9 },
-  deletePlanText: { fontFamily: F.sansSemiBold, fontSize: 11, color: '#A24351' },
+  deletePlanButton: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginBottom: 12,
+    borderRadius: 13,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#EFDCE0',
+    backgroundColor: '#FFF9FA',
+    paddingLeft: 10,
+    paddingRight: 15,
+    paddingVertical: 8,
+  },
+  deletePlanSeal: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    backgroundColor: '#F9E9EC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deletePlanText: { fontFamily: F.serifSemiBold, fontSize: 14.5, color: '#8A3F4D' },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border, backgroundColor: 'rgba(252,252,252,0.96)', paddingHorizontal: 16, paddingTop: 11 },
   saveError: { marginBottom: 8, paddingHorizontal: 6, textAlign: 'center', fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 14.5, color: '#A24351' },
 });

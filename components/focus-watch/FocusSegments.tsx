@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -13,6 +13,12 @@ export type FocusSegmentOption = {
   label: string;
   // 'danger' tints the thumb rose while this option is selected (e.g. Blocked).
   tone?: 'default' | 'danger';
+  /**
+   * An optional mark set beside the label, drawn in the colour the option
+   * currently reads in. Two words that begin the same way ("Add new", "Use
+   * existing") are told apart faster by a shape than by reading them.
+   */
+  icon?: (color: string) => ReactNode;
 };
 
 // The Focus segmented control: one white thumb glides under the chosen option
@@ -62,13 +68,19 @@ export default function FocusSegments({
       )}
       {options.map(option => {
         const selected = option.key === value;
+        const ink = selected
+          ? (option.tone === 'danger' ? '#A24351' : C.goldDark)
+          : C.textMuted;
         return (
           <HapticPressable
             key={option.key}
             haptic="selection"
             onPress={() => onChange(option.key)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
             style={s.segment}
           >
+            {option.icon?.(ink)}
             <Text
               style={[
                 s.label,
@@ -114,12 +126,16 @@ const s = StyleSheet.create({
   },
   segment: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
+  // Serif at 15: the register the rest of these sheets read in, and large
+  // enough to be legible without leaning in.
   label: {
-    fontFamily: F.sansSemiBold,
-    fontSize: 11.5,
+    fontFamily: F.serifSemiBold,
+    fontSize: 15,
     color: C.textMuted,
   },
   labelOn: {

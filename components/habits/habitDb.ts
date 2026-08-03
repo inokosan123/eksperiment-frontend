@@ -383,22 +383,31 @@ function computeHistoryStats(rows: InstanceHistoryRow[], today: string) {
     scheduled: [],
   };
 
+  const statusForStats = (row: InstanceHistoryRow): TaskInstanceStatus => (
+    row.status === 'pending' && row.date < today ? 'missed' : row.status
+  );
+
   const byDate = [...rows].sort((a, b) => a.date.localeCompare(b.date));
   for (const row of byDate) {
-    if (row.status === 'not_applicable') continue;
+    const status = statusForStats(row);
+    if (status === 'not_applicable') continue;
     history.scheduled.push(row.date);
-    if (row.status === 'completed') history.completed.push(row.date);
-    if (row.status === 'skipped') history.skipped.push(row.date);
-    if (row.status === 'missed') history.missed.push(row.date);
+    if (status === 'completed') history.completed.push(row.date);
+    if (status === 'skipped') history.skipped.push(row.date);
+    if (status === 'missed') history.missed.push(row.date);
   }
 
   let bestStreak = 0;
   let running = 0;
-  for (const row of byDate) {
-    if (row.status === 'completed') {
+  for (const row of byDate.filter(item => item.date <= today)) {
+    const status = statusForStats(row);
+    if (status === 'completed') {
       running += 1;
       bestStreak = Math.max(bestStreak, running);
-    } else if (row.date <= today && row.status !== 'not_applicable') {
+    } else if (status === 'skipped' || status === 'pending' || status === 'not_applicable') {
+      // A skip is neutral: it preserves the streak without extending it.
+      continue;
+    } else {
       running = 0;
     }
   }
@@ -407,13 +416,17 @@ function computeHistoryStats(rows: InstanceHistoryRow[], today: string) {
   const pastRows = byDate.filter(row => row.date <= today && row.status !== 'not_applicable');
   for (let index = pastRows.length - 1; index >= 0; index -= 1) {
     const row = pastRows[index];
-    if (row.date === today && row.status === 'pending') continue;
-    if (row.status !== 'completed') break;
-    currentStreak += 1;
+    const status = statusForStats(row);
+    if (status === 'pending' || status === 'skipped') continue;
+    if (status === 'completed') {
+      currentStreak += 1;
+      continue;
+    }
+    break;
   }
 
   const completedCount = history.completed.length;
-  const resolvedCount = history.completed.length + history.skipped.length + history.missed.length;
+  const resolvedCount = history.completed.length + history.missed.length;
   const completionRate = resolvedCount > 0 ? Math.round((completedCount / resolvedCount) * 100) : 0;
   const completedToday = rows.some(row => row.date === today && row.status === 'completed');
   const skippedToday = rows.some(row => row.date === today && row.status === 'skipped');

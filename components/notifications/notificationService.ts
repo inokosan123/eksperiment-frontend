@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import type { AppSettings } from '@/components/settings/SettingsContext';
-import { routeForTaskInstance } from '@/components/tasks/taskAdapters';
+import { NOTIFICATION_HOME_ROUTE } from '@/components/notifications/notification-navigation';
 import {
   listTaskInstancesBetween,
   listTasks,
@@ -38,7 +38,7 @@ export type ManagedNotificationData = {
   kind: ManagedNotificationKind;
   title: string;
   body: string;
-  route?: string;
+  route: typeof NOTIFICATION_HOME_ROUTE;
   source?: TaskInstance['source'];
   taskType?: TaskInstance['type'];
   fireAt: number;
@@ -88,11 +88,6 @@ function settingsAllowTask(settings: AppSettings, task: Pick<TaskDefinition, 'so
   return settings.notifRoutine;
 }
 
-function routeForNotification(instance: TaskInstance) {
-  if (instance.source === 'gratitude' || instance.type === 'gratitude') return '/gratitude-task';
-  return routeForTaskInstance(instance);
-}
-
 function buildBody(candidate: ScheduleCandidate) {
   if (candidate.kind === 'reminder') {
     const minutes = candidate.reminderMinutes ?? DEFAULT_SNOOZE_MINUTES;
@@ -119,7 +114,7 @@ function buildData(
     kind,
     title,
     body,
-    route: routeForNotification(instance),
+    route: NOTIFICATION_HOME_ROUTE,
     source: instance.source,
     taskType: instance.type,
     fireAt,
@@ -152,7 +147,9 @@ function managedDataFromUnknown(value: unknown): ManagedNotificationData | null 
     kind: raw.kind === 'snooze' || raw.kind === 'reminder' ? raw.kind : 'due',
     title: raw.title,
     body: raw.body,
-    route: typeof raw.route === 'string' ? raw.route : undefined,
+    // Legacy scheduled payloads can still carry a task-specific route. They
+    // remain parseable, but their in-app destination is normalized to Home.
+    route: NOTIFICATION_HOME_ROUTE,
     source: typeof raw.source === 'string' ? raw.source as TaskInstance['source'] : undefined,
     taskType: typeof raw.taskType === 'string' ? raw.taskType as TaskInstance['type'] : undefined,
     fireAt: raw.fireAt,
@@ -455,15 +452,4 @@ export function getManagedNotificationData(
   response: Notifications.NotificationResponse,
 ) {
   return managedDataFromUnknown(response.notification.request.content.data);
-}
-
-export function notificationRouteParams(data: ManagedNotificationData) {
-  return {
-    title: data.title.replace(/^Anasta:\s*/i, ''),
-    taskInstanceId: data.instanceId,
-    taskDate: data.instanceDate,
-    date: data.instanceDate,
-    isTask: 'true',
-    fromNotification: 'true',
-  };
 }

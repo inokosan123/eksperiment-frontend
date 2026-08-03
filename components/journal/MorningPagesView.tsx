@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, View, Text, StyleSheet, TextInput } from 'react-native';
+import { ActivityIndicator, Keyboard, View, Text, StyleSheet, TextInput } from 'react-native';
 import Animated, { useAnimatedProps, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,9 +11,12 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 import { useJournal } from '@/components/journal/JournalContext';
 import { countWords, JOURNAL_MORNING_PAGES_MINIMUM_WORDS } from '@/components/journal/journalLogic';
-import { useTasks } from '@/components/tasks/TaskProvider';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { ReadableText } from '@/components/shared/typographyScale';
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
@@ -42,7 +45,10 @@ export default function MorningPagesView() {
   const isTaskLaunch = params.isTask === 'true' || !!params.taskInstanceId;
   const taskTitle = typeof params.title === 'string' && params.title.trim() ? params.title.trim() : 'Morning Pages';
   const { ready: journalReady, getEntry, upsertEntry } = useJournal();
-  const { completeInstance } = useTasks();
+  const completion = useRoutedTaskCompletion({
+    taskInstanceId: params.taskInstanceId,
+    taskDate: params.taskDate ?? selectedDateKey,
+  });
   const [html, setHtml] = useState('');
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
   const [showInfo, setShowInfo] = useState(false);
@@ -176,11 +182,11 @@ export default function MorningPagesView() {
       if (isComplete) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    await saveNow();
     if (shouldCompleteTask && params.taskInstanceId) {
-      const completionDate = params.taskDate ?? selectedDateKey;
-      await completeInstance(params.taskInstanceId, completionDate);
-      queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
+      const result = await completion.completeBeforeReturn({ persistCritical: saveNow });
+      if (!result.ok) return;
+    } else {
+      await saveNow();
     }
     router.back();
   };
@@ -212,9 +218,9 @@ export default function MorningPagesView() {
       {showInfo && (
         <View style={s.infoCard}>
           <Text style={s.infoHeading}>What are Morning Pages?</Text>
-          <Text style={s.infoBody}>
+          <ReadableText style={s.infoBody}>
             {"Morning Pages is a technique by Julia Cameron (The Artist's Way). Every morning, write 3 pages of stream-of-consciousness - anything that comes to mind, without judgment."}
-          </Text>
+          </ReadableText>
         </View>
       )}
 
@@ -253,6 +259,8 @@ export default function MorningPagesView() {
             <AnimatedTextInput
               editable={false}
               caretHidden
+              allowFontScaling={false}
+              maxFontSizeMultiplier={1}
               underlineColorAndroid="transparent"
               defaultValue={String(wordCount)}
               animatedProps={countAnimatedProps}
@@ -266,12 +274,19 @@ export default function MorningPagesView() {
             activeOpacity={0.85}
             onPress={() => { void finish(); }}
           >
-            <CheckSmall s={18} c="#fff" w={2.8} />
+            {completion.showSlowIndicator
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <CheckSmall s={18} c="#fff" w={2.8} />}
             <Text style={s.doneTxt}>Done</Text>
           </TouchableOpacity>
           )}
         </View>
       </View>
+      <RoutedTaskCompletionErrorModal
+        visible={completion.saveErrorVisible}
+        onKeepEditing={completion.keepEditing}
+        onRetry={completion.retry}
+      />
     </View>
   );
 }

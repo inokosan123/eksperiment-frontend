@@ -1,6 +1,8 @@
 import {
+  memo,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode } from 'react';
 import { Image,
@@ -16,11 +18,10 @@ import Reanimated, {
   interpolate,
   useAnimatedProps,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withDelay,
-  withRepeat,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -46,7 +47,13 @@ import {
   StruckLight,
   type BankedPalette,
 } from '@/components/shared/BankedEmber';
-import RadiantTodayPulse from '@/components/shared/RadiantTodayPulse';
+import HomeTodayPulse from '@/components/home/home-today-pulse';
+import {
+  continuousPhase,
+  easeInOutQuad,
+  pingPongPhase,
+} from '@/components/shared/use-continuous-animation-clock';
+import { useAmbientMotion } from '@/components/shared/ambient-motion';
 
 
 const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
@@ -112,6 +119,70 @@ const SPARKLE_PATH = 'M12 0 C13.2 7.4 16.6 10.8 24 12 C16.6 13.2 13.2 16.6 12 24
 // pattern, which is the whole point of having more than a couple.
 type MoteKind = 'star' | 'dot' | 'diamond';
 
+type MoteProps = {
+  kind: MoteKind;
+  size: number;
+  delay?: number;
+  style: object;
+  color?: string;
+  slow?: boolean;
+  still?: boolean;
+  peak?: number;
+  active?: boolean;
+  clock?: SharedValue<number>;
+};
+
+function MoteShape({ kind, size, color }: Pick<MoteProps, 'kind' | 'size'> & { color: string }) {
+  return kind === 'star' ? (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d={SPARKLE_PATH} fill={color} />
+    </Svg>
+  ) : (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: kind === 'dot' ? size / 2 : size * 0.16,
+        backgroundColor: color,
+        transform: kind === 'diamond' ? [{ rotate: '45deg' }] : undefined,
+      }}
+    />
+  );
+}
+
+function AnimatedMote({
+  kind,
+  size,
+  delay = 0,
+  style,
+  color,
+  slow = false,
+  peak = 0.42,
+  clock,
+  running,
+}: Omit<MoteProps, 'active' | 'still' | 'color' | 'clock'> & {
+  color: string;
+  clock: SharedValue<number>;
+  running: boolean;
+}) {
+  const cycle = slow ? 11200 : 5600;
+  const phaseOffset = delay / cycle;
+  const twinkle = useAnimatedStyle(() => ({
+    opacity: (() => {
+      if (!running) return slow ? 0.07 + 0.5 * peak * 0.45 : 0.13 + 0.5 * peak;
+      const phase = continuousPhase(clock.value, cycle, -phaseOffset);
+      const wave = 0.5 - 0.5 * Math.cos(phase * Math.PI * 2);
+      return slow ? 0.07 + wave * peak * 0.45 : 0.13 + wave * peak;
+    })(),
+  }));
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[bg.mote, style, twinkle]}>
+      <MoteShape kind={kind} size={size} color={color} />
+    </Reanimated.View>
+  );
+}
+
 function Mote({
   kind,
   size,
@@ -121,64 +192,36 @@ function Mote({
   slow = false,
   still = false,
   peak = 0.42,
-}: {
-  kind: MoteKind;
-  size: number;
-  delay?: number;
-  style: object;
-  color?: string;
-  slow?: boolean;
-  still?: boolean;
-  peak?: number;
-}) {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion || still) {
-      t.value = 0.5;
-      return;
-    }
-    t.value = 0;
-    t.value = withDelay(
-      delay,
-      withRepeat(
-        // 2800ms is the sun's breath. Everything that breathes on this card
-        // breathes with it — the sparks used to run at their own 2400 and
-        // the whole surface shimmered slightly out of step with itself.
-        withTiming(1, { duration: slow ? 5600 : 2800, easing: Easing.inOut(Easing.quad) }),
-        -1,
-        true,
-      ),
+  active = true,
+  clock,
+}: MoteProps) {
+  if (still || !clock) {
+    const opacity = slow ? 0.07 + 0.5 * peak * 0.45 : 0.13 + 0.5 * peak;
+    return (
+      <View pointerEvents="none" style={[bg.mote, style, { opacity }]}>
+        <MoteShape kind={kind} size={size} color={color} />
+      </View>
     );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, delay, slow, still, t]);
-
-  // Banked: the dust is half as bright and takes nearly twice as long.
-  const twinkle = useAnimatedStyle(() => ({
-    opacity: slow ? 0.07 + t.value * peak * 0.45 : 0.13 + t.value * peak,
-  }));
+  }
 
   return (
-    <Reanimated.View pointerEvents="none" style={[bg.mote, style, twinkle]}>
-      {kind === 'star' ? (
-        <Svg width={size} height={size} viewBox="0 0 24 24">
-          <Path d={SPARKLE_PATH} fill={color} />
-        </Svg>
-      ) : (
-        <View
-          style={{
-            width: size,
-            height: size,
-            // A round mote, or a struck one turned on its corner.
-            borderRadius: kind === 'dot' ? size / 2 : size * 0.16,
-            backgroundColor: color,
-            transform: kind === 'diamond' ? [{ rotate: '45deg' }] : undefined,
-          }}
-        />
-      )}
-    </Reanimated.View>
+    <AnimatedMote
+      kind={kind}
+      size={size}
+      delay={delay}
+      style={style}
+      color={color}
+      slow={slow}
+      peak={peak}
+      clock={clock}
+      running={active}
+    />
   );
+}
+
+function useDustClock(active: boolean) {
+  const runtime = useAmbientMotion(active);
+  return { clock: runtime.clock, running: runtime.enabled };
 }
 
 const bg = StyleSheet.create({
@@ -244,59 +287,66 @@ const GLINT: Record<GlintVariant, {
   },
 };
 
-function CardGlint({ variant = 'active' }: { variant?: GlintVariant }) {
-  const reduceMotion = useReducedMotion();
+function CardGlint({ variant = 'active', active = true }: { variant?: GlintVariant; active?: boolean }) {
   const [w, setW] = useState(0);
-  const t = useSharedValue(0);
   const cfg = GLINT[variant];
   const { duration, arrival, peak, corePeak } = cfg;
-
-  useEffect(() => {
-    if (reduceMotion || w === 0) return;
-    t.value = 0;
-    t.value = withRepeat(
-      withTiming(1, { duration, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      false,
-    );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, w, t, duration]);
+  const runtime = useAmbientMotion(active && w > 0);
+  const { clock } = runtime;
+  const motionEnabled = runtime.enabled;
 
   // The wide soft halo. A gentle visible window so the beam is legible as
   // it travels rather than blinking past.
-  const sweep = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, arrival * 0.2, arrival * 0.82, arrival * 1.14, 1], [0, peak, peak, 0, 0]),
-    transform: [
-      { translateX: interpolate(t.value, [0, arrival, 1], [-140, w + 80, w + 80]) },
-      { rotate: '14deg' },
-    ],
-  }));
+  const sweep = useAnimatedStyle(() => {
+    if (!motionEnabled) {
+      return {
+        opacity: 0,
+        transform: [{ translateX: -140 }, { rotate: '14deg' }],
+      };
+    }
+    const progress = easeInOutQuad(continuousPhase(clock.value, duration));
+    return {
+      opacity: interpolate(progress, [0, arrival * 0.2, arrival * 0.82, arrival * 1.14, 1], [0, peak, peak, 0, 0]),
+      transform: [
+        { translateX: interpolate(progress, [0, arrival, 1], [-140, w + 80, w + 80]) },
+        { rotate: '14deg' },
+      ],
+    };
+  });
 
   // The bright core, riding a touch ahead of the halo's centre.
-  const core = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, arrival * 0.24, arrival * 0.78, arrival * 1.1, 1], [0, corePeak, corePeak, 0, 0]),
-    transform: [
-      { translateX: interpolate(t.value, [0, arrival, 1], [-90, w + 120, w + 120]) },
-      { rotate: '14deg' },
-    ],
-  }));
+  const core = useAnimatedStyle(() => {
+    if (!motionEnabled) {
+      return {
+        opacity: 0,
+        transform: [{ translateX: -90 }, { rotate: '14deg' }],
+      };
+    }
+    const progress = easeInOutQuad(continuousPhase(clock.value, duration));
+    return {
+      opacity: interpolate(progress, [0, arrival * 0.24, arrival * 0.78, arrival * 1.1, 1], [0, corePeak, corePeak, 0, 0]),
+      transform: [
+        { translateX: interpolate(progress, [0, arrival, 1], [-90, w + 120, w + 120]) },
+        { rotate: '14deg' },
+      ],
+    };
+  });
 
   return (
     <View
       pointerEvents="none"
       style={StyleSheet.absoluteFill}
-      onLayout={event => setW(event.nativeEvent.layout.width)}
+      onLayout={event => {
+        const width = event.nativeEvent.layout.width;
+        setW(current => current === width ? current : width);
+      }}
     >
-      {!reduceMotion && w > 0 && (
-        <>
-          <Reanimated.View style={[cg.band, sweep]}>
-            <LinearGradient colors={cfg.wide} locations={WIDE_LOC} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
-          </Reanimated.View>
-          <Reanimated.View style={[cg.core, core]}>
-            <LinearGradient colors={cfg.core} locations={CORE_LOC} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
-          </Reanimated.View>
-        </>
-      )}
+      <Reanimated.View style={[cg.band, sweep]}>
+        <LinearGradient colors={cfg.wide} locations={WIDE_LOC} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
+      </Reanimated.View>
+      <Reanimated.View style={[cg.core, core]}>
+        <LinearGradient colors={cfg.core} locations={CORE_LOC} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
+      </Reanimated.View>
     </View>
   );
 }
@@ -306,11 +356,20 @@ const cg = StyleSheet.create({
   core: { position: 'absolute', top: -34, bottom: -34, width: 60 },
 });
 
-function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: BankedPalette }) {
+function DawnBackdrop({
+  muted = false,
+  palette,
+  active = true,
+}: {
+  muted?: boolean;
+  palette: BankedPalette;
+  active?: boolean;
+}) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const step = 30;
   const lineCount = !muted && box.w > 0 ? Math.ceil((box.w + box.h) / step) + 1 : 0;
   const sparkleColor = muted ? palette.sparkle : GOLD;
+  const dust = useDustClock(active && sparkleColor !== null);
 
   return (
     <View
@@ -318,7 +377,9 @@ function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: Ba
       style={StyleSheet.absoluteFill}
       onLayout={event => {
         const { width, height } = event.nativeEvent.layout;
-        setBox({ w: width, h: height });
+        setBox(current => current.w === width && current.h === height
+          ? current
+          : { w: width, h: height });
       }}
     >
       {/* Resting, the single gold rake gives way to the counter-raked ash
@@ -352,12 +413,12 @@ function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: Ba
         <>
           {/* Stars carry the light — biggest in the far corner the fire
               never reaches. */}
-          <Mote kind="star" size={11} delay={0} style={{ left: 16, top: 18 }} color={sparkleColor} slow={muted} />
-          <Mote kind="star" size={6.5} delay={1200} style={{ left: 106, top: 10 }} color={sparkleColor} slow={muted} peak={0.3} />
-          <Mote kind="star" size={8} delay={1600} style={{ right: 14, top: 124 }} color={sparkleColor} slow={muted} peak={0.36} />
+          <Mote kind="star" size={11} delay={0} style={{ left: 16, top: 18 }} color={sparkleColor} slow={muted} active={dust.running} clock={dust.clock} />
+          <Mote kind="star" size={6.5} delay={1200} style={{ left: 106, top: 10 }} color={sparkleColor} slow={muted} peak={0.3} active={dust.running} clock={dust.clock} />
+          <Mote kind="star" size={8} delay={1600} style={{ right: 14, top: 124 }} color={sparkleColor} slow={muted} peak={0.36} active={dust.running} clock={dust.clock} />
           {/* Round motes — the quiet register, held to the margins. */}
           <Mote kind="dot" size={3} still style={{ left: 7, top: 86 }} color={sparkleColor} peak={0.22} />
-          <Mote kind="dot" size={2.5} delay={2400} style={{ right: 11, top: 42 }} color={sparkleColor} slow={muted} peak={0.24} />
+          <Mote kind="dot" size={2.5} delay={2400} style={{ right: 11, top: 42 }} color={sparkleColor} slow={muted} peak={0.24} active={dust.running} clock={dust.clock} />
           {/* Struck diamonds — these never move. */}
           <Mote kind="diamond" size={4} still style={{ left: 209, top: 15 }} color={sparkleColor} peak={0.26} />
           <Mote kind="diamond" size={2.5} still style={{ left: 7, top: 152 }} color={sparkleColor} peak={0.22} />
@@ -373,11 +434,11 @@ function DawnBackdrop({ muted = false, palette }: { muted?: boolean; palette: Ba
           {!muted && (
             <>
               <Mote kind="dot" size={2} still style={{ right: 188, top: 114 }} color={sparkleColor} peak={0.2} />
-              <Mote kind="star" size={7} delay={600} style={{ right: 168, top: 120 }} color={sparkleColor} peak={0.3} />
+              <Mote kind="star" size={7} delay={600} style={{ right: 168, top: 120 }} color={sparkleColor} peak={0.3} active={dust.running} clock={dust.clock} />
               <Mote kind="diamond" size={3.5} still style={{ right: 148, top: 107 }} color={sparkleColor} peak={0.24} />
-              <Mote kind="dot" size={2.5} delay={2000} style={{ right: 134, top: 127 }} color={sparkleColor} peak={0.2} />
+              <Mote kind="dot" size={2.5} delay={2000} style={{ right: 134, top: 127 }} color={sparkleColor} peak={0.2} active={dust.running} clock={dust.clock} />
               <Mote kind="dot" size={1.8} still style={{ right: 156, top: 138 }} color={sparkleColor} peak={0.15} />
-              <Mote kind="star" size={5} delay={3200} style={{ right: 121, top: 136 }} color={sparkleColor} peak={0.22} />
+              <Mote kind="star" size={5} delay={3200} style={{ right: 121, top: 136 }} color={sparkleColor} peak={0.22} active={dust.running} clock={dust.clock} />
             </>
           )}
         </>
@@ -401,7 +462,10 @@ function HeroWash() {
     <View
       pointerEvents="none"
       style={StyleSheet.absoluteFill}
-      onLayout={event => setW(event.nativeEvent.layout.width)}
+      onLayout={event => {
+        const width = event.nativeEvent.layout.width;
+        setW(current => current === width ? current : width);
+      }}
     >
       {w > 0 && (
         <Svg width={w} height={band}>
@@ -455,11 +519,17 @@ function TodayMedallion({ pct, mode }: { pct: number; mode: DayMode }) {
   const arcProgress = useSharedValue(0);
 
   useEffect(() => {
+    cancelAnimation(arcProgress);
+    if (banked) {
+      arcProgress.value = 0;
+      return;
+    }
     arcProgress.value = withDelay(250, withTiming(frac, {
       duration: 700,
       easing: Easing.out(Easing.cubic),
     }));
-  }, [arcProgress, frac]);
+    return () => cancelAnimation(arcProgress);
+  }, [arcProgress, banked, frac]);
 
   const arcProps = useAnimatedProps(() => ({
     strokeDashoffset: arcLen * (1 - arcProgress.value),
@@ -717,32 +787,33 @@ const ms = StyleSheet.create({
 // grammar as the live dust — stars twinkle, dots mostly rest, diamonds
 // never move — and it fills the flanks the crest leaves empty without
 // putting one more thing there to read.
-function StruckDust() {
+function StruckDust({ active = true }: { active?: boolean }) {
   const pal = bankedPalette('struck');
   const ash = pal.engraving;
   const ox = pal.stud;
+  const dust = useDustClock(active);
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       {/* Left of the crest */}
-      <Mote kind="star" size={10} delay={0} style={{ left: 24, top: 44 }} color={ash} peak={0.26} />
+      <Mote kind="star" size={10} delay={0} style={{ left: 24, top: 44 }} color={ash} peak={0.26} active={dust.running} clock={dust.clock} />
       <Mote kind="dot" size={3} still style={{ left: 58, top: 76 }} color={ash} peak={0.2} />
       <Mote kind="diamond" size={3.5} still style={{ left: 13, top: 96 }} color={ox} peak={0.3} />
-      <Mote kind="star" size={6} delay={1400} style={{ left: 45, top: 118 }} color={ash} peak={0.22} />
-      <Mote kind="dot" size={2} delay={2600} style={{ left: 74, top: 34 }} color="#FFFFFF" peak={0.5} />
+      <Mote kind="star" size={6} delay={1400} style={{ left: 45, top: 118 }} color={ash} peak={0.22} active={dust.running} clock={dust.clock} />
+      <Mote kind="dot" size={2} delay={2600} style={{ left: 74, top: 34 }} color="#FFFFFF" peak={0.5} active={dust.running} clock={dust.clock} />
       {/* Right of the crest */}
-      <Mote kind="star" size={8} delay={800} style={{ right: 28, top: 54 }} color={ash} peak={0.24} />
+      <Mote kind="star" size={8} delay={800} style={{ right: 28, top: 54 }} color={ash} peak={0.24} active={dust.running} clock={dust.clock} />
       <Mote kind="dot" size={2.5} still style={{ right: 60, top: 98 }} color={ash} peak={0.18} />
       <Mote kind="diamond" size={3} still style={{ right: 17, top: 120 }} color={ox} peak={0.26} />
-      <Mote kind="star" size={5.5} delay={2200} style={{ right: 68, top: 40 }} color={ash} peak={0.2} />
+      <Mote kind="star" size={5.5} delay={2200} style={{ right: 68, top: 40 }} color={ash} peak={0.2} active={dust.running} clock={dust.clock} />
       {/* Ash, not white, on this side: the surface runs to near-white toward
           the bottom-right and a pale mote there would simply vanish. */}
-      <Mote kind="dot" size={2} delay={1900} style={{ right: 24, top: 86 }} color={ash} peak={0.2} />
+      <Mote kind="dot" size={2} delay={1900} style={{ right: 24, top: 86 }} color={ash} peak={0.2} active={dust.running} clock={dust.clock} />
     </View>
   );
 }
 
-function StruckCrest() {
+function StruckCrest({ active = true }: { active?: boolean }) {
   const pal = bankedPalette('struck');
   const field = 132;
   const c = field / 2;
@@ -791,7 +862,7 @@ function StruckCrest() {
       </Svg>
       {/* The one living thing on a struck card: the light behind the
           cut-out is still breathing. */}
-      <EmberPulse size={72} discs={pal.coreDiscs} />
+      <EmberPulse size={72} discs={pal.coreDiscs} active={active} />
       <Image
         source={FLAME_PNG}
         style={[cr.flame, { tintColor: pal.silhouette, opacity: pal.silhouetteOpacity }]}
@@ -814,8 +885,15 @@ const cr = StyleSheet.create({
 // the flame stills to a silhouette over a breathing core. In the ash
 // register that is a warm shadow over a coal; struck, it is a black
 // cut-out held against white light.
-function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
-  const reduceMotion = useReducedMotion();
+function RadiantFlame({
+  pct,
+  mode,
+  active = true,
+}: {
+  pct: number | null;
+  mode: DayMode;
+  active?: boolean;
+}) {
   // Nothing scheduled and a day laid aside are the same fire: banked.
   const banked = pct === null || mode === 'no-tasks' || mode === 'all-skipped';
   const full = !banked && pct >= 100;
@@ -825,49 +903,16 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
   const cx = field / 2;
   const ringR = 44;
   const rayInner = 48;
-  const breathe = useSharedValue(0);
-  const spin = useSharedValue(0);
-
-  useEffect(() => {
-    // A banked sun neither breathes nor turns — the coal underneath is the
-    // only thing still moving on the card.
-    if (reduceMotion || banked) {
-      breathe.value = 0.5;
-      spin.value = 0;
-      return;
-    }
-    breathe.value = 0;
-    breathe.value = withRepeat(
-      withTiming(1, { duration: 2800, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-    // The sun turns, imperceptibly slow — one revolution per minute.
-    spin.value = 0;
-    spin.value = withRepeat(
-      withTiming(1, { duration: 60000, easing: Easing.linear }),
-      -1,
-      false,
-    );
-    return () => {
-      cancelAnimation(breathe);
-      cancelAnimation(spin);
-    };
-  }, [banked, breathe, reduceMotion, spin]);
-
-  const outerGlowStyle = useAnimatedStyle(() => ({
-    opacity: banked ? 0.34 : 0.5 + breathe.value * 0.4,
-  }));
+  const runtime = useAmbientMotion(active && !banked);
+  const motionEnabled = runtime.enabled;
+  const clock = runtime.clock;
 
   // The live sun breathes as one body of light rather than pulsing a single
   // outer disc, so the swell is gentler than the old 0.5→0.9.
-  const sunGlowStyle = useAnimatedStyle(() => ({
-    opacity: 0.8 + breathe.value * 0.2,
-  }));
-
-  const spinStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${spin.value * 360}deg` }],
-  }));
+  const sunGlowStyle = useAnimatedStyle(() => {
+    const breathe = motionEnabled ? pingPongPhase(clock.value, 2800) : 0.5;
+    return { opacity: 0.8 + breathe * 0.2 };
+  });
 
   return (
     <View style={rf.stage}>
@@ -877,7 +922,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
           a solid thing, not a glow. */}
       {banked ? (
         <>
-          <Reanimated.View pointerEvents="none" style={[rf.glowOuter, outerGlowStyle, { backgroundColor: pal.glowOuter }]} />
+          <View pointerEvents="none" style={[rf.glowOuter, { backgroundColor: pal.glowOuter, opacity: 0.34 }]} />
           <View pointerEvents="none" style={[rf.glowMid, { backgroundColor: pal.glowMid }]} />
           <View pointerEvents="none" style={[rf.glowHeart, { backgroundColor: pal.glowHeart }]} />
         </>
@@ -897,8 +942,8 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
         </Reanimated.View>
       )}
 
-      {/* Hairline halo ring — steady while the rays turn, and broken into
-          dashes once the sun is banked. */}
+      {/* Hairline halo ring — steady around the breathing light, and broken
+          into dashes once the sun is banked. */}
       <Svg pointerEvents="none" width={field} height={field} style={[rf.rays, banked && rf.raysBanked]}>
         <Circle
           cx={cx}
@@ -926,7 +971,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
         )}
       </Svg>
 
-      <Reanimated.View pointerEvents="none" style={[rf.rays, spinStyle, banked && rf.raysBanked]}>
+      <View pointerEvents="none" style={[rf.rays, banked && rf.raysBanked]}>
         <Svg width={field} height={field}>
           {/* Ray burst — long/short alternating, like a struck medal. On a
               finished day the sun stands at full strength; on a banked one
@@ -951,7 +996,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
             );
           })}
         </Svg>
-      </Reanimated.View>
+      </View>
 
       {/* Diamond glints in the sun's corners — a third joins on a full day */}
       <View pointerEvents="none" style={[rf.glint, { right: 6, top: 10 }, banked && { backgroundColor: pal.line }]} />
@@ -962,7 +1007,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
           that is still breathing, so the day reads as held, not over. */}
       {banked ? (
         <>
-          <EmberPulse size={40} discs={pal.coreDiscs} style={rf.emberSeat} />
+          <EmberPulse size={40} discs={pal.coreDiscs} style={rf.emberSeat} active={active} />
           <Image
             key={mode === 'all-skipped' ? 'flame-struck' : 'flame-banked'}
             source={FLAME_PNG}
@@ -970,7 +1015,7 @@ function RadiantFlame({ pct, mode }: { pct: number | null; mode: DayMode }) {
           />
         </>
       ) : (
-        <FocusLottie name="flame" loop speed={0.9} style={rf.flame} />
+        <FocusLottie name="flame" loop playing={active} speed={0.9} style={rf.flame} />
       )}
     </View>
   );
@@ -1156,15 +1201,17 @@ function SkipToken() {
   );
 }
 
-function FlameTile({
+const FlameTile = memo(function FlameTile({
   pct,
   mode,
   isToday,
   chrome,
+  active = true,
 }: {
   pct: number | null;
   mode: DayMode;
   isToday: boolean;
+  active?: boolean;
   // The CARD's register, not the day's own: earned gold always keeps its
   // gold, but the empty socket and today's ring follow the page they sit
   // on — warm on parchment, graphite on the struck grey.
@@ -1172,7 +1219,9 @@ function FlameTile({
 }) {
   // The radiant pulse marks today only while the day is ACTIVE — a day
   // with tasks in play. A skipped or empty today carries no ring.
-  const ring = isToday && mode === 'normal' ? <RadiantTodayPulse size={TILE_SIZE} /> : null;
+  const ring = isToday && mode === 'normal'
+    ? <HomeTodayPulse size={TILE_SIZE} active={active} />
+    : null;
 
   let token: ReactNode;
   if (mode === 'all-skipped') {
@@ -1203,7 +1252,7 @@ function FlameTile({
       {token}
     </View>
   );
-}
+});
 
 const tok = StyleSheet.create({
   coin: {
@@ -1383,9 +1432,22 @@ export function AnalyticsPlacard({
 }
 
 /* ── Main ─────────────────────────────────────────────────── */
-export default function WeeklyRhythm() {
+function WeeklyRhythm({
+  active = true,
+  dataActive = true,
+}: {
+  active?: boolean;
+  dataActive?: boolean;
+}) {
   const router = useRouter();
   const { instances } = useTasks();
+  const instanceRevision = useMemo(
+    () => instances.map(instance => (
+      `${instance.id}:${instance.date}:${instance.status}:${instance.resolvedAt ?? 0}`
+    )).join('|'),
+    [instances],
+  );
+  const publishedDailyRevisionRef = useRef('');
   const [weekStats, setWeekStats] = useState<DayStat[]>([]);
   // Today's task counts, which the card's line speaks in rather than
   // repeating the percentage already set above it.
@@ -1397,17 +1459,23 @@ export default function WeeklyRhythm() {
     perfectDays: 0,
     days: {},
   });
+  const ambientMotionActive = active && !progressCalendarOpen;
 
   const todayKey = formatLocalDateKey(new Date());
   const week = useMemo(() => buildWeek(todayKey), [todayKey]);
 
   // Reload weekly stats whenever today's instances change (proxy for data updates).
   useEffect(() => {
+    if (!dataActive) return;
     let cancelled = false;
     (async () => {
       const referenceDate = new Date();
       const toKey = week[6].dateKey;
       const all = await listTaskDailyStatusCountsThrough(toKey);
+      const dailyRevision = all.map(day => (
+        `${day.date}:${day.completed}:${day.skipped}:${day.missed}:${day.pending}`
+      )).join('|');
+      if (publishedDailyRevisionRef.current === dailyRevision) return;
       const countsByDate = new Map(all.map(day => [day.date, day]));
 
       const stats: DayStat[] = week.map(day => {
@@ -1452,6 +1520,7 @@ export default function WeeklyRhythm() {
       });
 
       if (!cancelled) {
+        publishedDailyRevisionRef.current = dailyRevision;
         const today = countsByDate.get(todayKey);
         const scheduledToday = today
           ? today.completed + today.skipped + today.missed + today.pending
@@ -1469,7 +1538,7 @@ export default function WeeklyRhythm() {
       console.warn('Home trophy analytics failed to load:', error);
     });
     return () => { cancelled = true; };
-  }, [instances, todayKey, week]);
+  }, [dataActive, instanceRevision, todayKey, week]);
 
   const todayStat = weekStats.find(d => d.isToday);
   const todayPct = todayStat?.pct ?? 0;
@@ -1528,7 +1597,7 @@ export default function WeeklyRhythm() {
           end={banked ? { x: 1, y: 1 } : { x: 1, y: 0.72 }}
           style={StyleSheet.absoluteFill}
         />
-        <DawnBackdrop muted={banked} palette={todayPal} />
+        <DawnBackdrop muted={banked} palette={todayPal} active={ambientMotionActive} />
         {/* One pool of light welding the reading to the fire. */}
         {!banked && <HeroWash />}
         {/* The struck card is held under white light — wash from the top,
@@ -1537,22 +1606,29 @@ export default function WeeklyRhythm() {
         {/* A light sweep passes over every card, keyed to its register:
             warm gold when live, a soft warm pass on an unwritten day, a cool
             white pane over the graphite skipped card. */}
-        <CardGlint variant={!banked ? 'active' : skippedToday ? 'struck' : 'ash'} />
+        <CardGlint
+          variant={!banked ? 'active' : skippedToday ? 'struck' : 'ash'}
+          active={ambientMotionActive}
+        />
 
         {/* Hero. A struck day gets one sealed crest on the card's centre
             line; every other day gets the reading and the fire, side by
             side, with the light between them. */}
         {skippedToday ? (
           <View style={s.struckHero}>
-            <StruckDust />
-            <StruckCrest />
+            <StruckDust active={ambientMotionActive} />
+            <StruckCrest active={ambientMotionActive} />
             <RestSeal label="SKIPPED" tone="struck" style={s.struckSeal} />
           </View>
         ) : (
           <>
             <View style={s.heroRow}>
               <TodayMedallion pct={todayPct} mode={todayMode} />
-              <RadiantFlame pct={todayStat?.pct ?? null} mode={todayMode} />
+              <RadiantFlame
+                pct={todayStat?.pct ?? null}
+                mode={todayMode}
+                active={ambientMotionActive}
+              />
             </View>
             {banked && (
               <RestSeal label="UNWRITTEN" tone={todayPal.seal} style={s.restSeal} />
@@ -1594,7 +1670,13 @@ export default function WeeklyRhythm() {
             <View style={s.daysRow}>
               {display.map((d, i) => (
                 <View key={i} style={s.weekCol}>
-                  <FlameTile pct={d.pct} mode={d.mode} isToday={d.isToday} chrome={todayPal} />
+                  <FlameTile
+                    pct={d.pct}
+                    mode={d.mode}
+                    isToday={d.isToday}
+                    chrome={todayPal}
+                    active={d.isToday && d.mode === 'normal' && ambientMotionActive}
+                  />
                 </View>
               ))}
             </View>
@@ -1614,12 +1696,15 @@ export default function WeeklyRhythm() {
             mode={mode}
             isToday={isToday}
             chrome={bankedPalette('ash')}
+            active={isToday && mode === 'normal' && progressCalendarOpen}
           />
         )}
       />
     </View>
   );
 }
+
+export default memo(WeeklyRhythm);
 
 const s = StyleSheet.create({
   wrap: { paddingTop: 18, paddingHorizontal: 20 },

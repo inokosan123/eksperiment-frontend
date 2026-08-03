@@ -1,22 +1,27 @@
 import React, {
-  useCallback, useEffect, useMemo, useRef, useState,
+  startTransition, useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  type StyleProp,
   StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
   Easing,
+  FadeIn,
   interpolateColor,
+  runOnJS,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,7 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
   CheckSmall,
-  Book, ChevronDown, ChevronRight, Notebook,
+  Book, ChevronRight, Notebook,
   OpenBook, Search, Settings, Star, X,
 } from '@/components/icons/Icons';
 import {
@@ -50,6 +55,7 @@ import { useTasks } from '@/components/tasks/TaskProvider';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import { useGuidedScrollTransition } from '@/components/onboarding/guided/use-guided-scroll-transition';
+import { ReadableText } from '@/components/shared/typographyScale';
 
 
 const BG = '#FCFCFC';
@@ -59,16 +65,67 @@ const ROSE = '#BE123C';
 
 type ScriptureTab = 'bible' | 'psalter';
 type ScriptureGuideEntryTarget = 'top' | 'bibleNotes' | 'browse';
-const SEGMENT_SPRING = {
-  damping: 18,
-  stiffness: 235,
-  mass: 0.72,
+const SEGMENT_SLIDE_MS = 210;
+const SEGMENT_CONTENT_COMMIT_DELAY_MS = SEGMENT_SLIDE_MS + 24;
+const SEGMENT_SLIDE = {
+  duration: SEGMENT_SLIDE_MS,
+  easing: Easing.bezier(0.22, 1, 0.36, 1),
 };
+const SEGMENT_PRESS_IN = { duration: 70 };
+const SEGMENT_PRESS_OUT = { duration: 120 };
+const INITIAL_BOOK_RENDER_COUNT = 8;
+const BOOK_RENDER_BATCH_SIZE = 4;
+const INITIAL_PSALTER_SECTION_COUNT = 3;
+const PSALTER_RENDER_BATCH_SIZE = 2;
+const FIRST_CONTENT_BATCH_DELAY_MS = 240;
+const NEXT_CONTENT_BATCH_DELAY_MS = 80;
+const CONTENT_IDLE_TIMEOUT_MS = 500;
+
+type IdleRuntime = typeof globalThis & {
+  requestIdleCallback?: (
+    callback: () => void,
+    options?: { timeout: number },
+  ) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+function scheduleContentBatch(callback: () => void, delayMs: number) {
+  const runtime = globalThis as IdleRuntime;
+  let idleHandle: number | null = null;
+  const delayHandle = setTimeout(() => {
+    if (runtime.requestIdleCallback) {
+      idleHandle = runtime.requestIdleCallback(callback, {
+        timeout: CONTENT_IDLE_TIMEOUT_MS,
+      });
+      return;
+    }
+    callback();
+  }, delayMs);
+
+  return () => {
+    clearTimeout(delayHandle);
+    if (idleHandle !== null) runtime.cancelIdleCallback?.(idleHandle);
+  };
+}
+
+const NEW_TESTAMENT_MOTIF_PATH = Array.from({ length: 6 }, (_, index) => {
+  const offset = index * 26;
+  return `M ${200 - offset} -6 L ${200 - offset - 62} 106`;
+}).join(' ');
+const OLD_TESTAMENT_MOTIF_PATH = Array.from({ length: 5 }, (_, index) => {
+  const offset = index * 26;
+  return `M ${200 - offset - 62} -6 L ${200 - offset} 106`;
+}).join(' ');
 
 const NEW_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament === 'nt');
 const OLD_TESTAMENT = BIBLE_BOOKS.filter(book => book.testament !== 'nt' && book.id !== PSALMS_ID);
 const PSALTER = BIBLE_BOOKS.filter(book => book.id === PSALMS_ID);
 const PSALMS_BOOK = PSALTER[0];
+const ALL_PSALM_NUMBERS = Array.from(
+  { length: PSALMS_BOOK?.chapters ?? 151 },
+  (_, index) => index + 1,
+);
+const EMPTY_SEARCH_RESULTS: ScriptureSearchResult[] = [];
 const HOLY_SCRIPTURE_GUIDE_TARGETS = {
   ephesians: 'scripture-library.ephesians',
   chapterFive: 'scripture-library.chapter-five',
@@ -102,9 +159,11 @@ export default function HolyScriptureView({
   const { createOrUpdateTask, refresh: refreshTasks } = useTasks();
 
   const [tab, setTab] = useState<ScriptureTab>('bible');
+  const [psalterPrepared, setPsalterPrepared] = useState(false);
   const tabProgress = useSharedValue(0);
   const [segWidth, setSegWidth] = useState(0);
   const [activeSection, setActiveSection] = useState<'new' | 'old'>('new');
+  const [oldTestamentPrepared, setOldTestamentPrepared] = useState(false);
   const sectionProgress = useSharedValue(0);
   const [sectionWrapWidth, setSectionWrapWidth] = useState(0);
   const segPillWidth = segWidth > 0 ? (segWidth - 12) / 2 : 0;
@@ -117,6 +176,10 @@ export default function HolyScriptureView({
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [showTaskSheet, setShowTaskSheet] = useState(false);
   const [taskSummary, setTaskSummary] = useState('Add to your daily routine');
+  const tabIntentRef = useRef<ScriptureTab>('bible');
+  const sectionIntentRef = useRef<'new' | 'old'>('new');
+  const tabCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sectionCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { session, patchSession, setPresentation } = useGuidedSetup();
   const isGuided = guided && session?.active === true && session.activeStep === 'riseBibleHighlight';
   const guidePhase = isGuided ? session.phase : '';
@@ -253,11 +316,10 @@ export default function HolyScriptureView({
     return Math.max(128, Math.floor((contentWidth - 10) / 2));
   }, [width]);
   const psalmNumbers = useMemo(() => {
-    const all = Array.from({ length: PSALMS_BOOK?.chapters ?? 151 }, (_, index) => index + 1);
-    if (!query) return all;
+    if (!query) return ALL_PSALM_NUMBERS;
 
     const numberPart = query.replace(/^psalms?\s*/, '').trim();
-    return all.filter(number =>
+    return ALL_PSALM_NUMBERS.filter(number =>
       `psalm ${number}`.includes(query)
       || `psalms ${number}`.includes(query)
       || (!!numberPart && String(number).includes(numberPart)));
@@ -275,15 +337,22 @@ export default function HolyScriptureView({
       return;
     }
 
+    let cancelled = false;
     const timer = setTimeout(() => {
       searchVerses(query, scriptureLanguage).then(results => {
-        setSearchResults(tab === 'psalter'
-          ? results.filter(result => result.bookId === PSALMS_ID)
-          : results);
+        if (cancelled) return;
+        startTransition(() => {
+          setSearchResults(tab === 'psalter'
+            ? results.filter(result => result.bookId === PSALMS_ID)
+            : results);
+        });
       });
     }, 240);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [query, ready, scriptureLanguage, searchVerses, tab]);
 
   const bookMatches = useMemo(() => {
@@ -291,14 +360,23 @@ export default function HolyScriptureView({
     const source = tab === 'psalter' ? PSALTER : BIBLE_BOOKS;
     return source.filter(book => book.name.toLowerCase().includes(query)).slice(0, 12);
   }, [query, tab]);
+  const browseContentKey = tab === 'psalter'
+    ? (query ? 'psalter-search' : 'psalter-browse')
+    : (query ? 'bible-search' : 'bible-browse');
 
   const tabPillMotionStyle = useAnimatedStyle(() => ({
-    width: segPillWidth,
     transform: [{ translateX: tabProgress.value * segPillTravel }],
-  }), [segPillWidth, segPillTravel]);
+  }), [segPillTravel]);
+
+  const biblePaneMotionStyle = useAnimatedStyle(() => ({
+    opacity: 1 - tabProgress.value,
+  }));
+
+  const psalterPaneMotionStyle = useAnimatedStyle(() => ({
+    opacity: tabProgress.value,
+  }));
 
   const sectionPillMotionStyle = useAnimatedStyle(() => ({
-    width: sectionPillWidth,
     transform: [{ translateX: sectionProgress.value * sectionPillTravel }],
     backgroundColor: interpolateColor(
       sectionProgress.value,
@@ -310,15 +388,36 @@ export default function HolyScriptureView({
       [0, 1],
       ['rgba(94,123,85,0.35)', 'rgba(180,155,103,0.35)']
     ),
-  }), [sectionPillWidth, sectionPillTravel]);
+  }), [sectionPillTravel]);
 
-  const switchTab = (next: ScriptureTab) => {
-    if (isGuided) return;
-    if (next === tab) return;
-    setTab(next);
-    setExpandedBookId(null);
-    tabProgress.value = withSpring(next === 'bible' ? 0 : 1, SEGMENT_SPRING);
-  };
+  const newTestamentPaneMotionStyle = useAnimatedStyle(() => ({
+    opacity: 1 - sectionProgress.value,
+  }));
+
+  const oldTestamentPaneMotionStyle = useAnimatedStyle(() => ({
+    opacity: sectionProgress.value,
+  }));
+
+  const switchTab = useCallback((next: ScriptureTab) => {
+    if (isGuided || next === tabIntentRef.current) return;
+
+    tabIntentRef.current = next;
+    Haptics.selectionAsync().catch(() => {});
+    if (tabCommitTimerRef.current !== null) {
+      clearTimeout(tabCommitTimerRef.current);
+    }
+    // Let the UI-thread pill finish before React mounts the substantially
+    // different Bible/Psalter tree. One frame was not enough: native SVG and
+    // gradient mounts were competing with the pill on the main thread.
+    tabCommitTimerRef.current = setTimeout(() => {
+      tabCommitTimerRef.current = null;
+      startTransition(() => {
+        if (next === 'psalter') setPsalterPrepared(true);
+        setTab(next);
+        setExpandedBookId(null);
+      });
+    }, SEGMENT_CONTENT_COMMIT_DELAY_MS);
+  }, [isGuided]);
 
   const handleLanguageChange = (lang: ScriptureLanguage) => {
     if (isGuided) return;
@@ -328,7 +427,7 @@ export default function HolyScriptureView({
     setShowLanguageMenu(false);
   };
 
-  const openReader = (book: BibleBook, chapter = 1, verse?: number) => {
+  const openReader = useCallback((book: BibleBook, chapter = 1, verse?: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (isGuided) {
       if (guidePhase === 'libraryChapter' && book.id === 49 && chapter === 5) {
@@ -348,17 +447,78 @@ export default function HolyScriptureView({
         ...(verse ? { verse: String(verse) } : {}),
       },
     });
-  };
+  }, [guidePhase, isGuided, onGuidedOpen, router, scriptureLanguage]);
 
-  const switchSection = (next: 'new' | 'old') => {
-    if (isGuided) return;
-    if (next === activeSection) return;
-    setActiveSection(next);
-    setExpandedBookId(null);
-    sectionProgress.value = withSpring(next === 'new' ? 0 : 1, SEGMENT_SPRING);
-  };
+  const switchSection = useCallback((next: 'new' | 'old') => {
+    if (isGuided || next === sectionIntentRef.current) return;
 
-  const toggleBook = (book: BibleBook) => {
+    sectionIntentRef.current = next;
+    Haptics.selectionAsync().catch(() => {});
+    if (sectionCommitTimerRef.current !== null) {
+      clearTimeout(sectionCommitTimerRef.current);
+    }
+    sectionCommitTimerRef.current = setTimeout(() => {
+      sectionCommitTimerRef.current = null;
+      startTransition(() => {
+        if (next === 'old') setOldTestamentPrepared(true);
+        setActiveSection(next);
+        setExpandedBookId(null);
+      });
+    }, SEGMENT_CONTENT_COMMIT_DELAY_MS);
+  }, [isGuided]);
+
+  const switchToBible = useCallback(() => switchTab('bible'), [switchTab]);
+  const switchToPsalter = useCallback(() => switchTab('psalter'), [switchTab]);
+  const switchToNewTestament = useCallback(() => switchSection('new'), [switchSection]);
+  const switchToOldTestament = useCallback(() => switchSection('old'), [switchSection]);
+
+  useEffect(() => {
+    if (!ready || isGuided) return undefined;
+
+    // Warm the two alternate panes only after the first visible Scripture UI
+    // has settled. Once mounted they stay alive, so later switches never have
+    // to construct a full gradient/SVG hierarchy on the interaction path.
+    const cancelOldTestamentWarmup = scheduleContentBatch(() => {
+      startTransition(() => setOldTestamentPrepared(true));
+    }, 140);
+    const cancelPsalterWarmup = scheduleContentBatch(() => {
+      startTransition(() => setPsalterPrepared(true));
+    }, 520);
+
+    return () => {
+      cancelOldTestamentWarmup();
+      cancelPsalterWarmup();
+    };
+  }, [isGuided, ready]);
+
+  useEffect(() => {
+    if (!isGuided) return;
+
+    const nextTabProgress = tab === 'bible' ? 0 : 1;
+    tabIntentRef.current = tab;
+    tabProgress.value = nextTabProgress;
+
+    const nextSectionProgress = activeSection === 'new' ? 0 : 1;
+    sectionIntentRef.current = activeSection;
+    sectionProgress.value = nextSectionProgress;
+  }, [
+    activeSection,
+    isGuided,
+    sectionProgress,
+    tab,
+    tabProgress,
+  ]);
+
+  useEffect(() => () => {
+    if (tabCommitTimerRef.current !== null) {
+      clearTimeout(tabCommitTimerRef.current);
+    }
+    if (sectionCommitTimerRef.current !== null) {
+      clearTimeout(sectionCommitTimerRef.current);
+    }
+  }, []);
+
+  const toggleBook = useCallback((book: BibleBook) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (isGuided) {
       if (guidePhase === 'libraryBook' && book.id === 49) {
@@ -372,8 +532,12 @@ export default function HolyScriptureView({
       }
       return;
     }
-    setExpandedBookId(expandedBookId === book.id ? null : book.id);
-  };
+    setExpandedBookId(current => current === book.id ? null : book.id);
+  }, [guidePhase, isGuided, patchSession, setPresentation]);
+
+  const openPsalm = useCallback((psalm: number) => {
+    if (PSALMS_BOOK) openReader(PSALMS_BOOK, psalm);
+  }, [openReader]);
 
   useEffect(() => {
     guideActionLockRef.current = '';
@@ -778,7 +942,7 @@ export default function HolyScriptureView({
             if (isGuided) return;
             router.push({
               pathname: '/scripture-checkpoint',
-              params: { readingType: 'custom', title: 'Scripture Checkpoints' },
+              params: { title: 'Scripture Checkpoints' },
             } as any);
           }}
           activeOpacity={0.86}
@@ -813,19 +977,27 @@ export default function HolyScriptureView({
           <View style={s.segmented} onLayout={e => setSegWidth(e.nativeEvent.layout.width)}>
             <Reanimated.View
               pointerEvents="none"
-              style={[s.segPill, tabPillMotionStyle]}
+              style={[s.segPill, { width: segPillWidth }, tabPillMotionStyle]}
             />
             <TabButton
               active={tab === 'bible'}
-              icon={<Book s={14} c={tab === 'bible' ? GREEN : '#A8A29E'} />}
+              accessibilityLabel="Bible"
+              disabled={isGuided}
+              Icon={Book}
               label="BIBLE"
-              onPress={() => switchTab('bible')}
+              onPress={switchToBible}
+              progress={tabProgress}
+              targetProgress={0}
             />
             <TabButton
               active={tab === 'psalter'}
-              icon={<OpenBook s={14} c={tab === 'psalter' ? GREEN : '#A8A29E'} />}
+              accessibilityLabel="Psalter"
+              disabled={isGuided}
+              Icon={OpenBook}
               label="PSALTER"
-              onPress={() => switchTab('psalter')}
+              onPress={switchToPsalter}
+              progress={tabProgress}
+              targetProgress={1}
             />
           </View>
 
@@ -849,50 +1021,166 @@ export default function HolyScriptureView({
           </View>
         </View>
 
-        {tab === 'psalter' && PSALMS_BOOK ? (
-          <PsalterBrowse
-            psalms={psalmNumbers}
-            results={query ? searchResults : []}
-            searching={!!query}
-            cardWidth={psalmCardWidth}
-            onPsalm={psalm => openReader(PSALMS_BOOK, psalm)}
-            onResult={openResult}
-          />
-        ) : query ? (
-          <SearchPanel bookMatches={bookMatches} results={searchResults} onBook={openReader} onResult={openResult} />
-        ) : (
-          <View style={s.sections}>
-            {/* NT / OT animated tab selector */}
-            <View
-              style={s.sectionTabWrap}
-              onLayout={e => setSectionWrapWidth(e.nativeEvent.layout.width)}
+        {/* Keep browse panes alive after their idle warm-up. Switching now
+            cross-fades compositor layers instead of unmounting and rebuilding
+            the full native gradient/SVG hierarchy. */}
+        <View
+          pointerEvents={query ? 'none' : 'auto'}
+          style={[s.cachedBrowseHost, query && s.cachedBrowseHidden]}
+        >
+          <View style={s.contentPaneStack}>
+            <Reanimated.View
+              accessibilityElementsHidden={tab !== 'bible'}
+              importantForAccessibility={tab === 'bible' ? 'auto' : 'no-hide-descendants'}
+              pointerEvents={tab === 'bible' ? 'auto' : 'none'}
+              style={[
+                s.contentPane,
+                tab === 'bible' ? s.contentPaneActive : s.contentPaneInactive,
+                biblePaneMotionStyle,
+              ]}
             >
-              <Reanimated.View style={[s.sectionTabPill, sectionPillMotionStyle]} />
-              <TouchableOpacity onPress={() => switchSection('new')} activeOpacity={0.82} style={s.sectionTabBtn}>
-                <Text style={[s.sectionTabText, activeSection === 'new' && { color: GREEN, fontFamily: F.serifMedium }]}>
-                  New Testament
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => switchSection('old')} activeOpacity={0.82} style={s.sectionTabBtn}>
-                <Text style={[s.sectionTabText, activeSection === 'old' && { color: '#8B6B2F', fontFamily: F.serifMedium }]}>
-                  Old Testament
-                </Text>
-              </TouchableOpacity>
-            </View>
+              <View style={s.sections}>
+                <View
+                  style={s.sectionTabWrap}
+                  onLayout={e => setSectionWrapWidth(e.nativeEvent.layout.width)}
+                >
+                  <Reanimated.View
+                    style={[
+                      s.sectionTabPill,
+                      { width: sectionPillWidth },
+                      sectionPillMotionStyle,
+                    ]}
+                  />
+                  <GestureSegmentButton
+                    accessibilityLabel="New Testament"
+                    active={activeSection === 'new'}
+                    disabled={isGuided}
+                    onPress={switchToNewTestament}
+                    progress={sectionProgress}
+                    style={s.sectionTabBtn}
+                    targetProgress={0}
+                  >
+                    <SegmentLabel
+                      activeColor={GREEN}
+                      label="New Testament"
+                      progress={sectionProgress}
+                      targetProgress={0}
+                    />
+                  </GestureSegmentButton>
+                  <GestureSegmentButton
+                    accessibilityLabel="Old Testament"
+                    active={activeSection === 'old'}
+                    disabled={isGuided}
+                    onPress={switchToOldTestament}
+                    progress={sectionProgress}
+                    style={s.sectionTabBtn}
+                    targetProgress={1}
+                  >
+                    <SegmentLabel
+                      activeColor="#8B6B2F"
+                      label="Old Testament"
+                      progress={sectionProgress}
+                      targetProgress={1}
+                    />
+                  </GestureSegmentButton>
+                </View>
 
-            {/* Book list for selected section */}
-            <BookList
-              books={activeSection === 'new' ? NEW_TESTAMENT : OLD_TESTAMENT}
-              tone={activeSection === 'new' ? 'green' : 'stone'}
-              expandedBookId={expandedBookId}
-              onBook={toggleBook}
-              onChapter={openReader}
-              guidedBookId={isGuided ? 49 : undefined}
-              guidedChapter={isGuided ? 5 : undefined}
-              bookTargetProps={isGuided ? { ref: ephesiansTarget.ref, onLayout: ephesiansTarget.onLayout } : undefined}
-              chapterTargetProps={isGuided ? { ref: chapterFiveTarget.ref, onLayout: chapterFiveTarget.onLayout } : undefined}
-            />
+                <View style={s.contentPaneStack}>
+                  <Reanimated.View
+                    accessibilityElementsHidden={activeSection !== 'new'}
+                    importantForAccessibility={activeSection === 'new' ? 'auto' : 'no-hide-descendants'}
+                    pointerEvents={activeSection === 'new' ? 'auto' : 'none'}
+                    style={[
+                      s.contentPane,
+                      activeSection === 'new' ? s.contentPaneActive : s.contentPaneInactive,
+                      newTestamentPaneMotionStyle,
+                    ]}
+                  >
+                    <BookList
+                      books={NEW_TESTAMENT}
+                      tone="green"
+                      expandedBookId={expandedBookId}
+                      onBook={toggleBook}
+                      onChapter={openReader}
+                      eager={isGuided}
+                      guidedBookId={isGuided ? 49 : undefined}
+                      guidedChapter={isGuided ? 5 : undefined}
+                      bookTargetProps={isGuided ? { ref: ephesiansTarget.ref, onLayout: ephesiansTarget.onLayout } : undefined}
+                      chapterTargetProps={isGuided ? { ref: chapterFiveTarget.ref, onLayout: chapterFiveTarget.onLayout } : undefined}
+                    />
+                  </Reanimated.View>
+
+                  {(oldTestamentPrepared || activeSection === 'old') && (
+                    <Reanimated.View
+                      accessibilityElementsHidden={activeSection !== 'old'}
+                      importantForAccessibility={activeSection === 'old' ? 'auto' : 'no-hide-descendants'}
+                      pointerEvents={activeSection === 'old' ? 'auto' : 'none'}
+                      style={[
+                        s.contentPane,
+                        activeSection === 'old' ? s.contentPaneActive : s.contentPaneInactive,
+                        oldTestamentPaneMotionStyle,
+                      ]}
+                    >
+                      <BookList
+                        books={OLD_TESTAMENT}
+                        tone="stone"
+                        expandedBookId={expandedBookId}
+                        onBook={toggleBook}
+                        onChapter={openReader}
+                      />
+                    </Reanimated.View>
+                  )}
+                </View>
+              </View>
+            </Reanimated.View>
+
+            {(psalterPrepared || tab === 'psalter') && PSALMS_BOOK && (
+              <Reanimated.View
+                accessibilityElementsHidden={tab !== 'psalter'}
+                importantForAccessibility={tab === 'psalter' ? 'auto' : 'no-hide-descendants'}
+                pointerEvents={tab === 'psalter' ? 'auto' : 'none'}
+                style={[
+                  s.contentPane,
+                  tab === 'psalter' ? s.contentPaneActive : s.contentPaneInactive,
+                  psalterPaneMotionStyle,
+                ]}
+              >
+                <PsalterBrowse
+                  psalms={ALL_PSALM_NUMBERS}
+                  results={EMPTY_SEARCH_RESULTS}
+                  searching={false}
+                  cardWidth={psalmCardWidth}
+                  onPsalm={openPsalm}
+                  onResult={openResult}
+                />
+              </Reanimated.View>
+            )}
           </View>
+        </View>
+
+        {!!query && (
+          <Reanimated.View
+            key={browseContentKey}
+            entering={FadeIn.duration(170).easing(Easing.out(Easing.cubic))}
+          >
+            {tab === 'psalter' && PSALMS_BOOK ? (
+              <PsalterBrowse
+                psalms={psalmNumbers}
+                results={searchResults}
+                searching
+                cardWidth={psalmCardWidth}
+                onPsalm={openPsalm}
+                onResult={openResult}
+              />
+            ) : (
+              <SearchPanel
+                bookMatches={bookMatches}
+                results={searchResults}
+                onBook={openReader}
+                onResult={openResult}
+              />
+            )}
+          </Reanimated.View>
         )}
       </ScrollView>
 
@@ -908,30 +1196,156 @@ export default function HolyScriptureView({
   );
 }
 
-function TabButton({
-  active, icon, label, onPress,
+function GestureSegmentButton({
+  accessibilityLabel,
+  active,
+  children,
+  disabled = false,
+  onPress,
+  progress,
+  style,
+  targetProgress,
 }: {
+  accessibilityLabel: string;
   active: boolean;
-  icon: React.ReactNode;
-  label: string;
+  children: React.ReactNode;
+  disabled?: boolean;
   onPress: () => void;
+  progress: SharedValue<number>;
+  style?: StyleProp<ViewStyle>;
+  targetProgress: number;
 }) {
+  const pressProgress = useSharedValue(0);
+  const pressMotionStyle = useAnimatedStyle(() => ({
+    opacity: 1 - pressProgress.value * 0.16,
+    transform: [{ scale: 1 - pressProgress.value * 0.015 }],
+  }));
+  const activateFromAccessibility = useCallback(() => {
+    if (disabled) return;
+    progress.value = withTiming(targetProgress, SEGMENT_SLIDE);
+    onPress();
+  }, [disabled, onPress, progress, targetProgress]);
+  const tapGesture = useMemo(() => Gesture.Tap()
+    .enabled(!disabled)
+    .onBegin(() => {
+      pressProgress.value = withTiming(1, SEGMENT_PRESS_IN);
+    })
+    .onFinalize((_event, success) => {
+      pressProgress.value = withTiming(0, SEGMENT_PRESS_OUT);
+      if (success) {
+        progress.value = withTiming(targetProgress, SEGMENT_SLIDE);
+        runOnJS(onPress)();
+      }
+    }), [disabled, onPress, pressProgress, progress, targetProgress]);
+
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={[s.tabBtn, active && s.tabBtnActive]}>
-      {icon}
-      <Text style={[s.tabText, active && s.tabTextActive]}>{label}</Text>
-    </TouchableOpacity>
+    <GestureDetector gesture={tapGesture}>
+      <Reanimated.View
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole="button"
+        accessibilityState={{ disabled, selected: active }}
+        accessible
+        focusable={!disabled}
+        onAccessibilityTap={activateFromAccessibility}
+        style={[style, pressMotionStyle]}
+      >
+        {children}
+      </Reanimated.View>
+    </GestureDetector>
   );
 }
 
-function BookList({
-  books, tone, expandedBookId, onBook, onChapter, guidedBookId, guidedChapter, bookTargetProps, chapterTargetProps,
+function TabButton({
+  accessibilityLabel,
+  active,
+  disabled,
+  Icon,
+  label,
+  onPress,
+  progress,
+  targetProgress,
+}: {
+  accessibilityLabel: string;
+  active: boolean;
+  disabled?: boolean;
+  Icon: React.ComponentType<{ s?: number; c?: string; w?: number }>;
+  label: string;
+  onPress: () => void;
+  progress: SharedValue<number>;
+  targetProgress: number;
+}) {
+  const selectedVisualStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.min(1, Math.abs(progress.value - targetProgress)),
+  }));
+  const mutedVisualStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, Math.abs(progress.value - targetProgress)),
+  }));
+  const labelVisualStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      Math.min(1, Math.abs(progress.value - targetProgress)),
+      [0, 1],
+      [GREEN, '#A8A29E'],
+    ),
+  }));
+
+  return (
+    <GestureSegmentButton
+      accessibilityLabel={accessibilityLabel}
+      active={active}
+      disabled={disabled}
+      onPress={onPress}
+      progress={progress}
+      style={[s.tabBtn, active && s.tabBtnActive]}
+      targetProgress={targetProgress}
+    >
+      <View style={s.segmentIconBox}>
+        <Reanimated.View style={[s.segmentIconLayer, mutedVisualStyle]}>
+          <Icon s={14} c="#A8A29E" />
+        </Reanimated.View>
+        <Reanimated.View style={[s.segmentIconLayer, selectedVisualStyle]}>
+          <Icon s={14} c={GREEN} />
+        </Reanimated.View>
+      </View>
+      <Reanimated.Text style={[s.tabText, labelVisualStyle]}>{label}</Reanimated.Text>
+    </GestureSegmentButton>
+  );
+}
+
+function SegmentLabel({
+  activeColor,
+  label,
+  progress,
+  targetProgress,
+}: {
+  activeColor: string;
+  label: string;
+  progress: SharedValue<number>;
+  targetProgress: number;
+}) {
+  const labelMotionStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      Math.min(1, Math.abs(progress.value - targetProgress)),
+      [0, 1],
+      [activeColor, '#A8A29E'],
+    ),
+  }));
+
+  return (
+    <Reanimated.Text style={[s.sectionTabText, labelMotionStyle]}>
+      {label}
+    </Reanimated.Text>
+  );
+}
+
+const BookList = React.memo(function BookList({
+  books, tone, expandedBookId, onBook, onChapter, eager = false, guidedBookId, guidedChapter, bookTargetProps, chapterTargetProps,
 }: {
   books: BibleBook[];
   tone: 'green' | 'stone';
   expandedBookId: number | null;
   onBook: (book: BibleBook) => void;
   onChapter: (book: BibleBook, chapter?: number) => void;
+  eager?: boolean;
   guidedBookId?: number;
   guidedChapter?: number;
   bookTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
@@ -939,6 +1353,29 @@ function BookList({
 }) {
   const isGreen = tone === 'green';
   const panelColors = (isGreen ? ['#FCFDF9', '#F4F8EF'] : ['#FFFDF9', '#F8F4EC']) as [string, string];
+  const [visibleCount, setVisibleCount] = useState(() => eager
+    ? books.length
+    : Math.min(INITIAL_BOOK_RENDER_COUNT, books.length));
+
+  // The first screenful is complete immediately. Everything below it is
+  // mounted in short batches so a Testament switch never creates every
+  // gradient, SVG motif, and animated card in one native commit.
+  useEffect(() => {
+    if (eager) {
+      if (visibleCount !== books.length) setVisibleCount(books.length);
+      return undefined;
+    }
+    if (visibleCount >= books.length) return undefined;
+
+    return scheduleContentBatch(() => {
+      startTransition(() => {
+        setVisibleCount(current => Math.min(books.length, current + BOOK_RENDER_BATCH_SIZE));
+      });
+    }, visibleCount <= INITIAL_BOOK_RENDER_COUNT
+      ? FIRST_CONTENT_BATCH_DELAY_MS
+      : NEXT_CONTENT_BATCH_DELAY_MS);
+  }, [books.length, eager, visibleCount]);
+
   return (
     <LinearGradient
       colors={panelColors}
@@ -953,114 +1390,69 @@ function BookList({
           { borderColor: isGreen ? 'rgba(94,123,85,0.13)' : 'rgba(180,155,103,0.15)' },
         ]}
       />
-      {books.map(book => (
-        <View key={book.id} style={s.bookListItem}>
-          <View {...(book.id === guidedBookId ? bookTargetProps : undefined)}>
-            <PremiumBookCard
-              book={book}
-              tone={tone}
-              expanded={expandedBookId === book.id}
-              onPress={() => onBook(book)}
-            />
-          </View>
-          {expandedBookId === book.id && (
-            <View style={s.chapterPanelWrap}>
-              <ChapterPanel
-                book={book}
-                tone={tone}
-                onChapter={chapter => onChapter(book, chapter)}
-                guidedChapter={book.id === guidedBookId ? guidedChapter : undefined}
-                chapterTargetProps={book.id === guidedBookId ? chapterTargetProps : undefined}
-              />
-            </View>
-          )}
-        </View>
+      {books.slice(0, visibleCount).map(book => (
+        <BookListItem
+          key={book.id}
+          book={book}
+          bookTargetProps={book.id === guidedBookId ? bookTargetProps : undefined}
+          chapterTargetProps={book.id === guidedBookId ? chapterTargetProps : undefined}
+          expanded={expandedBookId === book.id}
+          guidedChapter={book.id === guidedBookId ? guidedChapter : undefined}
+          onBook={onBook}
+          onChapter={onChapter}
+          tone={tone}
+        />
       ))}
     </LinearGradient>
   );
-}
+});
 
-function BookSection({
-  title, count, books, open, accent, tone, expandedBookId, onToggle, onBook, onChapter,
+const BookListItem = React.memo(function BookListItem({
+  book,
+  bookTargetProps,
+  chapterTargetProps,
+  expanded,
+  guidedChapter,
+  onBook,
+  onChapter,
+  tone,
 }: {
-  title: string;
-  count: number;
-  books: BibleBook[];
-  open: boolean;
-  accent: string;
-  tone: 'green' | 'stone';
-  expandedBookId: number | null;
-  onToggle: () => void;
+  book: BibleBook;
+  bookTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  chapterTargetProps?: { ref: React.Ref<any>; onLayout: (event: any) => void };
+  expanded: boolean;
+  guidedChapter?: number;
   onBook: (book: BibleBook) => void;
   onChapter: (book: BibleBook, chapter?: number) => void;
+  tone: 'green' | 'stone';
 }) {
-  const isGreen = tone === 'green';
-  const sectionColors = (isGreen ? ['#F6FAF3', '#EBF4E5'] : ['#FAF7F2', '#F2EBE0']) as [string, string];
-  const panelColors = (isGreen ? ['#F4F9F0', '#EDF5E7'] : ['#F8F4ED', '#F2EBE0']) as [string, string];
+  const handleBook = useCallback(() => onBook(book), [book, onBook]);
+  const handleChapter = useCallback((chapter: number) => onChapter(book, chapter), [book, onChapter]);
 
   return (
-    <View style={s.sectionWrap}>
-      <TouchableOpacity onPress={onToggle} activeOpacity={0.86}>
-        <LinearGradient
-          colors={sectionColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={[
-            s.bookSection,
-            {
-              borderColor: isGreen ? '#D8E3D4' : '#E8E0D4',
-              shadowOpacity: open ? 0.06 : 0.04,
-            },
-          ]}
-        >
-          <View style={s.sectionHead}>
-            <Text style={[s.sectionTitle, { color: isGreen ? '#2E4726' : '#3A3020' }]}>{title}</Text>
-            <View style={s.sectionRight}>
-              <View style={[s.countPill, { borderColor: isGreen ? '#D7E2D3' : '#ECE4D6' }]}>
-                <Text style={[s.countText, { color: isGreen ? '#72876A' : '#B49B67' }]}>{count}</Text>
-              </View>
-              <View style={[s.chevronCircle, { borderColor: isGreen ? '#D7E2D2' : '#E8DED0' }]}>
-                <View style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}>
-                  <ChevronDown s={16} c={accent} />
-                </View>
-              </View>
-            </View>
-          </View>
-        </LinearGradient>
-      </TouchableOpacity>
-
-      {open && (
-        <LinearGradient
-          colors={panelColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={[
-            s.bookListPanel,
-            { borderColor: isGreen ? '#DCE5D7' : '#ECE4D7' },
-          ]}
-        >
-          {books.map(book => (
-            <React.Fragment key={book.id}>
-              <PremiumBookCard
-                book={book}
-                tone={tone}
-                expanded={expandedBookId === book.id}
-                onPress={() => onBook(book)}
-              />
-              {expandedBookId === book.id && (
-                <ChapterPanel
-                  book={book}
-                  tone={tone}
-                  onChapter={chapter => onChapter(book, chapter)}
-                />
-              )}
-            </React.Fragment>
-          ))}
-        </LinearGradient>
+    <View style={s.bookListItem}>
+      <View {...bookTargetProps}>
+        <PremiumBookCard
+          book={book}
+          tone={tone}
+          expanded={expanded}
+          onPress={handleBook}
+        />
+      </View>
+      {expanded && (
+        <View style={s.chapterPanelWrap}>
+          <ChapterPanel
+            book={book}
+            tone={tone}
+            onChapter={handleChapter}
+            guidedChapter={guidedChapter}
+            chapterTargetProps={chapterTargetProps}
+          />
+        </View>
       )}
     </View>
   );
-}
+});
 
 // The doors carry their own faint light: rays for what is treasured,
 // ruling lines for what is written and read.
@@ -1093,48 +1485,17 @@ function BookmarkRibbon() {
 function TestamentMotif({ tone }: { tone: 'green' | 'stone' }) {
   const isGreen = tone === 'green';
   const stroke = isGreen ? '#5E7B55' : '#B49B67';
-  const W = 200;
-  const H = 100;
 
   return (
     <View pointerEvents="none" style={s.motifAnchor}>
-      <Svg width={W} height={H}>
-        {isGreen
-          ? Array.from({ length: 6 }).map((_, index) => {
-            const offset = index * 26;
-            return (
-              <Line
-                key={index}
-                x1={W - offset}
-                y1={-6}
-                x2={W - offset - 62}
-                y2={H + 6}
-                stroke={stroke}
-                strokeOpacity={0.075}
-                strokeWidth={1}
-              />
-            );
-          })
-          : Array.from({ length: 5 }).map((_, index) => {
-            // The same rake as the New Testament, running the other way:
-            // the elder half of the canon, lit from the other side. This was
-            // horizontal scroll-ruling, but the shelf card's leader dots run
-            // horizontally too, so the two ran parallel and the card read as
-            // mis-registered ruling rather than as a lit page.
-            const offset = index * 26;
-            return (
-              <Line
-                key={index}
-                x1={W - offset - 62}
-                y1={-6}
-                x2={W - offset}
-                y2={H + 6}
-                stroke={stroke}
-                strokeOpacity={0.085}
-                strokeWidth={1}
-              />
-            );
-          })}
+      <Svg width={200} height={100}>
+        <Path
+          d={isGreen ? NEW_TESTAMENT_MOTIF_PATH : OLD_TESTAMENT_MOTIF_PATH}
+          fill="none"
+          stroke={stroke}
+          strokeOpacity={isGreen ? 0.075 : 0.085}
+          strokeWidth={1}
+        />
       </Svg>
     </View>
   );
@@ -1403,7 +1764,7 @@ function KathismaHead({ label }: { label: string }) {
   );
 }
 
-function PsalterBrowse({
+const PsalterBrowse = React.memo(function PsalterBrowse({
   psalms, results, searching, onPsalm, onResult,
 }: {
   psalms: number[];
@@ -1416,6 +1777,21 @@ function PsalterBrowse({
   // Grouped from whatever the search left standing, so a filtered Psalter
   // keeps its divisions and simply drops the ones nothing matched in.
   const sections = useMemo(() => groupPsalmsIntoKathismata(psalms), [psalms]);
+  const [visibleSectionCount, setVisibleSectionCount] = useState(() =>
+    Math.min(INITIAL_PSALTER_SECTION_COUNT, sections.length));
+
+  useEffect(() => {
+    if (searching || visibleSectionCount >= sections.length) return undefined;
+
+    return scheduleContentBatch(() => {
+      startTransition(() => {
+        setVisibleSectionCount(current =>
+          Math.min(sections.length, current + PSALTER_RENDER_BATCH_SIZE));
+      });
+    }, visibleSectionCount <= INITIAL_PSALTER_SECTION_COUNT
+      ? FIRST_CONTENT_BATCH_DELAY_MS
+      : NEXT_CONTENT_BATCH_DELAY_MS);
+  }, [searching, sections.length, visibleSectionCount]);
 
   return (
     <View style={s.psalterWrap}>
@@ -1426,11 +1802,14 @@ function PsalterBrowse({
           end={{ x: 0, y: 1 }}
           style={s.psalmPanel}
         >
-          {sections.map((section, index) => (
-            <View key={section.key} style={index > 0 && s.kathismaBlock}>
-              <KathismaHead label={section.label} />
-              <PsalmRows psalms={section.psalms} onPsalm={onPsalm} />
-            </View>
+          {sections.slice(0, visibleSectionCount).map((section, index) => (
+            <KathismaSection
+              key={section.key}
+              first={index === 0}
+              label={section.label}
+              onPsalm={onPsalm}
+              psalms={section.psalms}
+            />
           ))}
         </LinearGradient>
       )}
@@ -1446,7 +1825,7 @@ function PsalterBrowse({
               style={s.resultCard}
             >
               <Text style={s.resultRef}>{result.bookName} {result.chapter}:{result.verse}</Text>
-              <Text style={s.resultText} numberOfLines={3}>{result.text}</Text>
+              <ReadableText style={s.resultText} numberOfLines={3}>{result.text}</ReadableText>
             </TouchableOpacity>
           ))}
         </View>
@@ -1460,7 +1839,26 @@ function PsalterBrowse({
       )}
     </View>
   );
-}
+});
+
+const KathismaSection = React.memo(function KathismaSection({
+  first,
+  label,
+  onPsalm,
+  psalms,
+}: {
+  first: boolean;
+  label: string;
+  onPsalm: (psalm: number) => void;
+  psalms: number[];
+}) {
+  return (
+    <View style={!first && s.kathismaBlock}>
+      <KathismaHead label={label} />
+      <PsalmRows psalms={psalms} onPsalm={onPsalm} />
+    </View>
+  );
+});
 
 function SearchPanel({
   bookMatches, results, onBook, onResult,
@@ -1495,7 +1893,7 @@ function SearchPanel({
               style={s.resultCard}
             >
               <Text style={s.resultRef}>{result.bookName} {result.chapter}:{result.verse}</Text>
-              <Text style={s.resultText} numberOfLines={3}>{result.text}</Text>
+              <ReadableText style={s.resultText} numberOfLines={3}>{result.text}</ReadableText>
             </TouchableOpacity>
           ))}
         </View>
@@ -1655,8 +2053,9 @@ const s = StyleSheet.create({
   },
   tabBtn: { flex: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, zIndex: 1 },
   tabBtnActive: {},
+  segmentIconBox: { width: 14, height: 14, position: 'relative' },
+  segmentIconLayer: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   tabText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 2.2, color: '#A8A29E' },
-  tabTextActive: { color: GREEN },
   searchBox: {
     height: 52,
     borderRadius: 17,
@@ -1669,6 +2068,17 @@ const s = StyleSheet.create({
     gap: 10,
   },
   searchInput: { flex: 1, height: 52, fontFamily: F.serif, fontSize: 18, lineHeight: 24, color: '#3D3229' },
+  cachedBrowseHost: { width: '100%' },
+  cachedBrowseHidden: { display: 'none' },
+  contentPaneStack: { width: '100%', position: 'relative' },
+  contentPane: { width: '100%' },
+  contentPaneActive: { position: 'relative' },
+  contentPaneInactive: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
   sections: { gap: 2 },
 
   sectionTabWrap: {
@@ -1700,53 +2110,10 @@ const s = StyleSheet.create({
     zIndex: 1,
   },
   sectionTabText: {
-    fontFamily: F.serif,
+    fontFamily: F.serifMedium,
     fontSize: 16,
     color: '#A8A29E',
     letterSpacing: 0.2,
-  },
-  sectionWrap: {
-    gap: 0,
-  },
-  bookSection: {
-    borderRadius: 23,
-    borderWidth: 1,
-    overflow: 'hidden',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 28,
-    elevation: 2,
-  },
-  sectionHead: {
-    minHeight: 56,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  sectionTitle: { flex: 1, fontFamily: F.serifMedium, fontSize: 21, letterSpacing: 0.2 },
-  sectionRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  countPill: {
-    minWidth: 46,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(17,24,39,0.07)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  countText: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.6 },
-  chevronCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(17,24,39,0.07)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   bookListPanel: {
     marginTop: 10,

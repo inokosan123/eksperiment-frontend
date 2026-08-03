@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   LayoutChangeEvent, StyleSheet, Text, View,
   type StyleProp, type ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
-  cancelAnimation,
-  Easing,
   useAnimatedProps,
   useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
@@ -21,12 +21,22 @@ import { F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import type { SectionCardIcon } from '@/components/shared/sectionCardData';
 import {
+  windowedHalfSinePulse,
+} from '@/components/shared/use-continuous-animation-clock';
+import { continuousAnimationElapsedNow } from '@/components/shared/continuous-animation-time';
+import {
+  AmbientMotionProvider,
+  useAmbientMotion,
+} from '@/components/shared/ambient-motion';
+import {
+  estimateRibbonHeight,
   RIBBON,
   placeRibbonStars,
   ribbonCardRhythm,
   ribbonEmblem,
   type PlacedStar,
 } from '@/components/shared/ribbonCardGeometry';
+import { scaleReadableLineHeight, useReadableFontScale } from '@/components/shared/typographyScale';
 
 /* ─────────────────────────────────────────────────────────────
  * RIBBON — the section card.
@@ -34,7 +44,7 @@ import {
  * The plate runs from near-white at the shoulder to full, saturated
  * colour at the foot, and the emblem is large and unashamed in that
  * colour, bleeding off the right edge. Two constellations kindle on
- * it, on two clocks that never keep time with each other.
+ * it, on two tempos derived from one continuous tabs clock.
  *
  * The rules it is built on:
  *
@@ -55,16 +65,24 @@ import {
  *   that is provably clean at every size (`tests/ribbon-card.test.ts`)
  *   rather than checked by eye on one device.
  *
- * · SIX SHARE A SCREEN. So: two clocks per card and nothing else, the
- *   whole constellation in ONE <Svg> rather than eight, opacity only,
- *   never scale, and the plate, its gradient and its sheen drawn once
- *   and never animated.
+ * · EVERY MAIN STACK SHARES ONE CLOCK. So: one wall-clock for the whole tabs
+ *   navigator, no per-card fallback clocks while these cards are in the app,
+ *   no animated worklets at all on dormant cards, and the whole constellation
+ *   in ONE <Svg> rather than eight. Only opacity moves; the plate, gradient
+ *   and sheen are drawn once and never animated.
  * ───────────────────────────────────────────────────────────── */
 
 /** How long each constellation stays lit, as a share of its cycle. */
 const WINDOW = { shoulder: 0.34, foot: 0.42 } as const;
 /** 16 against 10: the two clusters only realign every eighty seconds. */
 const PERIOD = { shoulder: 16000, foot: 10000 } as const;
+
+function useMotionSnapshotElapsed(running: boolean) {
+  return useMemo(
+    () => ({ running, elapsed: continuousAnimationElapsedNow() }),
+    [running],
+  ).elapsed;
+}
 
 function toHsl(hex: string): { h: number; s: number; l: number } {
   const m = hex.replace('#', '');
@@ -121,36 +139,166 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
  * the eye can find, and giving that up is what lets the whole field share
  * one Svg.
  */
-function Star({
-  star, clock, color, still, offset,
+const AnimatedStar = memo(function AnimatedStar({
+  star, clock, color, duration, offset, initialOpacity,
 }: {
   star: PlacedStar;
   clock: SharedValue<number>;
   color: string;
-  still: boolean;
+  duration: number;
+  initialOpacity: number;
   /** where this card sits in the stack's rhythm */
   offset: number;
 }) {
   const window = WINDOW[star.clock];
   const animatedProps = useAnimatedProps(() => {
-    if (still) return { opacity: star.peak * 0.5 };
-    const p = (clock.value + star.phase + offset) % 1;
-    const on = p < window ? Math.sin((p / window) * Math.PI) : 0;
+    const on = windowedHalfSinePulse(
+      clock.value,
+      duration,
+      star.phase + offset,
+      window,
+    );
     return { opacity: on * star.peak };
   });
 
-  return <AnimatedPath d={star.d} fill={color} animatedProps={animatedProps} />;
+  return (
+    <AnimatedPath
+      d={star.d}
+      fill={color}
+      opacity={initialOpacity}
+      animatedProps={animatedProps}
+    />
+  );
+});
+
+const Star = memo(function Star({
+  star,
+  clock,
+  color,
+  duration,
+  running,
+  offset,
+}: {
+  star: PlacedStar;
+  clock: SharedValue<number>;
+  color: string;
+  duration: number;
+  running: boolean;
+  offset: number;
+}) {
+  const frozenElapsed = useMotionSnapshotElapsed(running);
+  const frozenOpacity = useMemo(() => (
+    windowedHalfSinePulse(
+      frozenElapsed,
+      duration,
+      star.phase + offset,
+      WINDOW[star.clock],
+    ) * star.peak
+  ), [duration, frozenElapsed, offset, star.clock, star.peak, star.phase]);
+
+  if (!running) {
+    return <Path d={star.d} fill={color} opacity={frozenOpacity} />;
+  }
+  return (
+    <AnimatedStar
+      star={star}
+      clock={clock}
+      color={color}
+      duration={duration}
+      initialOpacity={frozenOpacity}
+      offset={offset}
+    />
+  );
+});
+
+/** Compatibility alias while card stacks move to local motion zones. */
+export const RibbonMotionProvider = memo(function RibbonMotionProvider({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <AmbientMotionProvider active={active}>
+      {children}
+    </AmbientMotionProvider>
+  );
+});
+
+/** The mark's resting opacity; it kindles 0.16 above this. */
+const MARK_REST = 0.26;
+
+type RibbonMarkProps = {
+  Decor: SectionCardIcon;
+  color: string;
+  size: number;
+  right: number;
+  bottom: number;
+  upright?: boolean;
+  rest: number;
+  running: boolean;
+  clock: SharedValue<number>;
+  duration: number;
+  offset: number;
+};
+
+function AnimatedRibbonMark({
+  Decor, color, size, right, bottom, upright, rest, clock, duration, offset,
+  initialOpacity,
+}: Omit<RibbonMarkProps, 'running'> & { initialOpacity: number }) {
+  const markStyle = useAnimatedStyle(() => {
+    const near = windowedHalfSinePulse(
+      clock.value,
+      duration,
+      0.71 + offset,
+      WINDOW.foot,
+    );
+    return { opacity: rest + near * 0.16 };
+  }, [rest]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        s.mark,
+        { right, bottom, opacity: initialOpacity },
+        upright && s.markUpright,
+        markStyle,
+      ]}
+    >
+      <Decor s={size} c={color} w={1.2} />
+    </Animated.View>
+  );
 }
 
-function useClock(reduceMotion: boolean, duration: number) {
-  const clock = useSharedValue(0);
-  useEffect(() => {
-    if (reduceMotion) return;
-    clock.value = 0;
-    clock.value = withRepeat(withTiming(1, { duration, easing: Easing.linear }), -1, false);
-    return () => cancelAnimation(clock);
-  }, [clock, duration, reduceMotion]);
-  return clock;
+function RibbonMark(props: RibbonMarkProps) {
+  const {
+    Decor, color, size, right, bottom, upright, rest, running, duration, offset,
+  } = props;
+  const frozenElapsed = useMotionSnapshotElapsed(running);
+  const frozenOpacity = useMemo(() => {
+    const near = windowedHalfSinePulse(
+      frozenElapsed,
+      duration,
+      0.71 + offset,
+      WINDOW.foot,
+    );
+    return rest + near * 0.16;
+  }, [duration, frozenElapsed, offset, rest]);
+  if (running) return <AnimatedRibbonMark {...props} initialOpacity={frozenOpacity} />;
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        s.mark,
+        { right, bottom, opacity: frozenOpacity },
+        upright && s.markUpright,
+      ]}
+    >
+      <Decor s={size} c={color} w={1.2} />
+    </View>
+  );
 }
 
 /**
@@ -171,6 +319,21 @@ export type RibbonCardProps = {
   Decor?: SectionCardIcon;
   decorColor?: string;
   decorUpright?: boolean;
+  /**
+   * Overrides for where the mark sits and how strongly it rests.
+   *
+   * The default is `ribbonEmblem()`: large, and hanging 17% off the right edge
+   * and 20% off the foot. That is right for a mark whose meaning survives being
+   * cropped — a star, a cross, an open book — and wrong for one that is a whole
+   * object with a bottom, like the prayer rope on the Jesus Prayer card, whose
+   * tail and cross are simply cut away. Such a card pulls its mark in off both
+   * edges and gives it a little more ink to make up for being smaller.
+   *
+   * ⚠ Opt-in and per-field. Every card that omits it keeps the lab's geometry
+   * to the point, which is the whole reason this is a prop and not an edit to
+   * `RIBBON`.
+   */
+  decorPlacement?: { size?: number; right?: number; bottom?: number; rest?: number };
   /** A live status pill beside the eyebrow — Focus's "PROTECTED", and such. */
   chip?: ReactNode;
   onPress?: () => void;
@@ -180,23 +343,43 @@ export type RibbonCardProps = {
    * keeps identical time with every other.
    */
   index?: number;
+  /** False keeps the finished design visible but pauses its repeating clocks. */
+  active?: boolean;
+  /** Lets only the human-facing title and description follow iOS text size. */
+  readableCopy?: boolean;
+  /** Exact parent width when known, used before native onLayout reports. */
+  estimatedWidth?: number;
+  /** Reports the card frame to a parent that budgets off-screen motion. */
+  onFrameLayout?: (event: LayoutChangeEvent) => void;
   style?: StyleProp<ViewStyle>;
 };
 
-export default function RibbonSectionCard({
-  label, title, description, titleColor, arrowBg,
-  Decor, decorColor, decorUpright, chip, onPress, index = 0, style,
-}: RibbonCardProps) {
-  const reduceMotion = useReducedMotion();
-  // Its own moment in the cycle, and its own slightly different length of
-  // cycle, so it never falls back into step with the card above it.
-  const rhythm = ribbonCardRhythm(index);
-  const footClock = useClock(reduceMotion, PERIOD.foot * rhythm.stretch);
-  const shoulderClock = useClock(reduceMotion, PERIOD.shoulder * rhythm.stretch);
+type RibbonCardRuntimeProps = RibbonCardProps & {
+  clock: SharedValue<number>;
+  motionEnabled: boolean;
+};
 
-  // The plate's own size. Nothing decorative can be placed until it is known,
-  // and everything decorative follows from it.
-  const [plate, setPlate] = useState({ w: 0, h: 0 });
+function RibbonSectionCardContent({
+  label, title, description, titleColor, arrowBg,
+  Decor, decorColor, decorUpright, decorPlacement, chip, onPress, index = 0,
+  estimatedWidth = 326, onFrameLayout, style, clock, motionEnabled,
+  readableCopy = false,
+}: RibbonCardRuntimeProps) {
+  const systemReadableScale = useReadableFontScale();
+  const readableScale = readableCopy ? systemReadableScale : 1;
+  // Its own moment in the cycle, and its own slightly different length of
+  // cycle, derived from the shared tabs clock so it never falls back into
+  // step with the card above it or resets after a viewport pause.
+  const rhythm = useMemo(() => ribbonCardRhythm(index), [index]);
+
+  const fallbackPlate = useMemo(() => {
+    const w = Math.max(240, estimatedWidth);
+    return { w, h: estimateRibbonHeight(w, description, readableCopy ? readableScale : undefined) };
+  }, [description, estimatedWidth, readableCopy, readableScale]);
+  // The exact estimated geometry is usable on the first frame. Native layout
+  // only replaces it when the measured plate is materially different, which
+  // avoids the previous mount-time geometry commit on normal phone widths.
+  const [measuredPlate, setMeasuredPlate] = useState<{ w: number; h: number } | null>(null);
   // How far the eyebrow row actually reaches. A status pill beside the words,
   // or a large system font size, both push it past anything a constant could
   // guess — and the pocket star stands immediately after it.
@@ -207,26 +390,47 @@ export default function RibbonSectionCard({
   }, []);
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
-    setPlate(prev =>
-      Math.abs(prev.w - width) < 0.5 && Math.abs(prev.h - height) < 0.5
+    const matchesEstimate = Math.abs(fallbackPlate.w - width) < 0.5
+      && Math.abs(fallbackPlate.h - height) < 0.5;
+    setMeasuredPlate(prev => {
+      if (matchesEstimate) return prev === null ? prev : null;
+      return prev != null
+        && Math.abs(prev.w - width) < 0.5
+        && Math.abs(prev.h - height) < 0.5
         ? prev
-        : { w: width, h: height });
-  }, []);
+        : { w: width, h: height };
+    });
+    onFrameLayout?.(e);
+  }, [fallbackPlate.h, fallbackPlate.w, onFrameLayout]);
 
   const tint = decorColor ?? titleColor;
-  const measured = plate.w > 0 && plate.h > 0;
-  const stars = measured ? placeRibbonStars(plate.w, plate.h, labelEnd) : [];
-  const emblem = measured ? ribbonEmblem(plate.w, plate.h) : null;
-
-  // The emblem's light swells as the wave reaches the two stars nearest it,
-  // off the same clock — so the card reads as one system rather than two
-  // things moving near each other.
-  const markStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return { opacity: 0.34 };
-    const p = (footClock.value + 0.71 + rhythm.offset) % 1;
-    const near = p < WINDOW.foot ? Math.sin((p / WINDOW.foot) * Math.PI) : 0;
-    return { opacity: 0.26 + near * 0.16 };
-  });
+  const geometryPlate = measuredPlate ?? fallbackPlate;
+  const fallbackLabelEnd = useMemo(() => {
+    const textEnd = RIBBON.pad + label.length * 8.6 + (chip ? 96 : 0);
+    const arrowLeft = geometryPlate.w - RIBBON.arrowInset - RIBBON.arrowSize;
+    return Math.min(textEnd, arrowLeft - 8);
+  }, [chip, geometryPlate.w, label.length]);
+  const resolvedLabelEnd = labelEnd ?? fallbackLabelEnd;
+  const stars = useMemo(
+    () => placeRibbonStars(geometryPlate.w, geometryPlate.h, resolvedLabelEnd),
+    [geometryPlate.h, geometryPlate.w, resolvedLabelEnd],
+  );
+  const emblem = useMemo(() => {
+    const placed = ribbonEmblem(geometryPlate.w, geometryPlate.h);
+    return {
+      size: decorPlacement?.size ?? placed.size,
+      right: decorPlacement?.right ?? placed.right,
+      bottom: decorPlacement?.bottom ?? placed.bottom,
+    };
+  }, [decorPlacement?.bottom, decorPlacement?.right, decorPlacement?.size, geometryPlate.h, geometryPlate.w]);
+  const palette = useMemo(() => ({
+    border: lit(tint, 74, 62),
+    gradient: [lit(tint, 97), lit(tint, 88), lit(tint, 76, 76)] as const,
+    mark: deep(tint, 42),
+    star: deep(tint, 51),
+    label: deep(tint, 36),
+    description: deep(tint, 32),
+  }), [tint]);
 
   return (
     <TouchableOpacity
@@ -234,10 +438,10 @@ export default function RibbonSectionCard({
       disabled={!onPress}
       onLayout={onLayout}
       activeOpacity={0.86}
-      style={[s.plate, { borderColor: lit(tint, 74, 62) }, style]}
+      style={[s.plate, { borderColor: palette.border }, style]}
     >
       <LinearGradient
-        colors={[lit(tint, 97), lit(tint, 88), lit(tint, 76, 76)]}
+        colors={palette.gradient}
         locations={[0, 0.45, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -259,40 +463,41 @@ export default function RibbonSectionCard({
         pointerEvents="none"
       />
 
-      {Decor && emblem && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            s.mark,
-            { right: emblem.right, bottom: emblem.bottom },
-            decorUpright && s.markUpright,
-            markStyle,
-          ]}
-        >
-          <Decor s={emblem.size} c={deep(tint, 42)} w={1.2} />
-        </Animated.View>
+      {Decor && (
+        <RibbonMark
+          Decor={Decor}
+          color={palette.mark}
+          size={emblem.size}
+          right={emblem.right}
+          bottom={emblem.bottom}
+          upright={decorUpright}
+          rest={decorPlacement?.rest ?? MARK_REST}
+          running={motionEnabled}
+          clock={clock}
+          duration={PERIOD.foot * rhythm.stretch}
+          offset={rhythm.offset}
+        />
       )}
 
       {/* The whole field — both constellations — in a single surface. */}
-      {measured && (
-        <Svg
-          pointerEvents="none"
-          style={StyleSheet.absoluteFill}
-          width={plate.w}
-          height={plate.h}
-        >
-          {stars.map((star, i) => (
-            <Star
-              key={i}
-              star={star}
-              clock={star.clock === 'foot' ? footClock : shoulderClock}
-              color={star.tone === 'light' ? '#FFFFFF' : deep(tint, 51)}
-              still={reduceMotion}
-              offset={rhythm.offset}
-            />
-          ))}
-        </Svg>
-      )}
+      <Svg
+        pointerEvents="none"
+        style={StyleSheet.absoluteFill}
+        width={geometryPlate.w}
+        height={geometryPlate.h}
+      >
+        {stars.map((star, i) => (
+          <Star
+            key={i}
+            star={star}
+            clock={clock}
+            color={star.tone === 'light' ? '#FFFFFF' : palette.star}
+            duration={PERIOD[star.clock] * rhythm.stretch}
+            running={motionEnabled}
+            offset={rhythm.offset}
+          />
+        ))}
+      </Svg>
 
       {!!onPress && (
         <View style={[s.arrow, { backgroundColor: arrowBg }]} pointerEvents="none">
@@ -304,17 +509,49 @@ export default function RibbonSectionCard({
 
       <View style={s.body}>
         <View style={s.labelRow} onLayout={onLabelLayout}>
-          <Text style={[s.label, { color: deep(tint, 36) }]} numberOfLines={1}>{label}</Text>
+          <Text style={[s.label, { color: palette.label }]} numberOfLines={1}>{label}</Text>
           {chip}
         </View>
-        <Text style={[s.title, { color: titleColor }]}>{title}</Text>
+        <Text
+          style={[
+            s.title,
+            readableCopy && {
+              fontSize: 28 * readableScale,
+              lineHeight: scaleReadableLineHeight(28, 32, readableScale),
+            },
+            { color: titleColor },
+          ]}
+        >
+          {title}
+        </Text>
         {!!description && (
-          <Text style={[s.desc, { color: deep(tint, 32) }]}>{description}</Text>
+          <Text
+            style={[
+              s.desc,
+              readableCopy && { fontSize: 16 * readableScale, lineHeight: 23 * readableScale },
+              { color: palette.description },
+            ]}
+          >
+            {description}
+          </Text>
         )}
       </View>
     </TouchableOpacity>
   );
 }
+
+function RibbonSectionCard(props: RibbonCardProps) {
+  const runtime = useAmbientMotion(props.active ?? true);
+  return (
+    <RibbonSectionCardContent
+      {...props}
+      clock={runtime.clock}
+      motionEnabled={runtime.enabled}
+    />
+  );
+}
+
+export default memo(RibbonSectionCard);
 
 const s = StyleSheet.create({
   plate: {

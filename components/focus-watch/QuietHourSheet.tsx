@@ -20,7 +20,8 @@ import {
   formatEndsAt,
   quietHourDefaultSelection,
   startQuietHour,
-  useDayPlan,
+  useDayPlanSelector,
+  type DayPlanState,
   type QuietHourSession,
   type WatchSelection,
 } from './dayPlanStore';
@@ -29,6 +30,11 @@ const MINUTES_STEP = 5;
 const MIN_DURATION = 15;
 const MAX_DURATION = 12 * 60;
 const MIN_EXTENSION = 5;
+const selectQuietHourSheetState = (snapshot: DayPlanState) => snapshot;
+const quietHourSheetStateEqual = (previous: DayPlanState, next: DayPlanState) => (
+  previous.alwaysBlockedApps === next.alwaysBlockedApps
+  && previous.designatedCoreAppIds === next.designatedCoreAppIds
+);
 
 function cloneSelection(selection: WatchSelection): WatchSelection {
   return {
@@ -55,7 +61,7 @@ export default function QuietHourSheet({
   onClose: () => void;
   editingSession?: QuietHourSession | null;
 }) {
-  const state = useDayPlan();
+  const state = useDayPlanSelector(selectQuietHourSheetState, quietHourSheetStateEqual);
   const nativeAvailable = isNativeFocusAvailable();
   const { alwaysBlockedApps } = state;
   const [minutes, setMinutes] = useState(60);

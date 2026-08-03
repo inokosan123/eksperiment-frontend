@@ -1,5 +1,5 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { AppState, View, Text, ScrollView, StyleSheet, TextInput, Keyboard, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { ActivityIndicator, AppState, View, Text, ScrollView, StyleSheet, TextInput, Keyboard, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
@@ -45,7 +45,10 @@ import { hasDailyJournalContent, stripRichTextToPlainText } from './journalLogic
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { buildInstanceId } from '@/components/tasks/taskScheduler';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 import { NativeRichTextEditor } from '@/components/shared/rich-text/native-rich-text-editor';
 import { NativeRichTextDisplay } from '@/components/shared/rich-text/native-rich-text-display';
 import { isNativeRichTextEditorEnabled } from '@/components/shared/rich-text/native-rich-text-feature';
@@ -55,6 +58,7 @@ import {
   useOptionalRichTextEditorCoordinator,
 } from '@/components/shared/rich-text/rich-text-editor-provider';
 import { RichTextKeyboardToolbar } from '@/components/shared/rich-text/rich-text-keyboard-toolbar';
+import { ReadableText, ReadableTextInput } from '@/components/shared/typographyScale';
 import {
   captureDailyJournalSaveSnapshot,
   dailyFreeWritingEditorId,
@@ -459,7 +463,7 @@ function PromptBlock({
       exiting={FadeOut.duration(140)}
     >
       <View style={gp.qRow}>
-        <Text style={gp.question}>{prompt.q}</Text>
+        <ReadableText style={gp.question}>{prompt.q}</ReadableText>
         {!readOnly && (
         <View style={gp.qActions}>
           <View style={gp.arrows}>
@@ -634,7 +638,7 @@ function GuidedPromptsSection({
 
       {!readOnly && (adding ? (
         <Animated.View style={gp.addBox} entering={FadeIn.duration(180)}>
-          <TextInput
+          <ReadableTextInput
             value={draft}
             onChangeText={setDraft}
             placeholder="Type your custom question..."
@@ -786,7 +790,7 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
           >
             <View style={grat.entryTitleRow}>
               <Text style={grat.heart}>♥</Text>
-              <Text style={grat.entryTitle} numberOfLines={2}>{displayTitle}</Text>
+              <ReadableText style={grat.entryTitle} numberOfLines={2}>{displayTitle}</ReadableText>
               {!readOnly && (
                 <TouchableOpacity
                   onPress={() => askDelete(item.id)}
@@ -799,7 +803,7 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
               )}
             </View>
             {!!displayContent && (
-              <Text style={grat.entryContent}>{displayContent}</Text>
+              <ReadableText style={grat.entryContent}>{displayContent}</ReadableText>
             )}
           </Animated.View>
         );
@@ -824,7 +828,7 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
         <Animated.View style={grat.entryCard} entering={FadeIn.duration(180)}>
           <View style={grat.entryTitleRow}>
             <Text style={grat.heart}>♥</Text>
-            <TextInput
+            <ReadableTextInput
               ref={titleInputRef}
               value={draftTitle}
               onChangeText={setDraftTitle}
@@ -843,7 +847,7 @@ function GratitudeSection({ date, readOnly = false }: { date: string; readOnly?:
               <X s={15} c="#DDD6CE" w={2.3} />
             </TouchableOpacity>
           </View>
-          <TextInput
+          <ReadableTextInput
             value={draftContent}
             onChangeText={setDraftContent}
             placeholder="Description (optional)"
@@ -1364,7 +1368,10 @@ const DailyEntryContent = forwardRef<DailyEntrySessionHandle, {
     upsertEntry,
     setJournalSections,
   } = useJournal();
-  const { completeInstance } = useTasks();
+  const routedCompletion = useRoutedTaskCompletion({
+    taskInstanceId: params.taskInstanceId,
+    taskDate: params.taskDate ?? selectedDateKey,
+  });
   const richTextCoordinator = useOptionalRichTextEditorCoordinator();
   const flushDirtyEditors = richTextCoordinator?.flushDirty;
   const clearDirtyEditorIds = richTextCoordinator?.clearDirtyEditorIds;
@@ -1739,7 +1746,6 @@ const DailyEntryContent = forwardRef<DailyEntrySessionHandle, {
       const existingEntry = getEntry(selectedDateKey);
       dismissActiveEditor?.();
       Keyboard.dismiss();
-      await settleCurrentEntry('Finish');
       const entryPatch = await buildCurrentEntryPatch();
       const completionEntry = {
         ...existingEntry,
@@ -1758,9 +1764,12 @@ const DailyEntryContent = forwardRef<DailyEntrySessionHandle, {
         clearDirtyEditorIds?.();
       }
       if (isTaskLaunch && params.taskInstanceId && shouldCompleteTask) {
-        const completionDate = params.taskDate ?? selectedDateKey;
-        await completeInstance(params.taskInstanceId, completionDate);
-        queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
+        const result = await routedCompletion.completeBeforeReturn({
+          persistCritical: () => settleCurrentEntry('Finish'),
+        });
+        if (!result.ok) return;
+      } else {
+        await settleCurrentEntry('Finish');
       }
       router.back();
     } catch (error) {
@@ -1995,7 +2004,9 @@ const DailyEntryContent = forwardRef<DailyEntrySessionHandle, {
           activeOpacity={0.85}
           onPress={() => { void finish(); }}
         >
-          <CheckSmall s={20} c="#fff" w={2.8} />
+          {routedCompletion.showSlowIndicator
+            ? <ActivityIndicator size="small" color="#FFFFFF" />
+            : <CheckSmall s={20} c="#fff" w={2.8} />}
           <Text style={fin.txt}>Finish</Text>
         </TouchableOpacity>
       </View>
@@ -2013,6 +2024,11 @@ const DailyEntryContent = forwardRef<DailyEntrySessionHandle, {
       )}
 
       {nativeEditor && !isReadOnly && <RichTextKeyboardToolbar />}
+      <RoutedTaskCompletionErrorModal
+        visible={routedCompletion.saveErrorVisible}
+        onKeepEditing={routedCompletion.keepEditing}
+        onRetry={routedCompletion.retry}
+      />
     </View>
   );
 });

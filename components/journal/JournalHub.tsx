@@ -11,6 +11,9 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import { toHsl } from '@/components/shared/tone';
+import JournalPen from '@/components/icons/JournalPen';
+import { FreePage, MorningPage } from '@/components/icons/JournalMarks';
 import Reanimated, {
   cancelAnimation,
   Easing,
@@ -29,10 +32,7 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
-  Feather,
-  FileEdit,
   Grid3x3,
-  Pencil,
 } from '@/components/icons/Icons';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import SetAsDailyTaskCard from '@/components/shared/SetAsDailyTaskCard';
@@ -94,8 +94,8 @@ const WRITE_CARDS: WriteCard[] = [
     titleColor: '#6D4F13',
     bodyColor: '#A9863F',
     arrowBg: '#8A5A1A',
-    Decor: Pencil,
-    decorColor: '#B45309',
+    Decor: JournalPen,
+    decorColor: '#A9863F',
     route: '/journal-daily',
   },
   {
@@ -109,7 +109,7 @@ const WRITE_CARDS: WriteCard[] = [
     titleColor: '#3B2F76',
     bodyColor: '#6D5AAE',
     arrowBg: '#2E2478',
-    Decor: Feather,
+    Decor: MorningPage,
     decorColor: '#6D5AAE',
     route: '/journal-morning',
   },
@@ -124,7 +124,7 @@ const WRITE_CARDS: WriteCard[] = [
     titleColor: '#1F4E45',
     bodyColor: '#3D8273',
     arrowBg: '#2A6E5F',
-    Decor: FileEdit,
+    Decor: FreePage,
     decorColor: '#3D8273',
     route: '/journal-free',
   },
@@ -718,15 +718,48 @@ function DayChoicesPanel({
   );
 }
 
+/**
+ * The card's hue at a chosen lightness, saturation held at or above a floor.
+ *
+ * ⚠ These three plates used to run `card.bg → #FFFFFF` corner to corner, and
+ * `card.bg` is ALREADY the pale tint — so the gradient washed a pale colour
+ * toward white and most of the plate ended up near-paper. That is the exact
+ * mistake `components/shared/tone` was written to stop: mixing toward white
+ * destroys saturation. Building from the card's own ACCENT and raising only
+ * the lightness keeps the colour a colour.
+ */
+function lit(hex: string, lightness: number, satFloor = 70): string {
+  const { h, s: sat } = toHsl(hex);
+  const held = sat < 14 ? sat : Math.max(sat, satFloor);
+  return `hsl(${Math.round(h)} ${Math.round(held)}% ${lightness}%)`;
+}
+
 function WriteSectionCard({ card, onPress }: { card: WriteCard; onPress: () => void }) {
+  // Near-white at the shoulder to full colour at the foot — `RibbonSectionCard`'s
+  // three-stop plate, which is the app's newest and best, and the reason these
+  // cards no longer look bleached.
+  const plate = [lit(card.decorColor, 97), lit(card.decorColor, 88), lit(card.decorColor, 76, 76)] as const;
+
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
-      style={[s.writeCard, { backgroundColor: card.bg, borderColor: card.border }]}
+      style={[s.writeCard, { backgroundColor: card.bg, borderColor: lit(card.decorColor, 74, 62) }]}
     >
       <LinearGradient
-        colors={[card.bg, '#FFFFFF']}
+        colors={plate}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {/* A hairline of light along the top edge, and a pane of it gathered at
+          the shoulder — the same two the ribbon cards wear. */}
+      <View pointerEvents="none" style={s.writeLitEdge} />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0)']}
+        locations={[0, 0.55]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -734,7 +767,7 @@ function WriteSectionCard({ card, onPress }: { card: WriteCard; onPress: () => v
       />
 
       <View style={s.writeWatermark} pointerEvents="none">
-        <card.Decor s={110} c={card.decorColor} w={1} />
+        <card.Decor s={104} c={card.decorColor} w={1.2} />
       </View>
 
       <View style={[s.writeArrow, { backgroundColor: card.arrowBg }]} pointerEvents="none">
@@ -1337,7 +1370,9 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  writeStack: { width: '100%', alignSelf: 'stretch', marginTop: 14, rowGap: 12 },
+  // 10, the gap `RibbonSectionCard` gives its own stacks — these three read as
+  // one group, and 12 was letting them drift apart.
+  writeStack: { width: '100%', alignSelf: 'stretch', marginTop: 14, rowGap: 10 },
   writeCard: {
     position: 'relative',
     borderRadius: 28,
@@ -1349,15 +1384,28 @@ const s = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
+  writeLitEdge: {
+    position: 'absolute',
+    top: 1,
+    left: 26,
+    right: 26,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  },
   writeWatermark: {
     position: 'absolute',
     bottom: -8,
-    right: 14,
-    width: 110,
-    height: 110,
+    // 26, not 14: the arrow orb sits at right 16 and is 38 across, so a mark
+    // held at 14 ran up under it. Ten more points of inset clears the orb and
+    // gives the mark its own corner.
+    right: 26,
+    width: 104,
+    height: 104,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.12,
+    // 0.26, not 0.12: at 12% a drawn mark is a smudge on a plate that now
+    // carries real colour. This is `RibbonSectionCard`'s own resting weight.
+    opacity: 0.26,
   },
   writeArrow: {
     position: 'absolute',

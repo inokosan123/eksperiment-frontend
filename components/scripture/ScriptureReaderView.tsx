@@ -49,6 +49,7 @@ import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressabl
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import { GuidedOverlayHost } from '@/components/onboarding/guided/GuidedOverlayHost';
 import { useGuidedScrollTransition } from '@/components/onboarding/guided/use-guided-scroll-transition';
+import { ReadableText } from '@/components/shared/typographyScale';
 
 
 const BG = '#FCFCFC';
@@ -1189,7 +1190,7 @@ export default function ScriptureReaderView({
         key: 'bible-open-tools',
         targetId: SCRIPTURE_GUIDE_TARGETS.annotateFab,
         cutoutPadding: 8,
-        placement: 'below',
+        placement: 'above',
         allowTargetInteraction: true,
         eyebrow: 'HOLY SCRIPTURE',
         message: 'The verse is selected and waiting.',
@@ -1712,7 +1713,7 @@ export default function ScriptureReaderView({
   };
 
   const hasBottomDock = !!bottomDock;
-  const selectionFabTop = insets.top + 100;
+  const selectionFabBottom = insets.bottom + (hasBottomDock ? bottomDockHeight : 24);
   const selectionSheetBottom = insets.bottom;
 
   if (!ready) {
@@ -1868,7 +1869,7 @@ export default function ScriptureReaderView({
       <SelectionTools
         visible={selectionActive}
         sheetOpen={actionSheetOpen}
-        fabTop={selectionFabTop}
+        fabBottom={selectionFabBottom}
         sheetBottom={selectionSheetBottom}
         categories={categories}
         selectedColor={selectedColor}
@@ -2168,7 +2169,7 @@ function VerseRow({
             highlightAccent && highlightMotionStyle,
           ]}
         >
-          <Text
+          <ReadableText
             style={[
               s.verseText,
               decorationAccent && {
@@ -2179,7 +2180,7 @@ function VerseRow({
             ]}
           >
             {verse.text}
-          </Text>
+          </ReadableText>
 
         </Reanimated.View>
 
@@ -2208,7 +2209,7 @@ function VerseRow({
 function SelectionTools({
   visible,
   sheetOpen,
-  fabTop,
+  fabBottom,
   sheetBottom,
   categories,
   selectedColor,
@@ -2234,7 +2235,7 @@ function SelectionTools({
 }: {
   visible: boolean;
   sheetOpen: boolean;
-  fabTop: number;
+  fabBottom: number;
   sheetBottom: number;
   categories: ColorCategory[];
   selectedColor: HighlightColor;
@@ -2269,7 +2270,7 @@ function SelectionTools({
       <Reanimated.View
         entering={FadeInDown.duration(170)}
         exiting={FadeOut.duration(110)}
-        style={[s.pencilFabWrap, { top: fabTop }]}
+        style={[s.pencilFabWrap, { bottom: fabBottom }]}
       >
         <TouchableOpacity
           {...fabTargetProps}
@@ -2718,9 +2719,9 @@ function CommentModal({
                     {showVerseNumbers && (
                       <Text style={s.commentVerseNum}>{vt.verse}</Text>
                     )}
-                    <Text style={[s.commentVerseText, showVerseNumbers && s.commentVerseTextIndented]}>
+                    <ReadableText style={[s.commentVerseText, showVerseNumbers && s.commentVerseTextIndented]}>
                       {`"${vt.text}"`}
-                    </Text>
+                    </ReadableText>
                   </View>
                   {index < visibleVerses.length - 1 && <View style={s.commentVerseDivider} />}
                 </View>
@@ -2853,7 +2854,7 @@ function AnnotationPreviewCard({
       >
         {lines.map((line, index) => (
           <View key={`${line}-${index}`}>
-            <Text style={s.annotationPreviewQuote}>{`"${line}"`}</Text>
+            <ReadableText style={s.annotationPreviewQuote}>{`"${line}"`}</ReadableText>
             {index < lines.length - 1 && <View style={s.annotationPreviewDivider} />}
           </View>
         ))}

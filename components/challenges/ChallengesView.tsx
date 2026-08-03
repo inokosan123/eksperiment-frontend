@@ -1,13 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
   Easing,
+  FadeInDown,
   FadeInLeft,
   FadeInRight,
+  FadeOutUp,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
@@ -45,7 +50,6 @@ import { C, F } from '@/constants/tokens';
 import { useChallenges } from './ChallengesContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { AnimatedProgressFill } from '@/components/shared/taskAnimations';
 import {
   notifyGuideEvent,
   useGuidedSetup,
@@ -174,33 +178,53 @@ function completionWord(count: number) {
   return count === 1 ? 'completion' : 'completions';
 }
 
-function completionMilestoneLabel(count: number) {
-  if (count >= 100) return 'Century series';
-  if (count >= 25) return 'Legacy run';
-  if (count >= 10) return 'Tenfold victory';
-  if (count >= 2) return 'Repeat victory';
-  return 'First trophy';
-}
+const TROPHY_EMBLEM = require('@/assets/animations/challenge-trophy-preview.png');
+// The flame Home and the progress calendar already burn for a streak.
+const FLAME_PNG = require('@/assets/images/streak-flame-512.png');
 
 function progressTotalFor(challenge: ChallengeRecord) {
   return challenge.progressTotal ?? challenge.durationDays ?? challenge.totalUnits ?? 0;
-}
-
-function progressPercentFor(challenge: ChallengeRecord) {
-  const total = progressTotalFor(challenge);
-  if (total <= 0) return 100;
-  return Math.min(100, Math.round((challenge.progressCurrent / total) * 100));
 }
 
 function compareHistoryAttempts(a: ChallengeRecord, b: ChallengeRecord) {
   return dateValue(b.completedAt) - dateValue(a.completedAt);
 }
 
+/**
+ * How long a finished run took, in days.
+ *
+ * Only meaningful once a run is complete, and only when both ends are known —
+ * an attempt saved before startedAt existed returns null and is judged on its
+ * streak instead.
+ */
+function runLengthDays(record: ChallengeRecord): number | null {
+  if (!record.startedAt || !record.completedAt) return null;
+  const start = dateValue(record.startedAt);
+  const end = dateValue(record.completedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  // Same-day finish counts as one day, not zero.
+  return Math.max(1, Math.round((end - start) / 86400000) + 1);
+}
+
+/**
+ * The best run is the FASTEST one.
+ *
+ * Progress cannot rank these: every attempt in the history is a completed one,
+ * and you only get the trophy by finishing every chapter — so all of them read
+ * 21/21. What separates them is how long it took to get there, so the best run
+ * is the one that reached the trophy in the fewest days. Runs whose length
+ * cannot be worked out fall back to the longest streak, then to the most
+ * recent, so a group always has a best.
+ */
 function compareBestAttempt(a: ChallengeRecord, b: ChallengeRecord) {
+  const lenA = runLengthDays(a);
+  const lenB = runLengthDays(b);
+  if (lenA !== null && lenB !== null && lenA !== lenB) return lenA - lenB;
+  if (lenA !== null && lenB === null) return -1;
+  if (lenA === null && lenB !== null) return 1;
+
   const streakDiff = (b.bestStreak ?? b.streak ?? 0) - (a.bestStreak ?? a.streak ?? 0);
   if (streakDiff !== 0) return streakDiff;
-  const progressDiff = progressPercentFor(b) - progressPercentFor(a);
-  if (progressDiff !== 0) return progressDiff;
   return compareHistoryAttempts(a, b);
 }
 
@@ -393,6 +417,14 @@ export function ChallengeLifecycleCard({
   const progress = challenge.progressTotal && challenge.progressTotal > 0
     ? Math.max(6, Math.round((challenge.progressCurrent / challenge.progressTotal) * 100))
     : 0;
+  const churchWeek = challenge.category === 'church' ? challenge.churchWeek : undefined;
+  const churchWeekLabel = churchWeek?.status === 'earned'
+    ? 'Week complete'
+    : churchWeek?.status === 'missed'
+      ? 'No trophy this week'
+      : churchWeek?.status === 'practice'
+        ? 'Practice week'
+        : `${churchWeek?.completedCount ?? 0}/${churchWeek?.requiredCount ?? 0} visits complete`;
 
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={onPress}>
@@ -431,7 +463,20 @@ export function ChallengeLifecycleCard({
           <Text style={s.lifecyclePct}>{challenge.showBar && challenge.progressTotal ? `${progress}%` : challenge.scheduleLabel.toUpperCase()}</Text>
         </View>
 
-        {challenge.showBar && challenge.progressTotal ? (
+        {churchWeek ? (
+          <View style={s.churchWeekRow}>
+            <View style={s.churchWeekTrophy}>
+              <StaticChallengeTrophy size={38} />
+            </View>
+            <View style={s.churchWeekCopy}>
+              <Text style={s.churchWeekTitle}>{churchWeekLabel}</Text>
+              <Text style={[s.lifecycleChurchMeta, s.churchWeekSub]} numberOfLines={2}>{challenge.subline}</Text>
+            </View>
+            <View style={s.churchTrophyCount}>
+              <Text style={s.churchTrophyCountText}>×{challenge.churchTrophyCount ?? 0}</Text>
+            </View>
+          </View>
+        ) : challenge.showBar && challenge.progressTotal ? (
           <View style={s.progressTrack}>
             <LinearGradient
               colors={['#C5A059', '#E3C15D']}
@@ -522,6 +567,7 @@ export function CatalogEntryCard({
                 frequency={churchSchedule.frequency}
                 selectedDays={churchSchedule.selectedDays}
                 monthlyDays={churchSchedule.monthlyDays}
+                allowedFrequencies={['daily', 'weekdays', 'weekends', 'specific_days']}
                 accent={tone.accent}
                 label="Schedule"
                 onFrequencyChange={frequency => onChurchScheduleChange({
@@ -589,30 +635,370 @@ export function CatalogEntryCard({
   );
 }
 
+// One trophy's footprint on the rail, and the air between two of them.
+const TRACK_SLOT_W = 34;
+const TRACK_SLOT_GAP = 2;
+const TRACK_ROW_PAD = 2;
+
+/**
+ * The trophy track — the shelf, kept, with its overflow fixed.
+ *
+ * It used to lay out a fixed number of overlapping trophies from a width
+ * guess, cap at ten, and print "+30" for everything past that. Then it
+ * scrolled sideways, which showed everything but hid it behind a gesture
+ * nothing on the card announced: a full shelf and an overfull one looked
+ * identical, so you could not tell there was more without dragging it.
+ *
+ * It shelves now. A row is filled left to right — oldest first, because a
+ * timeline runs forwards — and when a row is full the next one opens beneath
+ * it and fills the same way. Every trophy is in view at once, the series' own
+ * size is the thing you see first, and the best one still stands proud of its
+ * rail on a lit plinth wherever it happens to fall.
+ */
+function TrophyTrack({
+  attempts,
+  best,
+  tone,
+}: {
+  attempts: ChallengeHistoryGroup['attempts'];
+  best: ChallengeRecord;
+  tone: ReturnType<typeof getTone>;
+}) {
+  // How many stand on one shelf depends on how wide the card is drawn, which
+  // only layout knows. Until it reports, the trophies are laid out but held
+  // invisible for the one frame it takes — never on a shelf that is wrong.
+  const [perRow, setPerRow] = useState(0);
+
+  const rows = useMemo(() => {
+    // Oldest first: the track is a timeline, and a timeline runs forwards.
+    const ordered = [...attempts].reverse();
+    if (perRow <= 0) return [ordered];
+    const out: ChallengeHistoryGroup['attempts'][] = [];
+    for (let i = 0; i < ordered.length; i += perRow) {
+      out.push(ordered.slice(i, i + perRow));
+    }
+    return out;
+  }, [attempts, perRow]);
+
+  const measure = useCallback((width: number) => {
+    const usable = width - TRACK_ROW_PAD * 2;
+    const fit = Math.floor(
+      (usable + TRACK_SLOT_GAP) / (TRACK_SLOT_W + TRACK_SLOT_GAP),
+    );
+    const next = Math.max(1, fit);
+    setPerRow(current => (current === next ? current : next));
+  }, []);
+
+  return (
+    <View
+      style={s.track}
+      onLayout={event => measure(event.nativeEvent.layout.width)}
+    >
+      <View style={perRow > 0 ? undefined : s.trackMeasuring}>
+        {rows.map((row, rowIndex) => (
+          <View key={`row-${rowIndex}`} style={s.trackRow}>
+            <View style={[s.trackRail, { backgroundColor: hexToRgba(tone.accent, 0.18) }]} />
+            {/* A shelf that fills is left-aligned by filling. A lone short
+                shelf would read as a row shoved to one side, so on its own it
+                sits centred — the way the track has always looked when the
+                series is small. Once it wraps, every row starts at the left,
+                and the gap at the end of the last one is simply the room the
+                next victory will take. */}
+            <View style={[s.trackSlots, rows.length === 1 && s.trackSlotsAlone]}>
+              {row.map(attempt => {
+                const isBest = attempt.id === best.id;
+                return (
+                  <View key={attempt.id} style={s.trackSlot}>
+                    {isBest && (
+                      <View style={[s.trackBestGlow, { backgroundColor: hexToRgba(tone.accent, 0.16) }]} />
+                    )}
+                    <Image
+                      source={TROPHY_EMBLEM}
+                      resizeMode="contain"
+                      style={isBest ? s.trackImgBest : s.trackImg}
+                    />
+                    {isBest && <View style={[s.trackBestPlinth, { backgroundColor: tone.accent }]} />}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * One of the three figures under the track. They were three boxed tiles whose
+ * values were set in 8.5pt tracked capitals — a label's voice used for a
+ * reading. The box is gone, the figure is serif and large, and a hairline
+ * divides one from the next.
+ */
+function StatCell({
+  label,
+  value,
+  tone,
+  children,
+}: {
+  label: string;
+  value?: string;
+  tone: ReturnType<typeof getTone>;
+  children?: React.ReactNode;
+}) {
+  return (
+    <View style={s.statCell}>
+      <Text style={[s.statLabel, { color: tone.accent }]} numberOfLines={1}>{label}</Text>
+      {children ?? (
+        <Text style={s.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {value}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/**
+ * The rule that divides one register of the card's base from the next: a gold
+ * hairline fading at both ends with white caught under it — the same fold the
+ * card's raised surfaces already crease with, run edge to edge.
+ *
+ * This is what replaced the borders. The three figures and the ledger used to
+ * be two rounded, bordered, shadowed plates stacked under the track: two cards
+ * inside a card. A card in this app is divided by its rules, not by boxes.
+ */
+function BaseRule({ tone }: { tone: ReturnType<typeof getTone> }) {
+  return (
+    <View style={s.baseRule} pointerEvents="none">
+      <LinearGradient
+        colors={[
+          hexToRgba(tone.accent, 0),
+          hexToRgba(tone.accent, 0.3),
+          hexToRgba(tone.accent, 0),
+        ]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={s.baseRuleLine}
+      />
+      <LinearGradient
+        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)', 'rgba(255,255,255,0)']}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={s.baseRuleLine}
+      />
+    </View>
+  );
+}
+
+/** A rule that fades at both ends, as the app's dividers do — not a hard line. */
+function StatDivider({ tone }: { tone: ReturnType<typeof getTone> }) {
+  return (
+    <LinearGradient
+      colors={[
+        hexToRgba(tone.accent, 0),
+        hexToRgba(tone.accent, 0.26),
+        hexToRgba(tone.accent, 0),
+      ]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={s.statDivider}
+      pointerEvents="none"
+    />
+  );
+}
+
+/**
+ * The trophy ledger.
+ *
+ * What was here: a shelf of overlapping 24pt trophies that silently gave up
+ * past ten and showed "+7", and under it a list of the three most recent runs.
+ * So a long series showed neither all its trophies nor all its dates, and the
+ * order they were won in was never legible.
+ *
+ * What it is now: the best run stands at the head with its trophy and its
+ * figures, and the series opens under it — one row per run, newest first,
+ * numbered, dated, the best one marked. Nothing is dropped however long the
+ * series runs, because a list grows where a strip cannot.
+ *
+ * It no longer stands in a box. It is the last register of the card's base,
+ * divided from the figures above it by the same rule, and its rows hang under
+ * the head's own column so the two read as one column of type.
+ */
+function TrophyLedger({
+  attempts,
+  best,
+  tone,
+  completionCount,
+}: {
+  attempts: ChallengeHistoryGroup['attempts'];
+  best: ChallengeRecord;
+  tone: ReturnType<typeof getTone>;
+  completionCount: number;
+}) {
+  const reduceMotion = useReducedMotion();
+  const [open, setOpen] = useState(false);
+  const turn = useSharedValue(0);
+
+  const bestIndex = attempts.findIndex(attempt => attempt.id === best.id);
+  // Runs are numbered as they were won: the oldest is Run 1.
+  const runNumber = (index: number) => completionCount - index;
+
+  useEffect(() => {
+    turn.value = reduceMotion
+      ? open ? 1 : 0
+      : withTiming(open ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) });
+  }, [open, reduceMotion, turn]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${turn.value * 180}deg` }],
+  }));
+
+  return (
+    <View style={s.ledger}>
+      {/* The head: the best run, and the handle that opens the rest. */}
+      <TouchableOpacity
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          setOpen(value => !value);
+        }}
+        activeOpacity={0.82}
+        accessibilityRole="button"
+        accessibilityLabel={open ? 'Hide every run' : 'Show every run'}
+        style={s.ledgerHead}
+      >
+        {/* The same stage the hero trophy stands on: a tilted haloed plate
+            casting gold, and a soft shadow pooled beneath it. */}
+        <View style={s.ledgerHeadTrophy}>
+          <View style={s.ledgerHeadHalo} />
+          <View style={s.ledgerHeadBase} />
+          <Image source={TROPHY_EMBLEM} resizeMode="contain" style={s.ledgerHeadImg} />
+        </View>
+
+        {/* The thing itself on the first line with the day it was won, set the
+            way the title's own foot line is set — name, dot, date. Which run
+            of the series it was goes underneath, where the run number can be
+            read against the total instead of standing on its own.
+            It read "Best · Run 4" over "12 Mar · tap to see every run": the
+            run number was doing the work of a heading, and the date was
+            buried in an instruction the chevron already gives. */}
+        <View style={s.ledgerHeadCopy}>
+          <View style={s.ledgerHeadLine}>
+            <Text style={s.ledgerHeadValue} numberOfLines={1}>Best run</Text>
+            <View style={s.historyFootDot} />
+            <Text style={s.ledgerHeadDate} numberOfLines={1}>
+              {shortDateLabel(best.completedAt, best.endedLabel)}
+            </Text>
+          </View>
+          {bestIndex >= 0 && (
+            <Text style={s.ledgerHeadSub} numberOfLines={1}>
+              {`Run ${runNumber(bestIndex)} of ${completionCount}`}
+            </Text>
+          )}
+        </View>
+
+        {completionCount > 1 && (
+          <View style={[s.ledgerHandle, { borderColor: hexToRgba(tone.accent, 0.24) }]}>
+            <Reanimated.View style={chevronStyle}>
+              <ChevronDown s={15} c={tone.accent} w={2.2} />
+            </Reanimated.View>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {/* The series, newest first. Every run, however many there are. */}
+      {open && completionCount > 1 && (
+        <Reanimated.View
+          // Closing used to drop the list out of the tree in one frame while
+          // the card snapped up behind it. It leaves the way it came now.
+          exiting={reduceMotion ? undefined : FadeOutUp.duration(170).easing(Easing.out(Easing.cubic))}
+        >
+          <BaseRule tone={tone} />
+          <View style={s.ledgerList}>
+            {attempts.map((attempt, index) => {
+              const isBest = attempt.id === best.id;
+              const last = index === attempts.length - 1;
+              return (
+                <Reanimated.View
+                  key={attempt.id}
+                  entering={
+                    reduceMotion
+                      ? undefined
+                      : FadeInDown.duration(260)
+                        .delay(Math.min(index, 8) * 34)
+                        .easing(Easing.out(Easing.cubic))
+                  }
+                  style={s.ledgerRow}
+                >
+                  {/* The thread the trophies hang from, so the order reads as a
+                      sequence rather than as a pile. */}
+                  <View style={s.ledgerThread}>
+                    <View style={[s.ledgerThreadLine, index === 0 && s.ledgerThreadLineTop]} />
+                    <View style={s.ledgerRowStage}>
+                      <View pointerEvents="none" style={s.ledgerRowBase} />
+                      <Image source={TROPHY_EMBLEM} resizeMode="contain" style={s.ledgerRowImg} />
+                    </View>
+                    {!last && <View style={s.ledgerThreadLine} />}
+                  </View>
+
+                  <View style={s.ledgerRowCopy}>
+                    <Text style={s.ledgerRowTitle} numberOfLines={1}>
+                      {index === 0 ? 'Latest run' : `Run ${runNumber(index)}`}
+                    </Text>
+                    <Text style={s.ledgerRowDate} numberOfLines={1}>
+                      {shortDateLabel(attempt.completedAt, attempt.endedLabel)}
+                    </Text>
+                  </View>
+
+                  {isBest && (
+                    <View style={[s.ledgerBestTag, { backgroundColor: hexToRgba(tone.accent, 0.12) }]}>
+                      <Text style={[s.ledgerBestText, { color: tone.accent }]}>BEST</Text>
+                    </View>
+                  )}
+                </Reanimated.View>
+              );
+            })}
+          </View>
+        </Reanimated.View>
+      )}
+    </View>
+  );
+}
+
 function HistoryCard({
   group,
 }: {
   group: ChallengeHistoryGroup;
 }) {
-  const { width: viewportWidth } = useWindowDimensions();
   const { attempts, best, latest } = group;
   const tone = getTone(group.category);
   const badge = getCategoryBadge(group.category);
   const completionCount = attempts.length;
   const progressTotal = progressTotalFor(best);
-  const progressPercent = progressPercentFor(best);
-  const progressLabel = progressTotal > 0
-    ? `${best.progressCurrent}/${progressTotal} ${best.progressUnit}`
-    : best.headline;
+  // What made this run the best: how fast it got to the trophy. The old
+  // reading was "21/21 chapters", which every completed run shows — you
+  // cannot finish without doing them all, so it distinguished nothing.
+  const bestDays = runLengthDays(best);
+  const bestRunLabel = bestDays !== null
+    ? `${bestDays} ${bestDays === 1 ? 'day' : 'days'}`
+    : progressTotal > 0
+      ? `${best.progressCurrent}/${progressTotal} ${best.progressUnit}`
+      : best.headline;
   const bestStreak = best.bestStreak ?? best.streak;
-  const shelfWidth = Math.max(220, viewportWidth - 80);
-  const maxShelfTrophies = Math.max(4, Math.min(10, Math.floor((shelfWidth - 78) / 30) + 1));
-  const shownTrophies = attempts.slice(0, Math.min(completionCount, maxShelfTrophies));
-  const hiddenTrophies = Math.max(0, completionCount - shownTrophies.length);
-  const recentAttempts = attempts.slice(0, 3);
-  const milestoneLabel = completionMilestoneLabel(completionCount);
   const latestLabel = shortDateLabel(latest.completedAt, latest.endedLabel);
   const cardColors = [tone.soft, '#FFFFFF', '#FFFDF7'] as const;
+  // One trophy is a different card, not the same card with emptier parts. A
+  // series has a count, a shelf, a fastest run and a latest one; a single
+  // victory has none of those — it has a day it was won and how long it took.
+  const single = completionCount === 1;
+
+  const streakFigure = (
+    <View style={s.statStreak}>
+      {/* The app's own flame, the one Home and the progress calendar burn —
+          not the outline glyph this card had on its own. */}
+      <Image source={FLAME_PNG} resizeMode="contain" style={s.statFlame} />
+      <Text style={s.statStreakText}>{bestStreak || 0}</Text>
+    </View>
+  );
 
   return (
     <LinearGradient
@@ -638,9 +1024,13 @@ function HistoryCard({
           />
           <View style={s.historyTrophyBaseShadow} />
           <StaticChallengeTrophy size={70} />
-          <View style={s.historyCountBadge}>
-            <Text style={s.historyCountText}>x{completionCount}</Text>
-          </View>
+          {/* A tally of one is not a tally. The badge counts a series; when
+              there is no series the trophy speaks for itself. */}
+          {!single && (
+            <View style={s.historyCountBadge}>
+              <Text style={s.historyCountText}>x{completionCount}</Text>
+            </View>
+          )}
         </View>
 
         <View style={s.historyCopy}>
@@ -662,86 +1052,146 @@ function HistoryCard({
             </View>
           </View>
           <Text style={s.historyTitle}>{group.title}</Text>
-          <Text style={s.historyFoot}>
-            {completionCount} {completionWord(completionCount)} | Latest {latestLabel}
-          </Text>
+          {/* The count and the date belong to the title, so they are set in
+              the title's serif — they were 9pt tracked capitals, which is the
+              app's label voice, not its reading voice. */}
+          <View style={s.historyFootRow}>
+            {single ? (
+              // "1 completion · Latest 12 Mar" — a count of one and a superlative
+              // over a set of one. It is simply the day it was finished.
+              <Text style={s.historyFoot} numberOfLines={1}>
+                Completed <Text style={s.historyFootDate}>{latestLabel}</Text>
+              </Text>
+            ) : (
+              <>
+                <Text style={s.historyFoot}>
+                  <Text style={[s.historyFootFigure, { color: tone.accent }]}>{completionCount}</Text>
+                  {` ${completionWord(completionCount)}`}
+                </Text>
+                <View style={s.historyFootDot} />
+                <Text style={s.historyFoot} numberOfLines={1}>
+                  Latest <Text style={s.historyFootDate}>{latestLabel}</Text>
+                </Text>
+              </>
+            )}
+          </View>
         </View>
       </View>
 
-      <View style={[s.seriesPlaque, { borderColor: hexToRgba(tone.accent, 0.2) }]}>
-        <View style={[s.seriesPlaqueMark, { backgroundColor: tone.accent }]} />
-        <View style={s.seriesPlaqueCopy}>
-          <Text style={[s.seriesPlaqueLabel, { color: tone.text }]}>{milestoneLabel}</Text>
-          <Text style={s.seriesPlaqueText} numberOfLines={1}>
-            {best.id === latest.id ? 'Latest run is also the best run' : `Best saved from ${shortDateLabel(best.completedAt, best.endedLabel)}`}
+      {/* The series plaque is gone. It said "Repeat victory" over "Best saved
+          from 12 Mar" — a label derived from a number already printed on the
+          trophy badge, above a date repeated in the row beneath it. It carried
+          no fact the card did not already state twice. */}
+
+      {/* A shelf holding a single trophy, directly under the 70pt trophy that
+          already stands for it, is the same victory drawn twice. The track is
+          the series' instrument; with no series there is nothing to line up. */}
+      {!single && <TrophyTrack attempts={attempts} best={best} tone={tone} />}
+
+      {/* The base the card stands on.
+          Everything under the track used to float on it: two rounded plates,
+          each with its own border, its own white lit edge and its own gold
+          shadow, and under them a progress bar pinned at 100% because a
+          completed run cannot be anything else. Three widgets on a parchment.
+          It is one ground now — run out to the rails, divided by rules rather
+          than boxed, and deepening into the card's own gold as it falls, so
+          the card gains its weight at the bottom from light instead of from a
+          bar ruled across it. */}
+      <View style={[s.base, single && s.baseSingle]}>
+        <LinearGradient
+          colors={[
+            'rgba(255,255,255,0)',
+            hexToRgba(tone.accent, 0.07),
+            hexToRgba(tone.accent, 0.2),
+          ]}
+          locations={[0, 0.62, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+
+        <BaseRule tone={tone} />
+
+        <View style={s.statRow}>
+          {single ? (
+            // Two figures, not three padded out. "Fastest" over a set of one
+            // is not a fastest, and "Latest" is the date already read above.
+            <>
+              <StatCell label="Finished in" tone={tone} value={bestRunLabel} />
+              <StatDivider tone={tone} />
+              <StatCell label="Best streak" tone={tone}>{streakFigure}</StatCell>
+            </>
+          ) : (
+            <>
+              <StatCell label="Fastest" tone={tone} value={bestRunLabel} />
+              <StatDivider tone={tone} />
+              <StatCell label="Best streak" tone={tone}>{streakFigure}</StatCell>
+              <StatDivider tone={tone} />
+              <StatCell label="Latest" tone={tone} value={latestLabel} />
+            </>
+          )}
+        </View>
+
+        {/* A single completion has no series to open, and its best run is its
+            latest run. The ledger would only be the card saying it again. */}
+        {!single && (
+          <>
+            <BaseRule tone={tone} />
+            <TrophyLedger
+              attempts={attempts}
+              best={best}
+              tone={tone}
+              completionCount={completionCount}
+            />
+          </>
+        )}
+      </View>
+    </LinearGradient>
+  );
+}
+
+function ChurchWeeklyHistoryCard({ challenge }: { challenge: ChallengeRecord }) {
+  const trophyWeeks = [...(challenge.churchTrophyWeeks ?? [])].reverse();
+  const latestWeeks = trophyWeeks.slice(0, 6);
+  return (
+    <LinearGradient
+      colors={['#F0FAF5', '#FFFFFF', '#FFF9E8']}
+      start={{ x: 0.04, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={s.churchHistoryCard}
+    >
+      <View style={s.churchHistoryTop}>
+        <View style={s.churchHistoryTrophyStage}>
+          <StaticChallengeTrophy size={64} />
+          <View style={s.churchHistoryCountBadge}>
+            <Text style={s.churchHistoryCountText}>×{challenge.churchTrophyCount ?? 0}</Text>
+          </View>
+        </View>
+        <View style={s.churchHistoryCopy}>
+          <View style={s.churchHistoryBadge}>
+            <Text style={s.churchHistoryBadgeText}>CHURCH · WEEKLY</Text>
+          </View>
+          <Text style={s.churchHistoryTitle}>{challenge.title}</Text>
+          <Text style={s.churchHistoryMeta}>
+            {challenge.streak} week streak · {challenge.scheduleLabel}
           </Text>
         </View>
       </View>
-
-      <Text style={s.historyBody}>
-        {completionCount === 1
-          ? 'Finished with momentum. This is the first trophy in the series.'
-          : `Finished ${completionCount} times. Best run is highlighted below, with every trophy kept on the shelf.`}
-      </Text>
-
-      <View style={s.trophyShelf}>
-        <View style={s.trophyShelfRail} />
-        {shownTrophies.map((attempt, index) => (
-          <View
-            key={attempt.id}
-            style={[
-              s.shelfTrophy,
-              attempt.id === best.id && s.shelfTrophyBest,
-              index > 0 && { marginLeft: -6 },
-            ]}
-          >
-            <StaticChallengeTrophy size={24} />
+      <View style={s.churchHistoryRule} />
+      <Text style={s.churchHistoryLedgerLabel}>TROPHY WEEKS</Text>
+      <View style={s.churchHistoryWeeks}>
+        {latestWeeks.map((weekStart, index) => (
+          <View key={weekStart} style={s.churchHistoryWeek}>
+            <StaticChallengeTrophy size={22} />
+            <Text style={s.churchHistoryWeekText}>
+              {index === 0 ? 'Latest · ' : ''}{shortDateLabel(weekStart)}
+            </Text>
           </View>
         ))}
-        {hiddenTrophies > 0 ? (
-          <View style={[s.shelfMore, shownTrophies.length > 0 && { marginLeft: -2 }]}>
-            <Text style={s.shelfMoreText}>+{hiddenTrophies}</Text>
-          </View>
+        {trophyWeeks.length > latestWeeks.length ? (
+          <Text style={s.churchHistoryMore}>+{trophyWeeks.length - latestWeeks.length} earlier</Text>
         ) : null}
-      </View>
-
-      <View style={s.historyMetaRow}>
-        <View style={s.historyMetric}>
-          <Text style={s.historyMetricLabel}>BEST RUN</Text>
-          <Text style={s.historyProgressText}>{progressLabel}</Text>
-        </View>
-        <View style={s.historyMetric}>
-          <Text style={s.historyMetricLabel}>BEST STREAK</Text>
-          <View style={s.historyStreakPill}>
-            <Flame s={10} filled color="#F97316" />
-            <Text style={s.historyStreakText}>{bestStreak || 0}</Text>
-          </View>
-        </View>
-        <View style={s.historyMetric}>
-          <Text style={s.historyMetricLabel}>LATEST</Text>
-          <Text style={s.historyProgressText}>{latestLabel}</Text>
-        </View>
-      </View>
-
-      {recentAttempts.length > 1 ? (
-        <View style={s.attemptStack}>
-          {recentAttempts.map((attempt, index) => {
-            const isBest = attempt.id === best.id;
-            return (
-              <View key={attempt.id} style={s.attemptRow}>
-                <View style={[s.attemptDot, isBest && { backgroundColor: tone.accent }]} />
-                <Text style={s.attemptText} numberOfLines={1}>
-                  {index === 0 ? 'Latest' : `Run ${completionCount - index}`} | {shortDateLabel(attempt.completedAt, attempt.endedLabel)}
-                </Text>
-                {isBest ? <Text style={[s.attemptBest, { color: tone.accent }]}>BEST</Text> : null}
-              </View>
-            );
-          })}
-        </View>
-      ) : null}
-
-      <View style={s.historyProgressTrack}>
-        <AnimatedProgressFill percent={Math.max(100, progressPercent)} color={tone.accent} height={5} />
       </View>
     </LinearGradient>
   );
@@ -827,7 +1277,15 @@ export default function ChallengesView({
     () => [...activeChallenges, ...pausedChallenges],
     [activeChallenges, pausedChallenges],
   );
-  const historyCount = completedChallenges.length;
+  const churchTrophyChallenges = useMemo(
+    () => ongoingChallenges.filter(item => item.category === 'church' && (item.churchTrophyCount ?? 0) > 0),
+    [ongoingChallenges],
+  );
+  const churchTrophyCount = useMemo(
+    () => churchTrophyChallenges.reduce((total, item) => total + (item.churchTrophyCount ?? 0), 0),
+    [churchTrophyChallenges],
+  );
+  const historyCount = completedChallenges.length + churchTrophyCount;
   const historyGroups = useMemo(() => buildHistoryGroups(completedChallenges), [completedChallenges]);
   const activeLifecycleChallenges = useMemo(
     () => PANEL_CONTEXTS.flatMap(context => [...activeChallenges]
@@ -1000,7 +1458,7 @@ export default function ChallengesView({
           ? undefined
           : scriptureDailyAmountLabel(selectedCatalog, chaptersPerDay),
         durationDays: totalDays,
-        progressTotal: selectedCatalog.id === 'lectionary_daily' ? 0 : totalDays,
+        progressTotal: totalDays,
         progressUnit: 'days',
         headline: selectedCatalog.id === 'lectionary_daily' ? 'Day 1' : `Day 1 of ${totalDays}`,
         subline: selectedCatalog.id === 'lectionary_daily'
@@ -1291,6 +1749,15 @@ export default function ChallengesView({
 
           {activeTab === 'history' ? (
             <View style={s.sectionStack}>
+              {churchTrophyChallenges.length > 0 ? (
+                <View style={s.sectionBlock}>
+                  <Text style={[s.sectionLabel, { color: '#2F8A62' }]}>WEEKLY CHURCH TROPHIES</Text>
+                  {churchTrophyChallenges.map(challenge => (
+                    <ChurchWeeklyHistoryCard key={challenge.id} challenge={challenge} />
+                  ))}
+                </View>
+              ) : null}
+
               {completedChallenges.length > 0 ? (
                 <View style={s.sectionBlock}>
                   <Text style={[s.sectionLabel, { color: C.gold }]}>ACHIEVEMENTS</Text>
@@ -1300,7 +1767,7 @@ export default function ChallengesView({
                 </View>
               ) : null}
 
-              {completedChallenges.length === 0 ? (
+              {completedChallenges.length === 0 && churchTrophyChallenges.length === 0 ? (
                 <View style={s.emptyWrap}>
                   <Text style={s.emptyTitle}>No history yet</Text>
                   <Text style={s.emptyBody}>Successfully completed challenges will live here.</Text>
@@ -1536,6 +2003,37 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: '#AAA397',
   },
+  churchWeekRow: {
+    marginTop: 10,
+    minHeight: 48,
+    borderRadius: 17,
+    borderCurve: 'continuous',
+    backgroundColor: '#F3FAF6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  churchWeekTrophy: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  churchWeekCopy: { flex: 1, minWidth: 0 },
+  churchWeekTitle: { fontFamily: F.serifMedium, fontSize: 14, lineHeight: 18, color: '#286C50' },
+  churchWeekSub: { marginTop: 1 },
+  churchTrophyCount: {
+    minWidth: 38,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  churchTrophyCountText: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 14,
+    color: '#A97925',
+    fontVariant: ['tabular-nums'],
+  },
   catalogCard: {
     borderWidth: 1,
     borderRadius: 24,
@@ -1654,6 +2152,43 @@ const s = StyleSheet.create({
     letterSpacing: 2.1,
     color: '#FFFFFF',
   },
+  churchHistoryCard: {
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderColor: '#9DCDB8',
+    borderRadius: 28,
+    borderCurve: 'continuous',
+    padding: 16,
+    overflow: 'hidden',
+    boxShadow: '0 10px 24px rgba(47,138,98,0.12)',
+  },
+  churchHistoryTop: { flexDirection: 'row', alignItems: 'center', gap: 13 },
+  churchHistoryTrophyStage: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center' },
+  churchHistoryCountBadge: {
+    position: 'absolute',
+    right: -1,
+    bottom: 0,
+    minWidth: 29,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#2F8A62',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  churchHistoryCountText: { fontFamily: F.serifSemiBold, fontSize: 11, color: '#FFFFFF', fontVariant: ['tabular-nums'] },
+  churchHistoryCopy: { flex: 1, minWidth: 0 },
+  churchHistoryBadge: { alignSelf: 'flex-start', borderRadius: 999, backgroundColor: '#DFF2E9', paddingHorizontal: 8, paddingVertical: 3 },
+  churchHistoryBadgeText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.2, color: '#287253' },
+  churchHistoryTitle: { marginTop: 6, fontFamily: F.serifMedium, fontSize: 19, lineHeight: 23, color: C.text },
+  churchHistoryMeta: { marginTop: 3, fontFamily: F.sansMedium, fontSize: 10.5, lineHeight: 15, color: '#7A8D82' },
+  churchHistoryRule: { marginVertical: 12, height: 1, backgroundColor: 'rgba(47,138,98,0.16)' },
+  churchHistoryLedgerLabel: { fontFamily: F.sansBold, fontSize: 8.5, letterSpacing: 1.5, color: '#62927B' },
+  churchHistoryWeeks: { marginTop: 8, gap: 6 },
+  churchHistoryWeek: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  churchHistoryWeekText: { fontFamily: F.serif, fontSize: 13.5, lineHeight: 18, color: '#625D55' },
+  churchHistoryMore: { paddingLeft: 29, fontFamily: F.sansMedium, fontSize: 10.5, color: '#8DA297' },
   historyCard: {
     borderWidth: 1,
     borderLeftWidth: 4,
@@ -1755,9 +2290,9 @@ const s = StyleSheet.create({
     elevation: 3,
   },
   historyCountText: {
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 0.4,
+    fontFamily: F.serifSemiBold,
+    fontSize: 11,
+    letterSpacing: 0.2,
     color: '#FFFFFF',
   },
   historyIconBubble: {
@@ -1784,10 +2319,10 @@ const s = StyleSheet.create({
     paddingVertical: 4,
   },
   historyCategoryText: {
-    fontFamily: F.sansBold,
-    fontSize: 8,
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
+    fontFamily: F.serifSemiBold,
+    fontSize: 12,
+    lineHeight: 15,
+    letterSpacing: 0.2,
   },
   historyStateBadge: {
     borderRadius: 999,
@@ -1807,10 +2342,10 @@ const s = StyleSheet.create({
     backgroundColor: '#FEF2F2',
   },
   historyStateText: {
-    fontFamily: F.sansBold,
-    fontSize: 8,
-    letterSpacing: 1.3,
-    textTransform: 'uppercase',
+    fontFamily: F.serifSemiBold,
+    fontSize: 12,
+    lineHeight: 15,
+    letterSpacing: 0.2,
   },
   historyStateTextCompleted: {
     color: C.gold,
@@ -1824,211 +2359,192 @@ const s = StyleSheet.create({
     lineHeight: 23,
     color: C.text,
   },
-  seriesPlaque: {
-    marginTop: 14,
-    minHeight: 54,
-    borderRadius: 19,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.64)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    zIndex: 1,
-  },
-  seriesPlaqueMark: {
-    width: 6,
-    height: 34,
-    borderRadius: 3,
-  },
-  seriesPlaqueCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  seriesPlaqueLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 1.9,
-    textTransform: 'uppercase',
-  },
-  seriesPlaqueText: {
-    marginTop: 3,
-    fontFamily: F.serif,
-    fontSize: 13,
-    lineHeight: 17,
-    color: '#6F665B',
-  },
-  historyBody: {
-    marginTop: 13,
+  // The line under the title, in the title's own serif. It was 9pt tracked
+  // capitals — the app's voice for labels, not for a sentence about a series.
+  historyFootRow: { marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  historyFoot: {
     fontFamily: F.serif,
     fontSize: 14,
-    lineHeight: 20,
-    color: C.textSecondary,
-    zIndex: 1,
-  },
-  trophyShelf: {
-    marginTop: 14,
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    position: 'relative',
-    paddingHorizontal: 5,
-    zIndex: 1,
-  },
-  trophyShelfRail: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 6,
-    height: 9,
-    borderRadius: 999,
-    backgroundColor: 'rgba(197,160,89,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.12)',
-  },
-  shelfTrophy: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.16)',
-    backgroundColor: 'rgba(255,255,255,0.78)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  shelfTrophyBest: {
-    borderColor: '#C5A059',
-    backgroundColor: '#FFF7D6',
-    shadowColor: '#C5A059',
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
-  },
-  shelfMore: {
-    minWidth: 42,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(28,25,23,0.08)',
-    backgroundColor: '#1C1917',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-  },
-  shelfMoreText: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    color: '#FFFFFF',
-  },
-  historyFoot: {
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.6,
-    color: C.textMuted,
-    textTransform: 'uppercase',
-  },
-  historyMetaRow: {
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    zIndex: 1,
-  },
-  historyMetric: {
-    flex: 1,
-    minHeight: 56,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.16)',
-    backgroundColor: 'rgba(255,255,255,0.76)',
-    paddingHorizontal: 9,
-    paddingVertical: 9,
-    justifyContent: 'center',
-  },
-  historyStreakMetric: {
-    flex: 0.72,
-  },
-  historyMetricLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 7.5,
-    letterSpacing: 1.4,
-    color: '#B8A783',
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  historyProgressText: {
-    fontFamily: F.sansBold,
-    fontSize: 8.5,
-    lineHeight: 12,
-    letterSpacing: 1.2,
-    color: '#9A7A3F',
-    textTransform: 'uppercase',
-  },
-  historyStreakPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderRadius: 999,
-    backgroundColor: '#FFF7ED',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  historyStreakText: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    color: '#F97316',
-  },
-  attemptStack: {
-    marginTop: 12,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.62)',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    gap: 7,
-    zIndex: 1,
-  },
-  attemptRow: {
-    minHeight: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  attemptDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D8D2C5',
-  },
-  attemptText: {
-    flex: 1,
-    fontFamily: F.sansMedium,
-    fontSize: 10,
-    lineHeight: 14,
+    lineHeight: 19,
     color: '#8A8177',
   },
-  attemptBest: {
-    fontFamily: F.sansBold,
-    fontSize: 8,
-    letterSpacing: 1.2,
+  historyFootFigure: { fontFamily: F.serifSemiBold, fontSize: 15 },
+  historyFootDate: { fontFamily: F.serifSemiBold, color: '#6F675C' },
+  historyFootDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#D8D2C5' },
+
+/* — the trophy track — */
+  track: { marginTop: 14, position: 'relative', overflow: 'hidden', zIndex: 1 },
+  // Held back for the single frame between first layout and knowing how many
+  // trophies a shelf holds.
+  trackMeasuring: { opacity: 0 },
+  // One shelf. Rows stack, so each carries its own rail rather than the track
+  // carrying one across all of them.
+  trackRow: { position: 'relative', justifyContent: 'center', minHeight: 52 },
+  trackRail: { position: 'absolute', left: 0, right: 0, bottom: 8, height: 1.5, borderRadius: 1 },
+  trackSlots: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: TRACK_ROW_PAD,
+    gap: TRACK_SLOT_GAP,
   },
-  historyProgressTrack: {
-    marginTop: 12,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: '#F1ECE2',
-    overflow: 'hidden',
+  trackSlotsAlone: { justifyContent: 'center' },
+  trackSlot: { width: TRACK_SLOT_W, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8 },
+  trackImg: { width: 26, height: 26, transform: [{ rotate: '-8deg' }] },
+  // The best one stands taller and brighter than the rest of the row.
+  trackImgBest: { width: 34, height: 34, transform: [{ rotate: '-8deg' }] },
+  trackBestGlow: { position: 'absolute', bottom: 2, width: 38, height: 38, borderRadius: 19 },
+  trackBestPlinth: { position: 'absolute', bottom: 4, width: 20, height: 2.5, borderRadius: 2 },
+
+/* — the base — */
+  // Out to the sides and down to the bottom edge, where the plinth closes it.
+  // The card pads 17; the left rail is a 4pt bar drawn inside that padding, so
+  // -13 runs the base up against it rather than over it. The right side has no
+  // rail — only the border — so it goes flush.
+  base: {
+    marginTop: 15,
+    marginLeft: -13,
+    marginRight: -17,
+    marginBottom: -17,
+    // Room under the last figure for the gold to pool, so the card ends on a
+    // ground rather than on a baseline.
+    paddingBottom: 9,
+    position: 'relative',
     zIndex: 1,
   },
-  historyProgressFill: {
-    height: '100%',
-    borderRadius: 999,
+  // With no track above it, the base carries the whole distance from the title.
+  baseSingle: { marginTop: 17 },
+  baseRule: { height: 2 },
+  baseRuleLine: { height: 1 },
+
+  /* — the three figures — */
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    paddingVertical: 15,
+    paddingHorizontal: 6,
   },
+  statCell: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: 6 },
+  statDivider: { width: 1, alignSelf: 'stretch', marginVertical: 2 },
+  // The labels are set in the card's serif too, and at a size meant to be
+  // read: 7.5pt tracked capitals is the smallest voice in the app, and these
+  // three name the card's only figures.
+  statLabel: { fontFamily: F.serifMedium, fontSize: 13, lineHeight: 17 },
+  statValue: {
+    marginTop: 3,
+    fontFamily: F.serifSemiBold,
+    fontSize: 19,
+    lineHeight: 24,
+    color: C.text,
+  },
+  statStreak: {
+    marginTop: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  statFlame: { width: 19, height: 19 },
+  statStreakText: { fontFamily: F.serifSemiBold, fontSize: 19, lineHeight: 24, color: '#E4692B' },
+
+/* — the trophy ledger — */
+  // No box of its own: it is the last register of the base.
+  ledger: { position: 'relative' },
+  ledgerHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  ledgerHeadTrophy: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  ledgerHeadHalo: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(197,160,89,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.16,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2,
+    transform: [{ rotate: '-4deg' }],
+  },
+  ledgerHeadBase: {
+    position: 'absolute',
+    bottom: 5,
+    width: 32,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(104,72,24,0.10)',
+  },
+  ledgerHeadImg: { width: 36, height: 36, transform: [{ rotate: '-8deg' }] },
+  ledgerHeadCopy: { flex: 1, minWidth: 0 },
+  // Name, dot, date — the title's foot line, one register down.
+  ledgerHeadLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ledgerHeadValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 22,
+    color: C.text,
+    flexShrink: 0,
+  },
+  ledgerHeadDate: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 15, lineHeight: 20, color: '#6F675C' },
+  ledgerHeadSub: { marginTop: 2, fontFamily: F.serif, fontSize: 13.5, lineHeight: 18, color: '#9A9187' },
+  ledgerHandle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.16,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+
+  ledgerList: {
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 14,
+  },
+  ledgerRow: { flexDirection: 'row', alignItems: 'center', gap: 13, minHeight: 46 },
+  // The thread the trophies hang from: a hairline running through the column
+  // so the runs read as a sequence in time rather than as a pile. It is as
+  // wide as the head's trophy stage, so every run's date sits in the same
+  // column as the best run's above it.
+  ledgerThread: { width: 48, alignSelf: 'stretch', alignItems: 'center', flexShrink: 0 },
+  ledgerThreadLine: { flex: 1, width: 1, backgroundColor: 'rgba(197,160,89,0.22)' },
+  ledgerThreadLineTop: { opacity: 0 },
+  ledgerRowStage: { alignItems: 'center', justifyContent: 'center', marginVertical: 4 },
+  ledgerRowImg: { width: 26, height: 26, transform: [{ rotate: '-8deg' }] },
+  ledgerRowBase: {
+    position: 'absolute',
+    bottom: 1,
+    width: 18,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(104,72,24,0.10)',
+  },
+  ledgerRowCopy: { flex: 1, minWidth: 0 },
+  ledgerRowTitle: { fontFamily: F.serifSemiBold, fontSize: 15, lineHeight: 19, color: '#5F584E' },
+  ledgerRowDate: { marginTop: 1, fontFamily: F.serif, fontSize: 13.5, lineHeight: 18, color: '#9A9187' },
+  ledgerBestTag: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    flexShrink: 0,
+  },
+  ledgerBestText: { fontFamily: F.serifSemiBold, fontSize: 11.5, letterSpacing: 0.3 },
+
   sheet: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,

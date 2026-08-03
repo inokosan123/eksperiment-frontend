@@ -96,6 +96,14 @@ import { useTasks } from '@/components/tasks/TaskProvider';
 import { getPrayerTaskConfig, getScriptureTaskConfig } from '@/components/tasks/taskDb';
 import { resolveDisplayIcon, resolveDisplayType, resolveTaskVariant } from '@/components/tasks/taskAdapters';
 import type { PrayerTaskConfig, ScriptureTaskConfig, TaskDefinition, TaskDraft, TaskLevel } from '@/components/tasks/taskTypes';
+import {
+  DEFAULT_SCRIPTURE_SESSION_AMOUNT,
+  MAX_SCRIPTURE_SESSION_AMOUNT,
+  normalizeScriptureSessionAmount,
+  scriptureSessionAmountLabel,
+  scriptureSessionUnitLabel,
+  UNIVERSAL_SCRIPTURE_READING_TYPE,
+} from '@/components/scripture/scripture-task-model';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import {
   notifyGuideEvent,
@@ -572,48 +580,19 @@ function isScriptureRoutineTask(task: RoutineTask | null | undefined) {
     && task.targetView !== '/reading-list';
 }
 
-function inferScriptureReadingType(task: RoutineTask | null | undefined): ScriptureTaskConfig['readingType'] {
-  const configured = task?.scriptureConfig?.readingType;
-  if (
-    configured === 'new_testament'
-    || configured === 'old_testament'
-    || configured === 'psalter'
-    || configured === 'church_calendar'
-    || configured === 'custom'
-  ) {
-    return configured;
-  }
-
-  const label = `${task?.title ?? ''} ${task?.subtitle ?? ''}`.toLowerCase();
-  if (label.includes('church') || label.includes('lectionary')) return 'church_calendar';
-  if (label.includes('psalter') || label.includes('psalm')) return 'psalter';
-  if (label.includes('old testament')) return 'old_testament';
-  if (label.includes('new testament')) return 'new_testament';
-  return 'custom';
-}
-
-function normalizeScriptureChaptersPerDay(task: RoutineTask | null | undefined, readingType = inferScriptureReadingType(task)) {
-  if (readingType === 'church_calendar') return 0;
+function normalizeScriptureChaptersPerDay(task: RoutineTask | null | undefined) {
   const configured = Number(task?.scriptureConfig?.chaptersPerDay);
-  if (Number.isFinite(configured) && configured > 0) return Math.round(configured);
+  if (Number.isFinite(configured) && configured > 0) return normalizeScriptureSessionAmount(configured);
 
   const label = `${task?.title ?? ''} ${task?.subtitle ?? ''}`;
   const match = label.match(/\b(\d{1,2})\s*(?:chapter|chapters|psalm|psalms)\b/i)
     ?? label.match(/\b(?:chapter|chapters|psalm|psalms)\s*(?:per\s*day|\/day)?\D{0,8}(\d{1,2})\b/i);
   const parsed = Number.parseInt(match?.[1] ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 1;
-}
-
-function scriptureAmountLabel(readingType: ScriptureTaskConfig['readingType'], amount: number) {
-  if (readingType === 'church_calendar') return 'Church readings';
-  const safeAmount = Math.max(1, Math.round(Number.isFinite(amount) ? amount : 1));
-  if (readingType === 'psalter') return `${safeAmount} ${safeAmount === 1 ? 'psalm' : 'psalms'}/day`;
-  return `${safeAmount} ${safeAmount === 1 ? 'chapter' : 'chapters'}/day`;
+  return normalizeScriptureSessionAmount(parsed);
 }
 
 function getScriptureRoutineSubtitle(task: RoutineTask) {
-  const readingType = inferScriptureReadingType(task);
-  return `${scriptureAmountLabel(readingType, normalizeScriptureChaptersPerDay(task, readingType))} - ${getTaskFrequencyLabel(task)}`;
+  return `${scriptureSessionAmountLabel(normalizeScriptureChaptersPerDay(task))} - ${getTaskFrequencyLabel(task)}`;
 }
 
 function isJesusPrayerRoutineTask(task: RoutineTask | null | undefined) {
@@ -2232,18 +2211,15 @@ function RoutinePrayerRuleEditor({
 }
 
 function RoutineScriptureAmountEditor({
-  readingType,
   amount,
   onAmountChange,
   accent,
 }: {
-  readingType: ScriptureTaskConfig['readingType'];
   amount: number;
   onAmountChange: (amount: number) => void;
   accent: string;
 }) {
-  const amountValue = Math.max(1, Math.round(Number.isFinite(amount) ? amount : 1));
-  const noun = readingType === 'psalter' ? 'Psalm' : 'Chapter';
+  const amountValue = normalizeScriptureSessionAmount(amount);
   const presetValues = [1, 2, 3, 4, 5];
 
   return (
@@ -2258,12 +2234,10 @@ function RoutineScriptureAmountEditor({
         </TouchableOpacity>
         <View style={s.scriptureAmountCenter}>
           <Text style={[s.scriptureAmountNumber, { color: accent }]}>{amountValue}</Text>
-          <Text style={s.scriptureAmountCaption}>
-            {amountValue === 1 ? noun : `${noun}s`} per session
-          </Text>
+          <Text style={s.scriptureAmountCaption}>{scriptureSessionUnitLabel(amountValue)}</Text>
         </View>
         <TouchableOpacity
-          onPress={() => onAmountChange(Math.min(10, amountValue + 1))}
+          onPress={() => onAmountChange(Math.min(MAX_SCRIPTURE_SESSION_AMOUNT, amountValue + 1))}
           activeOpacity={0.84}
           style={s.scriptureAmountStepper}
         >
@@ -2338,8 +2312,7 @@ export function RoutineTaskEditorSheet({
   const [jesusMode, setJesusMode] = useState<JesusPrayerMode>('duration');
   const [jesusDuration, setJesusDuration] = useState('15');
   const [jesusCount, setJesusCount] = useState('100');
-  const [scriptureReadingType, setScriptureReadingType] = useState<ScriptureTaskConfig['readingType']>('custom');
-  const [scriptureChaptersPerDay, setScriptureChaptersPerDay] = useState(1);
+  const [scriptureChaptersPerDay, setScriptureChaptersPerDay] = useState(DEFAULT_SCRIPTURE_SESSION_AMOUNT);
   const categoryMotion = useSharedValue(level === 2 ? 1 : 0);
   const [categorySegmentWidth, setCategorySegmentWidth] = useState(0);
   const [showAllRoutineIcons, setShowAllRoutineIcons] = useState(false);
@@ -2419,9 +2392,7 @@ export function RoutineTaskEditorSheet({
         setJesusDuration('15');
         setJesusCount('100');
       }
-      const nextScriptureType = inferScriptureReadingType(formTask);
-      setScriptureReadingType(nextScriptureType);
-      setScriptureChaptersPerDay(Math.max(1, normalizeScriptureChaptersPerDay(formTask, nextScriptureType) || 1));
+      setScriptureChaptersPerDay(normalizeScriptureChaptersPerDay(formTask));
       return;
     }
 
@@ -2441,8 +2412,7 @@ export function RoutineTaskEditorSheet({
     setJesusMode('duration');
     setJesusDuration('15');
     setJesusCount('100');
-    setScriptureReadingType('custom');
-    setScriptureChaptersPerDay(1);
+    setScriptureChaptersPerDay(DEFAULT_SCRIPTURE_SESSION_AMOUNT);
   }, [defaultLevel, defaultType, formTask, visible]);
 
   const isSpiritual = level === 1;
@@ -2525,7 +2495,7 @@ export function RoutineTaskEditorSheet({
           ? `${Number.parseInt(jesusDuration || '15', 10) || 15} min`
           : `${Number.parseInt(jesusCount || '100', 10) || 100} repetitions`} - ${getTaskFrequencyLabel(draftTask)}`
         : isScriptureTask
-          ? `${scriptureAmountLabel(scriptureReadingType, scriptureChaptersPerDay)} - ${getTaskFrequencyLabel(draftTask)}`
+          ? `${scriptureSessionAmountLabel(scriptureChaptersPerDay)} - ${getTaskFrequencyLabel(draftTask)}`
         : isPrayerRuleTask
           ? `${routinePrayerRuleSummary(prayerRule)} - ${getTaskFrequencyLabel(draftTask)}`
         : draftTask.subtitle,
@@ -2552,8 +2522,8 @@ export function RoutineTaskEditorSheet({
       scriptureConfig: isScriptureTask
         ? {
           ...(draftTask.scriptureConfig ?? {}),
-          readingType: scriptureReadingType,
-          chaptersPerDay: scriptureReadingType === 'church_calendar' ? 0 : Math.max(1, Math.round(scriptureChaptersPerDay)),
+          readingType: UNIVERSAL_SCRIPTURE_READING_TYPE,
+          chaptersPerDay: normalizeScriptureSessionAmount(scriptureChaptersPerDay),
           totalUnitsRead: draftTask.scriptureConfig?.totalUnitsRead ?? 0,
         }
         : draftTask.scriptureConfig,
@@ -2704,11 +2674,10 @@ export function RoutineTaskEditorSheet({
               </View>
             )}
 
-            {isScriptureTask && scriptureReadingType !== 'church_calendar' && (
+            {isScriptureTask && (
               <View style={[s.editorBlock, themedBlockStyle]}>
                 <Text style={[s.editorBlockLabel, { color: C.gold }]}>Scripture Amount</Text>
                 <RoutineScriptureAmountEditor
-                  readingType={scriptureReadingType}
                   amount={scriptureChaptersPerDay}
                   onAmountChange={setScriptureChaptersPerDay}
                   accent={C.gold}

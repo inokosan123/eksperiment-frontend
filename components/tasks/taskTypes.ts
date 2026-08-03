@@ -118,6 +118,35 @@ export type QuickTaskConfig = {
   note?: string;
 };
 
+export type JournalTaskRoute = '/journal-daily' | '/journal-morning' | '/journal-free';
+
+export type TaskLaunchDescriptor =
+  | { kind: 'gratitude' }
+  | { kind: 'journal'; route: JournalTaskRoute }
+  | { kind: 'scriptureCheckpoint'; plannedCount: number }
+  | { kind: 'scriptureChallenge' }
+  | { kind: 'readingSession'; bookId: string }
+  | {
+      kind: 'jesusPrayer';
+      mode: 'duration' | 'count';
+      duration: number;
+      count: number;
+    }
+  | { kind: 'personalRule'; prayerType: string }
+  | {
+      kind: 'guidedPrayer';
+      category: 'morning' | 'evening' | 'meal' | 'jesus';
+      optionId: string;
+    }
+  | { kind: 'directCompletion' };
+
+export type TaskLaunchConfigBundle = {
+  prayer?: PrayerTaskConfig;
+  journal?: JournalTaskConfig;
+  scripture?: ScriptureTaskConfig;
+  readingBook?: ReadingBookTaskConfig;
+};
+
 export type TaskDraft = Omit<TaskDefinition, 'id' | 'createdAt' | 'activatedAt' | 'status' | 'quickConfig'> & {
   id?: string;
   status?: TaskLifecycleStatus;
@@ -136,4 +165,5 @@ export type TaskListItem = {
   instance: TaskInstance;
   card: TaskData;
   route?: string;
+  launch?: TaskLaunchDescriptor;
 };

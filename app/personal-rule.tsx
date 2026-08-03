@@ -1,9 +1,11 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import PersonalRuleTaskView from '@/components/prayer/PersonalRuleTaskView';
-import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
 import type { PersonalPrayerRuleChoice } from '@/components/prayer/PersonalRuleTaskView';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 
 function categoryForPrayerType(prayerType?: string) {
   return prayerType === 'evening' ? 'evening' : 'morning';
@@ -17,7 +19,6 @@ function optionIdForRule(rule: PersonalPrayerRuleChoice) {
 
 export default function PersonalRuleScreen() {
   const router = useRouter();
-  const { completeInstance } = useTasks();
   const { title, prayerType, isTask, taskInstanceId, taskDate } = useLocalSearchParams<{
     title?: string;
     prayerType?: string;
@@ -25,6 +26,10 @@ export default function PersonalRuleScreen() {
     taskInstanceId?: string;
     taskDate?: string;
   }>();
+  const completion = useRoutedTaskCompletion({
+    taskInstanceId,
+    taskDate: taskDate ?? getLocalDateKey(),
+  });
 
   return (
     <>
@@ -33,6 +38,7 @@ export default function PersonalRuleScreen() {
         title={title}
         prayerType={prayerType}
         isTask={isTask === 'true'}
+        showFinishLoader={completion.showSlowIndicator}
         selectedRule="personal"
         onBack={() => router.back()}
         onRuleChange={rule => {
@@ -50,11 +56,15 @@ export default function PersonalRuleScreen() {
           } as any);
         }}
         onComplete={async () => {
-          if (taskInstanceId) {
-            await completeInstance(taskInstanceId, taskDate ?? getLocalDateKey());
-            queueTaskCompletionReturnAnimation(taskInstanceId);
-          }
+          if (!taskInstanceId) return true;
+          const result = await completion.completeBeforeReturn({});
+          return result.ok;
         }}
+      />
+      <RoutedTaskCompletionErrorModal
+        visible={completion.saveErrorVisible}
+        onKeepEditing={completion.keepEditing}
+        onRetry={completion.retry}
       />
     </>
   );

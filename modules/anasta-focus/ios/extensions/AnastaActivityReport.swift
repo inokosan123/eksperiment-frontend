@@ -7,6 +7,10 @@ import SwiftUI
 extension DeviceActivityReport.Context {
   static let anastaDaily = Self("anasta.daily")
   static let anastaTrend = Self("anasta.trend")
+  static let anastaAnalyticsDay = Self("anasta.analytics.day")
+  static let anastaAnalyticsWeek = Self("anasta.analytics.week")
+  static let anastaAnalyticsMonth = Self("anasta.analytics.month")
+  static let anastaAnalyticsYear = Self("anasta.analytics.year")
 }
 
 enum AnastaReportMode {
@@ -63,6 +67,7 @@ struct AnastaActivityBucket: Identifiable {
 
 struct AnastaActivityConfiguration {
   let mode: AnastaReportMode
+  let essentialsOnly: Bool
   let totalDuration: TimeInterval
   let applications: [AnastaAppActivity]
   let websites: [AnastaWebActivity]
@@ -80,6 +85,62 @@ struct AnastaActivityReport: DeviceActivityReportExtension {
     AnastaTrendReport { configuration in
       AnastaActivityReportContent(configuration: configuration)
     }
+    AnastaAnalyticsDayReport { configuration in
+      AnastaAnalyticsReportContent(configuration: configuration)
+    }
+    AnastaAnalyticsWeekReport { configuration in
+      AnastaAnalyticsReportContent(configuration: configuration)
+    }
+    AnastaAnalyticsMonthReport { configuration in
+      AnastaAnalyticsReportContent(configuration: configuration)
+    }
+    AnastaAnalyticsYearReport { configuration in
+      AnastaAnalyticsReportContent(configuration: configuration)
+    }
+  }
+}
+
+struct AnastaAnalyticsDayReport: DeviceActivityReportScene {
+  let context: DeviceActivityReport.Context = .anastaAnalyticsDay
+  let content: (AnastaAnalyticsConfiguration) -> AnastaAnalyticsReportContent
+
+  func makeConfiguration(
+    representing data: DeviceActivityResults<DeviceActivityData>
+  ) async -> AnastaAnalyticsConfiguration {
+    await makeAnastaAnalyticsConfiguration(representing: data, period: .day)
+  }
+}
+
+struct AnastaAnalyticsWeekReport: DeviceActivityReportScene {
+  let context: DeviceActivityReport.Context = .anastaAnalyticsWeek
+  let content: (AnastaAnalyticsConfiguration) -> AnastaAnalyticsReportContent
+
+  func makeConfiguration(
+    representing data: DeviceActivityResults<DeviceActivityData>
+  ) async -> AnastaAnalyticsConfiguration {
+    await makeAnastaAnalyticsConfiguration(representing: data, period: .week)
+  }
+}
+
+struct AnastaAnalyticsMonthReport: DeviceActivityReportScene {
+  let context: DeviceActivityReport.Context = .anastaAnalyticsMonth
+  let content: (AnastaAnalyticsConfiguration) -> AnastaAnalyticsReportContent
+
+  func makeConfiguration(
+    representing data: DeviceActivityResults<DeviceActivityData>
+  ) async -> AnastaAnalyticsConfiguration {
+    await makeAnastaAnalyticsConfiguration(representing: data, period: .month)
+  }
+}
+
+struct AnastaAnalyticsYearReport: DeviceActivityReportScene {
+  let context: DeviceActivityReport.Context = .anastaAnalyticsYear
+  let content: (AnastaAnalyticsConfiguration) -> AnastaAnalyticsReportContent
+
+  func makeConfiguration(
+    representing data: DeviceActivityResults<DeviceActivityData>
+  ) async -> AnastaAnalyticsConfiguration {
+    await makeAnastaAnalyticsConfiguration(representing: data, period: .year)
   }
 }
 
@@ -161,6 +222,8 @@ private func makeAnastaConfiguration(
 
   return AnastaActivityConfiguration(
     mode: mode,
+    essentialsOnly: mode == .daily
+      && AnastaReportMetadata.isEssentialsOnly(on: firstDate ?? Date()),
     totalDuration: totalDuration,
     applications: Array(applications),
     websites: Array(websites),
@@ -308,6 +371,13 @@ private enum AnastaReportMetadata {
     return sessions.first(where: { sessionContains($0, minute: minute) })?["rules"] as? [[String: Any]] ?? []
   }
 
+  /// An Essentials-only plan carries no group boundaries at all, so the group
+  /// list is replaced rather than left empty and unexplained.
+  static func isEssentialsOnly(on date: Date) -> Bool {
+    guard let plan = plan(on: date) else { return false }
+    return plan["essentialsOnly"] as? Bool == true
+  }
+
   static func groups(
     for appDurations: [ApplicationToken: TimeInterval],
     on date: Date
@@ -401,14 +471,6 @@ private enum AnastaReportMetadata {
 }
 
 struct AnastaActivityReportContent: View {
-  private enum UsageState: Equatable {
-    case blocked
-    case open
-    case over
-    case planned
-    case within
-  }
-
   let configuration: AnastaActivityConfiguration
   @State private var expandedGroupId: String?
   @State private var showingMoreDetail = false
@@ -447,10 +509,16 @@ struct AnastaActivityReportContent: View {
     let activeGroups = configuration.groups.filter { $0.duration > 0 }
     let total = max(activeGroups.reduce(0) { $0 + $1.duration }, 1)
     let overCount = activeGroups.filter {
-      usageState(boundary: $0.boundary, duration: $0.duration) == .over
+      usageState(boundary: $0.boundary, duration: $0.duration) == .overLimit
+    }.count
+    let atLimitCount = activeGroups.filter {
+      usageState(boundary: $0.boundary, duration: $0.duration) == .atLimit
     }.count
     let onTrackCount = activeGroups.filter {
-      usageState(boundary: $0.boundary, duration: $0.duration) == .within
+      usageState(boundary: $0.boundary, duration: $0.duration) == .limitActive
+    }.count
+    let openCount = activeGroups.filter {
+      usageState(boundary: $0.boundary, duration: $0.duration) == .noLimit
     }.count
 
     return VStack(alignment: .leading, spacing: 12) {
@@ -467,11 +535,11 @@ struct AnastaActivityReportContent: View {
         .frame(width: 38, height: 38)
 
         VStack(alignment: .leading, spacing: 2) {
-          Text("TODAY · USAGE MAP")
+          Text("TODAY · GROUP STATUS")
             .font(.system(size: 7.5, weight: .bold))
             .tracking(1.35)
             .foregroundStyle(gold)
-          Text("Where your time went")
+          Text("How your groups stand")
             .font(.system(size: 19, weight: .semibold, design: .serif))
             .foregroundStyle(ink)
         }
@@ -499,8 +567,9 @@ struct AnastaActivityReportContent: View {
         } else {
           HStack(spacing: 3) {
             ForEach(activeGroups) { group in
+              let state = usageState(boundary: group.boundary, duration: group.duration)
               Capsule()
-                .fill(groupColor(group.id).opacity(0.88))
+                .fill(stateColor(state).opacity(0.88))
                 .frame(width: max(5, (proxy.size.width - CGFloat(max(0, activeGroups.count - 1) * 3)) * CGFloat(group.duration / total)))
             }
           }
@@ -514,12 +583,18 @@ struct AnastaActivityReportContent: View {
           .foregroundStyle(secondary)
         Spacer(minLength: 6)
         if onTrackCount > 0 {
-          overviewSignal("\(onTrackCount) on track", color: safe)
+          overviewSignal("\(onTrackCount) on track", color: limitGold)
+        }
+        if atLimitCount > 0 {
+          overviewSignal("\(atLimitCount) at limit", color: limitMet)
         }
         if overCount > 0 {
           overviewSignal("\(overCount) over", color: danger)
         }
-        if onTrackCount == 0 && overCount == 0 {
+        if openCount > 0 && onTrackCount == 0 && atLimitCount == 0 && overCount == 0 {
+          overviewSignal("\(openCount) open", color: secondary)
+        }
+        if openCount == 0 && onTrackCount == 0 && atLimitCount == 0 && overCount == 0 {
           Text("Tap a group for apps")
             .font(.system(size: 8.5, weight: .medium))
             .foregroundStyle(secondary)
@@ -551,14 +626,27 @@ struct AnastaActivityReportContent: View {
   }
 
   private var dailyContent: some View {
-    let activeGroups = configuration.groups.filter { $0.duration > 0 }
-    let quietGroups = configuration.groups.filter { $0.duration <= 0 }
+    // Apple's own bucket is not a plan group: it takes no rule, no state and no
+    // part in any count, and it rides at the very end of the list.
+    let planGroups = configuration.groups.filter { $0.id != "__other" }
+    let otherActivity = configuration.groups.first { $0.id == "__other" }
+    let activeGroups = planGroups.filter { $0.duration > 0 }
+    let quietGroups = planGroups.filter { $0.duration <= 0 }
     return VStack(alignment: .leading, spacing: 13) {
-      if activeGroups.isEmpty && configuration.totalDuration <= 0 {
+      if activeGroups.isEmpty && configuration.totalDuration <= 0 && !configuration.essentialsOnly {
         emptyActivity
       }
 
-      if !activeGroups.isEmpty {
+      if configuration.essentialsOnly {
+        dailySectionHeading(
+          "Plan groups",
+          subtitle: "Replaced while Essentials-only holds",
+          count: 0
+        )
+        essentialsOnlyCard
+      }
+
+      if !configuration.essentialsOnly, !activeGroups.isEmpty {
         dailySectionHeading(
           "Active today",
           subtitle: "Ranked by screen time",
@@ -571,7 +659,7 @@ struct AnastaActivityReportContent: View {
         }
       }
 
-      if !quietGroups.isEmpty {
+      if !configuration.essentialsOnly, !quietGroups.isEmpty {
         dailySectionHeading(
           activeGroups.isEmpty ? "Plan groups" : "Inactive today",
           subtitle: activeGroups.isEmpty ? "No group activity yet" : "No screen time recorded",
@@ -584,9 +672,18 @@ struct AnastaActivityReportContent: View {
         }
       }
 
-      if configuration.groups.isEmpty && configuration.totalDuration > 0 {
+      if planGroups.isEmpty && configuration.totalDuration > 0 && !configuration.essentialsOnly {
         sectionHeading("MOST USED APPS", count: configuration.applications.count)
         appFallbackRows
+      }
+
+      if let otherActivity, otherActivity.duration > 0 {
+        dailySectionHeading(
+          "Other activity",
+          subtitle: "Outside your plan groups",
+          count: 1
+        )
+        otherActivityRow(otherActivity)
       }
 
       if !configuration.categories.isEmpty || !configuration.websites.isEmpty {
@@ -686,7 +783,7 @@ struct AnastaActivityReportContent: View {
   private func groupCard(_ group: AnastaGroupActivity, rank: Int) -> some View {
     let state = usageState(boundary: group.boundary, duration: group.duration)
     let expanded = expandedGroupId == group.id
-    let color = state == .over ? danger : groupColor(group.id)
+    let color = stateColor(state)
     return VStack(spacing: 0) {
       Button {
         withAnimation(.easeInOut(duration: 0.18)) {
@@ -697,7 +794,7 @@ struct AnastaActivityReportContent: View {
           HStack(spacing: 10) {
             Text(String(format: "%02d", rank))
               .font(.system(size: 8, weight: .bold, design: .rounded))
-              .foregroundStyle(groupColor(group.id).opacity(0.76))
+              .foregroundStyle(color.opacity(0.76))
               .frame(width: 21, height: 42)
 
             groupMark(group)
@@ -709,7 +806,7 @@ struct AnastaActivityReportContent: View {
                 .lineLimit(1)
               Text(boundaryCaption(state, boundary: group.boundary, duration: group.duration))
                 .font(.system(size: 9.3, weight: .medium))
-                .foregroundStyle(state == .over ? danger : secondary)
+                .foregroundStyle(state == .overLimit || state == .atLimit ? color : secondary)
                 .lineLimit(1)
             }
 
@@ -718,8 +815,8 @@ struct AnastaActivityReportContent: View {
             VStack(alignment: .trailing, spacing: 4) {
               Text(duration(group.duration))
                 .font(.system(size: 18.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(state == .over ? danger : ink)
-              statusBadge(state, boundary: group.boundary)
+                .foregroundStyle(state == .overLimit || state == .atLimit ? color : ink)
+              statusBadge(state, boundary: group.boundary, duration: group.duration)
             }
           }
 
@@ -728,7 +825,21 @@ struct AnastaActivityReportContent: View {
           }
 
           HStack(spacing: 6) {
-            Circle().fill(color.opacity(0.7)).frame(width: 5, height: 5)
+            // What the children did, without taking their colour.
+            if let signal = secondarySignalLabel(group) {
+              Text(signal)
+                .font(.system(size: 8.5, weight: .bold))
+                .tracking(0.9)
+                .foregroundStyle(secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3.5)
+                .overlay(
+                  RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(stateBorder(state), lineWidth: 0.5)
+                )
+            } else {
+              Circle().fill(color.opacity(0.7)).frame(width: 5, height: 5)
+            }
             Text(expanded ? "Hide app detail" : "View \(group.applications.count) \(group.applications.count == 1 ? "app" : "apps")")
               .font(.system(size: 9.2, weight: .semibold))
               .foregroundStyle(secondary)
@@ -755,7 +866,7 @@ struct AnastaActivityReportContent: View {
     }
     .background(
       LinearGradient(
-        colors: [Color.white.opacity(0.96), color.opacity(state == .over ? 0.07 : 0.055)],
+        colors: [Color.white.opacity(0.82), stateBackground(state)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
       )
@@ -763,18 +874,21 @@ struct AnastaActivityReportContent: View {
     .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
     .overlay(
       RoundedRectangle(cornerRadius: 21, style: .continuous)
-        .stroke(state == .over ? danger.opacity(0.28) : Color.black.opacity(0.065), lineWidth: 1)
+        .stroke(stateBorder(state), lineWidth: 1)
     )
     .overlay(alignment: .leading) {
       Rectangle()
         .fill(color)
         .frame(width: 3)
     }
+    .animation(.easeInOut(duration: 0.23), value: state)
   }
 
   private func quietGroupRow(_ group: AnastaGroupActivity) -> some View {
     let expanded = expandedGroupId == group.id
     let protectedGroup = group.boundary.mode == .blocked
+    let state = usageState(boundary: group.boundary, duration: group.duration)
+    let color = stateColor(state)
     return VStack(spacing: 0) {
       Button {
         withAnimation(.easeInOut(duration: 0.18)) {
@@ -784,15 +898,15 @@ struct AnastaActivityReportContent: View {
         HStack(spacing: 10) {
           ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-              .fill(groupColor(group.id).opacity(0.075))
+              .fill(color.opacity(0.09))
             if group.boundary.mode == .blocked {
               Image(systemName: "lock.fill")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(groupColor(group.id))
+                .foregroundStyle(color)
             } else {
               Text(String(group.name.prefix(1)).uppercased())
                 .font(.system(size: 16.5, weight: .semibold, design: .serif))
-                .foregroundStyle(groupColor(group.id))
+                .foregroundStyle(color)
             }
           }
           .frame(width: 38, height: 38)
@@ -814,13 +928,13 @@ struct AnastaActivityReportContent: View {
             Text("0m")
               .font(.system(size: 11.5, weight: .semibold, design: .rounded))
               .foregroundStyle(secondary)
-            Text(protectedGroup ? "PROTECTED" : "INACTIVE")
+            Text(AnastaAnalyticsPure.statusLabel(state, limitMinutes: group.boundary.minutes, usedMinutes: displayedMinutes(group.duration), formatMinutes: minutesText))
               .font(.system(size: 5.8, weight: .bold))
               .tracking(0.62)
-              .foregroundStyle(protectedGroup ? safe : secondary.opacity(0.72))
+              .foregroundStyle(color)
               .padding(.horizontal, 5.5)
               .frame(minHeight: 15)
-              .background((protectedGroup ? safe : secondary).opacity(0.07))
+              .background(color.opacity(0.1))
               .clipShape(Capsule())
           }
 
@@ -844,7 +958,7 @@ struct AnastaActivityReportContent: View {
     }
     .background(
       LinearGradient(
-        colors: [Color.white.opacity(0.86), groupColor(group.id).opacity(0.035)],
+        colors: [Color.white.opacity(0.82), stateBackground(state)],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
       )
@@ -852,13 +966,14 @@ struct AnastaActivityReportContent: View {
     .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
     .overlay(
       RoundedRectangle(cornerRadius: 19, style: .continuous)
-        .stroke(Color.black.opacity(0.055), lineWidth: 1)
+        .stroke(stateBorder(state), lineWidth: 1)
     )
     .overlay(alignment: .leading) {
       Capsule()
-        .fill(groupColor(group.id).opacity(0.42))
+        .fill(color.opacity(0.72))
         .frame(width: 2, height: 40)
     }
+    .animation(.easeInOut(duration: 0.23), value: state)
   }
 
   private func quietBoundaryLabel(_ boundary: AnastaActivityBoundary) -> String {
@@ -868,31 +983,39 @@ struct AnastaActivityReportContent: View {
   }
 
   private func groupMark(_ group: AnastaGroupActivity) -> some View {
-    ZStack {
+    let state = usageState(boundary: group.boundary, duration: group.duration)
+    let color = stateColor(state)
+    return ZStack {
       RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .fill(groupColor(group.id).opacity(0.12))
+        .fill(Color(red: 0.95, green: 0.94, blue: 0.92))
         .frame(width: 44, height: 44)
+        .overlay(
+          RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(Color.black.opacity(0.06), lineWidth: 1)
+        )
       if group.boundary.mode == .blocked {
         Image(systemName: "lock.fill")
           .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(groupColor(group.id))
+          .foregroundStyle(color)
       } else {
         Text(String(group.name.prefix(1)).uppercased())
           .font(.system(size: 19, weight: .semibold, design: .serif))
-          .foregroundStyle(groupColor(group.id))
+          .foregroundStyle(secondary)
       }
     }
   }
 
   private func groupApps(_ group: AnastaGroupActivity) -> some View {
-    VStack(alignment: .leading, spacing: 0) {
+    let state = usageState(boundary: group.boundary, duration: group.duration)
+    let color = stateColor(state)
+    return VStack(alignment: .leading, spacing: 0) {
       HStack {
         ZStack {
           RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .fill(groupColor(group.id).opacity(0.11))
+            .fill(color.opacity(0.11))
           Image(systemName: "chart.bar.fill")
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(groupColor(group.id))
+            .foregroundStyle(color)
         }
         .frame(width: 34, height: 34)
 
@@ -947,7 +1070,13 @@ struct AnastaActivityReportContent: View {
   }
 
   private func appRow(_ application: AnastaGroupAppActivity, groupBoundary: AnastaActivityBoundary) -> some View {
-    let specificState = application.boundary.map { usageState(boundary: $0, duration: application.duration) }
+    // An app inside a blocked group is closed by the group; its own dormant
+    // rule must never be shown as if it were doing the work.
+    let groupBlocks = groupBoundary.mode == .blocked
+    let effectiveBoundary = groupBlocks ? nil : application.boundary
+    let specificState = effectiveBoundary.map { usageState(boundary: $0, duration: application.duration) }
+    let specificColor = specificState.map(stateColor) ?? secondary
+    let groupAppearance = usageState(boundary: groupBoundary, duration: 0)
     return VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 9) {
         VStack(alignment: .leading, spacing: 2) {
@@ -960,22 +1089,25 @@ struct AnastaActivityReportContent: View {
             .foregroundStyle(secondary)
         }
         Spacer(minLength: 6)
-        if let boundary = application.boundary, let state = specificState {
+        if let boundary = effectiveBoundary, let state = specificState {
           VStack(alignment: .trailing, spacing: 2) {
             Text(duration(application.duration))
               .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-              .foregroundStyle(state == .over ? danger : ink.opacity(0.72))
-            Text(appBoundaryLabel(boundary, state: state))
+              .foregroundStyle(state == .overLimit || state == .atLimit ? specificColor : ink.opacity(0.72))
+            Text(appBoundaryLabel(boundary, state: state, duration: application.duration))
               .font(.system(size: 6.8, weight: .bold))
               .tracking(0.65)
-              .foregroundStyle(state == .over ? danger : state == .blocked ? secondary : safe)
+              .foregroundStyle(specificColor)
           }
         } else {
           VStack(alignment: .trailing, spacing: 2) {
             Text(duration(application.duration))
               .font(.system(size: 11.5, weight: .semibold, design: .rounded))
               .foregroundStyle(ink.opacity(0.72))
-            Text(groupBoundary.mode == .noLimit ? "NO LIMIT" : "GROUP RULE")
+            Text(AnastaAnalyticsPure.inheritedBoundaryLabel(
+              groupAppearance: groupAppearance,
+              groupMode: pureMode(groupBoundary.mode)
+            ))
               .font(.system(size: 6.8, weight: .bold))
               .tracking(0.65)
               .foregroundStyle(secondary)
@@ -984,14 +1116,14 @@ struct AnastaActivityReportContent: View {
       }
 
       if
-        let boundary = application.boundary,
+        let boundary = effectiveBoundary,
         boundary.mode == .limit,
         let minutes = boundary.minutes
       {
         progressRail(
           application.duration,
           limitMinutes: minutes,
-          color: specificState == .over ? danger : safe
+          color: specificColor
         )
         .frame(height: 3)
       }
@@ -1009,6 +1141,81 @@ struct AnastaActivityReportContent: View {
     if boundary.mode == .blocked { return "Blocked" }
     if let minutes = boundary.minutes { return "\(duration(TimeInterval(minutes * 60))) app limit" }
     return "No limit"
+  }
+
+  /// An Essentials-only plan has no group boundaries to report on, so the one
+  /// fact that is true is stated instead.
+  private var essentialsOnlyCard: some View {
+    HStack(alignment: .center, spacing: 13) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 14, style: .continuous).fill(crimson)
+        Image(systemName: "lock.fill")
+          .font(.system(size: 17, weight: .semibold))
+          .foregroundStyle(Color.white)
+      }
+      .frame(width: 42, height: 42)
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text("ESSENTIALS ONLY")
+          .font(.system(size: 11, weight: .bold))
+          .tracking(1.7)
+          .foregroundStyle(crimson)
+        Text("Only essential apps are available during this plan.")
+          .font(.system(size: 14))
+          .foregroundStyle(secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(15)
+    .background(stateBackground(.blocked))
+    .overlay(
+      RoundedRectangle(cornerRadius: 21, style: .continuous)
+        .strokeBorder(stateBorder(.blocked), lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(
+      "Essentials only. Only essential apps are available during this plan."
+    )
+  }
+
+  private func otherActivityRow(_ group: AnastaGroupActivity) -> some View {
+    HStack(spacing: 11) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 11, style: .continuous)
+          .fill(Color.black.opacity(0.045))
+        Image(systemName: "waveform.path.ecg")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(secondary)
+      }
+      .frame(width: 34, height: 34)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Other activity")
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundStyle(ink)
+        Text("Outside your plan groups")
+          .font(.system(size: 12))
+          .foregroundStyle(secondary)
+      }
+      Spacer(minLength: 8)
+      Text(duration(group.duration))
+        .font(.system(size: 16, weight: .semibold))
+        .foregroundStyle(ink)
+        .monospacedDigit()
+    }
+    .padding(13)
+    .background(stateBackground(.noLimit))
+    .overlay(
+      RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .strokeBorder(stateBorder(.noLimit), lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(
+      "Other activity, \(duration(group.duration)), outside your plan groups"
+    )
   }
 
   private var moreDetail: some View {
@@ -1186,66 +1393,125 @@ struct AnastaActivityReportContent: View {
     }
   }
 
-  private func usageState(boundary: AnastaActivityBoundary, duration: TimeInterval) -> UsageState {
-    switch boundary.mode {
-    case .blocked:
-      return duration > 0 ? .over : .blocked
-    case .noLimit:
-      return .open
-    case .limit:
-      guard let minutes = boundary.minutes else { return .open }
-      if duration <= 0 { return .planned }
-      return duration > TimeInterval(minutes * 60) ? .over : .within
+  /// The report always has a figure, so `pending` cannot arise here — but the
+  /// state model is the same one the React Native breakdown resolves, so a
+  /// block stays a block whether or not minutes were recorded against it.
+  private func usageState(
+    boundary: AnastaActivityBoundary,
+    duration: TimeInterval
+  ) -> AnastaAnalyticsPure.BoundaryAppearance {
+    AnastaAnalyticsPure.boundaryAppearance(
+      mode: pureMode(boundary.mode),
+      limitMinutes: boundary.minutes,
+      usedMinutes: displayedMinutes(duration)
+    )
+  }
+
+  private func pureMode(_ mode: AnastaBoundaryMode) -> AnastaAnalyticsPure.BoundaryMode {
+    switch mode {
+    case .blocked: return .blocked
+    case .limit: return .limit
+    case .noLimit: return .noLimit
     }
   }
 
-  private func statusBadge(_ state: UsageState, boundary: AnastaActivityBoundary) -> some View {
-    let value: String
-    switch state {
-    case .blocked: value = "BLOCKED"
-    case .open: value = "OPEN"
-    case .over: value = "OVER"
-    case .planned:
-      value = boundary.minutes == nil ? "LIMIT" : "LIMIT SET"
-    case .within: value = "OK"
+  private func displayedMinutes(_ duration: TimeInterval) -> Int {
+    Int(max(0, duration) / 60)
+  }
+
+  private func minutesText(_ minutes: Int) -> String {
+    duration(TimeInterval(minutes * 60))
+  }
+
+  /// The children's states, so a group can report what they did without taking
+  /// their colour. Never counts Apple's own `__other` bucket.
+  private func childAppearances(
+    _ group: AnastaGroupActivity
+  ) -> [AnastaAnalyticsPure.BoundaryAppearance] {
+    guard group.id != "__other" else { return [] }
+    return group.applications.map { application in
+      let effective = group.boundary.mode == .blocked
+        ? AnastaActivityBoundary(mode: .blocked, minutes: nil)
+        : (application.boundary ?? AnastaActivityBoundary(mode: .noLimit, minutes: nil))
+      return usageState(boundary: effective, duration: application.duration)
     }
+  }
+
+  private func secondarySignalLabel(_ group: AnastaGroupActivity) -> String? {
+    let appearance = usageState(boundary: group.boundary, duration: group.duration)
+    let signal = AnastaAnalyticsPure.secondarySignal(
+      appearance: appearance,
+      usedMinutes: displayedMinutes(group.duration),
+      childAppearances: childAppearances(group)
+    )
+    return AnastaAnalyticsPure.secondarySignalLabel(signal, formatMinutes: minutesText)
+  }
+
+  private func statusBadge(
+    _ state: AnastaAnalyticsPure.BoundaryAppearance,
+    boundary: AnastaActivityBoundary,
+    duration value: TimeInterval = 0
+  ) -> some View {
+    let label = AnastaAnalyticsPure.statusLabel(
+      state,
+      limitMinutes: boundary.minutes,
+      usedMinutes: displayedMinutes(value),
+      formatMinutes: minutesText
+    )
     return HStack(spacing: 3) {
-      if state == .within {
+      // Colour alone cannot separate a standing block from a passed boundary —
+      // they sit six degrees apart in hue — so each carries its own mark.
+      if state == .limitActive {
         Image(systemName: "checkmark").font(.system(size: 6.5, weight: .heavy))
       } else if state == .blocked {
         Image(systemName: "lock.fill").font(.system(size: 6, weight: .bold))
+      } else if state == .overLimit {
+        Image(systemName: "exclamationmark").font(.system(size: 7, weight: .heavy))
       }
-      Text(value)
+      Text(label)
         .font(.system(size: 7, weight: .bold))
         .tracking(0.65)
     }
-    .foregroundStyle(state == .over ? danger : state == .within ? safe : secondary)
+    .foregroundStyle(stateColor(state))
     .padding(.horizontal, 8)
     .padding(.vertical, 4.5)
-    .background((state == .over ? danger : state == .within ? safe : secondary).opacity(0.09))
+    .background(stateColor(state).opacity(0.1))
     .clipShape(Capsule())
   }
 
   private func boundaryCaption(
-    _ state: UsageState,
+    _ state: AnastaAnalyticsPure.BoundaryAppearance,
     boundary: AnastaActivityBoundary,
     duration value: TimeInterval
   ) -> String {
-    guard let minutes = boundary.minutes else {
-      return boundary.mode == .blocked ? "Closed in this plan" : "Open use"
+    if state == .blocked { return "Closed for this plan" }
+    guard let minutes = boundary.minutes else { return "Open use · no daily limit" }
+    let used = displayedMinutes(value)
+    switch state {
+    case .overLimit:
+      return "\(minutesText(minutes)) limit · recorded today"
+    case .limitActive:
+      return used == 0
+        ? "\(minutesText(minutes)) daily limit"
+        : "\(minutesText(AnastaAnalyticsPure.remainingMinutes(limitMinutes: minutes, usedMinutes: used))) left · \(minutesText(minutes)) limit"
+    case .atLimit:
+      return "Limit reached · \(minutesText(minutes)) limit"
+    default:
+      return "Waiting for activity"
     }
-    let limit = TimeInterval(minutes * 60)
-    if state == .over { return "\(duration(max(0, value - limit))) over" }
-    if state == .within { return "\(duration(max(0, limit - value))) left" }
-    return "Waiting for activity"
   }
 
-  private func appBoundaryLabel(_ boundary: AnastaActivityBoundary, state: UsageState) -> String {
-    if state == .over { return "OVER" }
-    if boundary.mode == .blocked { return "LOCKED" }
-    if state == .within { return "OK" }
-    if let minutes = boundary.minutes { return "\(duration(TimeInterval(minutes * 60))) LIMIT" }
-    return "NO LIMIT"
+  private func appBoundaryLabel(
+    _ boundary: AnastaActivityBoundary,
+    state: AnastaAnalyticsPure.BoundaryAppearance,
+    duration value: TimeInterval = 0
+  ) -> String {
+    AnastaAnalyticsPure.statusLabel(
+      state,
+      limitMinutes: boundary.minutes,
+      usedMinutes: displayedMinutes(value),
+      formatMinutes: minutesText
+    )
   }
 
   private func progressRail(_ value: TimeInterval, limitMinutes: Int, color: Color) -> some View {
@@ -1273,15 +1539,39 @@ struct AnastaActivityReportContent: View {
     return formatter.string(from: date)
   }
 
-  private func groupColor(_ id: String) -> Color {
-    switch id {
-    case "social": return Color(red: 0.43, green: 0.35, blue: 0.68)
-    case "entertainment": return Color(red: 0.71, green: 0.25, blue: 0.33)
-    case "games": return Color(red: 0.31, green: 0.28, blue: 0.90)
-    case "news": return Color(red: 0.36, green: 0.34, blue: 0.31)
-    case "shopping": return Color(red: 0.66, green: 0.52, blue: 0.25)
-    case "dating": return Color(red: 0.71, green: 0.25, blue: 0.33)
-    default: return gold
+  // The same six tones the React Native breakdown wears. Blocked rose and
+  // over-limit scarlet are deliberately both in the red family; what tells them
+  // apart is saturation, the mark they carry and the words they use.
+  private func stateColor(_ state: AnastaAnalyticsPure.BoundaryAppearance) -> Color {
+    switch state {
+    case .pending: return Color(red: 0.569, green: 0.545, blue: 0.506)
+    case .noLimit: return secondary
+    case .limitActive: return limitPurple
+    case .blocked: return crimson
+    case .atLimit: return limitMet
+    case .overLimit: return scarlet
+    }
+  }
+
+  private func stateBackground(_ state: AnastaAnalyticsPure.BoundaryAppearance) -> Color {
+    switch state {
+    case .pending: return Color(red: 0.969, green: 0.965, blue: 0.949)
+    case .noLimit: return Color(red: 1.0, green: 0.992, blue: 0.976)
+    case .limitActive: return Color(red: 0.957, green: 0.949, blue: 0.980)
+    case .blocked: return Color(red: 1.0, green: 0.976, blue: 0.980)
+    case .atLimit: return Color(red: 0.984, green: 0.949, blue: 0.863)
+    case .overLimit: return Color(red: 1.0, green: 0.945, blue: 0.953)
+    }
+  }
+
+  private func stateBorder(_ state: AnastaAnalyticsPure.BoundaryAppearance) -> Color {
+    switch state {
+    case .pending: return Color(red: 0.863, green: 0.847, blue: 0.812)
+    case .noLimit: return Color.black.opacity(0.06)
+    case .limitActive: return limitPurple.opacity(0.34)
+    case .blocked: return crimson.opacity(0.30)
+    case .atLimit: return limitMet.opacity(0.42)
+    case .overLimit: return scarlet.opacity(0.32)
     }
   }
 
@@ -1297,7 +1587,11 @@ struct AnastaActivityReportContent: View {
   private var ink: Color { Color(red: 0.16, green: 0.14, blue: 0.11) }
   private var secondary: Color { Color(red: 0.47, green: 0.44, blue: 0.40) }
   private var gold: Color { Color(red: 0.63, green: 0.45, blue: 0.16) }
-  private var crimson: Color { Color(red: 0.63, green: 0.24, blue: 0.29) }
+  private var limitGold: Color { Color(red: 0.773, green: 0.627, blue: 0.349) }
+  private var limitMet: Color { Color(red: 0.545, green: 0.420, blue: 0.184) }
+  private var crimson: Color { Color(red: 0.635, green: 0.263, blue: 0.318) }
+  private var limitPurple: Color { Color(red: 0.427, green: 0.353, blue: 0.682) }
+  private var scarlet: Color { Color(red: 0.745, green: 0.071, blue: 0.235) }
   private var danger: Color { Color(red: 0.66, green: 0.28, blue: 0.34) }
   private var safe: Color { Color(red: 0.23, green: 0.48, blue: 0.42) }
 }

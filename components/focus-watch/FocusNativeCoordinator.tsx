@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { AppState } from 'react-native';
 import {
   activeZone,
+  confirmNeverAllowedNativeApplied,
   dateKey,
   finalizeNativeDayReconciliation,
   getEffectivePlan,
@@ -52,6 +53,14 @@ async function openPendingIntervention() {
   lastInterventionCreatedAt = pending.createdAt;
 
   const age = Date.now() - pending.createdAt;
+  if (pending.kind === 'web-never') {
+    if (age < 0 || age > 10 * 60_000 || !pending.commitmentId) return;
+    router.push({
+      pathname: '/focus-never-allowed',
+      params: { mode: 'reminder', commitment: pending.commitmentId },
+    } as never);
+    return;
+  }
   const canContinue = pending.strength === 'loose' || pending.kind === 'checkin';
   if (!canContinue || age < 0 || age > 10 * 60_000 || !pending.accessSelectionId) return;
 
@@ -132,6 +141,12 @@ async function applyCurrentProtection() {
       rollbackQuietHourStart(current.quiet.startedAt);
     }
     if (result.applied) {
+      const neverAllowed = getDayPlanState().purity.neverAllowed;
+      for (const commitment of Array.isArray(neverAllowed) ? neverAllowed : []) {
+        if (commitment.status === 'pending-native') {
+          confirmNeverAllowedNativeApplied(commitment.id);
+        }
+      }
       const hardWallDate = !result.unavailable && result.hardWallReached
         ? result.hardWallDate ?? dateKey(new Date())
         : null;

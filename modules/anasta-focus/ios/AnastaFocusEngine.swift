@@ -26,6 +26,8 @@ enum AnastaFocusShared {
   static let targetArmedDaysKey = "anasta.focus.target-armed-days.v4"
   static let targetLostDaysKey = "anasta.focus.target-lost-days.v4"
   static let reportSelectionScopesKey = "anasta.focus.report-selection-scopes.v4"
+  static let analyticsContextPointerKey = "anasta.focus.analytics-context.current.v1"
+  static let analyticsContextRequestPrefix = "anasta.focus.analytics-context.request."
 
   static var appGroup: String {
     Bundle.main.object(forInfoDictionaryKey: "AnastaFocusAppGroup") as? String
@@ -43,6 +45,273 @@ enum AnastaFocusShared {
       let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else { return nil }
     return value
+  }
+
+  static func storeAnalyticsContext(payloadJson: String) throws -> [String: Any] {
+    guard
+      let configuredAppGroup = Bundle.main.object(
+        forInfoDictionaryKey: "AnastaFocusAppGroup"
+      ) as? String,
+      !configuredAppGroup.isEmpty,
+      let analyticsDefaults = UserDefaults(suiteName: configuredAppGroup)
+    else {
+      throw NSError(
+        domain: "AnastaFocusAnalytics",
+        code: 2,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            "The shared Focus App Group is unavailable in this build."
+        ]
+      )
+    }
+    guard
+      let data = payloadJson.data(using: .utf8),
+      data.count <= 512_000,
+      let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+      !analyticsContainsForbiddenPrivateFields(value),
+      (value["schemaVersion"] as? NSNumber)?.intValue == 1,
+      let requestId = value["requestId"] as? String,
+      !requestId.isEmpty,
+      requestId.count <= 128,
+      requestId.unicodeScalars.allSatisfy({
+        CharacterSet.alphanumerics
+          .union(CharacterSet(charactersIn: "._-"))
+          .contains($0)
+      }),
+      let period = value["period"] as? String,
+      ["day", "week", "month", "year"].contains(period),
+      let generatedAt = value["generatedAt"] as? NSNumber,
+      generatedAt.doubleValue.isFinite,
+      let timezone = value["timezone"] as? String,
+      !timezone.isEmpty,
+      timezone.count <= 128,
+      TimeZone(identifier: timezone) != nil,
+      let locale = value["locale"] as? String,
+      !locale.isEmpty,
+      locale.count <= 64,
+      analyticsDayIsValid(value["selectedStartDate"]),
+      analyticsDayIsValid(value["selectedEndDateExclusive"]),
+      analyticsOptionalDayIsValid(value["comparisonStartDate"]),
+      analyticsOptionalDayIsValid(value["comparisonEndDateExclusive"]),
+      analyticsSummaryIsValid(value["selected"]),
+      analyticsOptionalSummaryIsValid(value["comparison"]),
+      analyticsComparisonContractIsValid(value),
+      analyticsOutcomesAreValid(value["dayOutcomes"]),
+      analyticsQualityIsValid(value["quality"])
+    else {
+      throw NSError(
+        domain: "AnastaFocusAnalytics",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "The analytics context is malformed."]
+      )
+    }
+
+    let requestKey = "\(analyticsContextRequestPrefix)\(requestId).v1"
+    let previousRequestId = analyticsDefaults.string(
+      forKey: analyticsContextPointerKey
+    )
+    analyticsDefaults.set(payloadJson, forKey: requestKey)
+    analyticsDefaults.set(requestId, forKey: analyticsContextPointerKey)
+
+    let retainedIds = Set([requestId, previousRequestId].compactMap { $0 })
+    for key in analyticsDefaults.dictionaryRepresentation().keys
+      where key.hasPrefix(analyticsContextRequestPrefix)
+        && key.hasSuffix(".v1")
+    {
+      let raw = String(
+        key
+          .dropFirst(analyticsContextRequestPrefix.count)
+          .dropLast(3)
+      )
+      if !retainedIds.contains(raw) {
+        analyticsDefaults.removeObject(forKey: key)
+      }
+    }
+    return ["requestId": requestId, "stored": true]
+  }
+
+  private static let analyticsSummaryKeys = Set([
+    "resolvedTargetDays",
+    "keptTargetDays",
+    "brokenTargetDays",
+    "returnedMoments",
+    "doorOpened",
+    "checkinsContinued",
+    "limitExceeded",
+    "zoneBreaches",
+    "quietHoursStarted",
+  ])
+
+  private static func analyticsNonnegativeInteger(_ value: Any?) -> Bool {
+    guard !(value is Bool), let number = value as? NSNumber else {
+      return false
+    }
+    let double = number.doubleValue
+    return double.isFinite
+      && double >= 0
+      && double.rounded(.towardZero) == double
+  }
+
+  private static func analyticsSummaryIsValid(_ value: Any?) -> Bool {
+    guard let summary = value as? [String: Any] else { return false }
+    return analyticsSummaryKeys.allSatisfy {
+        analyticsNonnegativeInteger(summary[$0])
+      }
+  }
+
+  private static func analyticsOptionalSummaryIsValid(_ value: Any?) -> Bool {
+    value is NSNull || analyticsSummaryIsValid(value)
+  }
+
+  private static func analyticsComparisonContractIsValid(
+    _ value: [String: Any]
+  ) -> Bool {
+    let startIsNull = value["comparisonStartDate"] is NSNull
+    let endIsNull = value["comparisonEndDateExclusive"] is NSNull
+    let summaryIsNull = value["comparison"] is NSNull
+    return startIsNull == endIsNull
+      && startIsNull == summaryIsNull
+  }
+
+  private static func analyticsDayIsValid(_ value: Any?) -> Bool {
+    guard let day = value as? String, day.count == 10 else { return false }
+    let parts = day.split(separator: "-", omittingEmptySubsequences: false)
+    guard
+      parts.count == 3,
+      parts[0].count == 4,
+      parts[1].count == 2,
+      parts[2].count == 2,
+      let year = Int(parts[0]),
+      let month = Int(parts[1]),
+      let date = Int(parts[2])
+    else { return false }
+    var calendar = Calendar(identifier: .gregorian)
+    guard let utc = TimeZone(secondsFromGMT: 0) else { return false }
+    calendar.timeZone = utc
+    let components = DateComponents(
+      calendar: calendar,
+      timeZone: calendar.timeZone,
+      year: year,
+      month: month,
+      day: date
+    )
+    guard let parsed = calendar.date(from: components) else { return false }
+    let resolved = calendar.dateComponents(
+      [.year, .month, .day],
+      from: parsed
+    )
+    return resolved.year == year
+      && resolved.month == month
+      && resolved.day == date
+  }
+
+  private static func analyticsOptionalDayIsValid(_ value: Any?) -> Bool {
+    value is NSNull || analyticsDayIsValid(value)
+  }
+
+  private static func analyticsOutcomesAreValid(_ value: Any?) -> Bool {
+    guard let outcomes = value as? [[String: Any]], outcomes.count <= 1_600 else {
+      return false
+    }
+    let allowedStates = Set([
+      "kept",
+      "broken",
+      "pending",
+      "off",
+      "noTarget",
+      "unresolved",
+    ])
+    return outcomes.allSatisfy { outcome in
+      guard
+        analyticsDayIsValid(outcome["date"]),
+        let state = outcome["state"] as? String,
+        allowedStates.contains(state),
+        analyticsNullableStringIsValid(outcome["planId"], maxLength: 256),
+        analyticsNullableStringIsValid(outcome["planName"], maxLength: 256),
+        analyticsNullableTargetIsValid(outcome["targetMinutes"]),
+        analyticsOptionalBooleanIsValid(outcome["hasExactPlanContext"])
+      else { return false }
+      return true
+    }
+  }
+
+  private static func analyticsNullableStringIsValid(
+    _ value: Any?,
+    maxLength: Int
+  ) -> Bool {
+    if value is NSNull { return true }
+    guard let string = value as? String else { return false }
+    return string.count <= maxLength
+  }
+
+  private static func analyticsNullableTargetIsValid(_ value: Any?) -> Bool {
+    if value is NSNull { return true }
+    guard analyticsNonnegativeInteger(value), let number = value as? NSNumber else {
+      return false
+    }
+    return number.intValue <= 1_440
+  }
+
+  private static func analyticsOptionalBooleanIsValid(_ value: Any?) -> Bool {
+    value == nil || value is NSNull || value is Bool
+  }
+
+  private static func analyticsQualityIsValid(_ value: Any?) -> Bool {
+    if value == nil || value is NSNull { return true }
+    guard let quality = value as? [String: Any] else { return false }
+    let keys = Set([
+      "legacyCalendarApproximation",
+      "malformedEventRows",
+      "ignoredEventRows",
+    ])
+    guard keys.isSubset(of: Set(quality.keys)) else { return false }
+    return quality["legacyCalendarApproximation"] is Bool
+      && analyticsNonnegativeInteger(quality["malformedEventRows"])
+      && analyticsNonnegativeInteger(quality["ignoredEventRows"])
+  }
+
+  private static let analyticsForbiddenPrivateKeyFragments = [
+    "applicationtoken",
+    "categorytoken",
+    "webdomaintoken",
+    "applicationlabel",
+    "applabel",
+    "categorylabel",
+    "websitelabel",
+    "domainlabel",
+    "usageduration",
+    "activityduration",
+    "managedduration",
+    "totalduration",
+    "pickups",
+    "notifications",
+    "firstpickup",
+    "privateinsight",
+  ]
+
+  private static func analyticsContainsForbiddenPrivateFields(
+    _ value: Any
+  ) -> Bool {
+    if let dictionary = value as? [String: Any] {
+      for (key, child) in dictionary {
+        let normalized = key
+          .lowercased()
+          .filter { $0.isLetter || $0.isNumber }
+        if analyticsForbiddenPrivateKeyFragments.contains(
+          where: { normalized.contains($0) }
+        ) {
+          return true
+        }
+        if analyticsContainsForbiddenPrivateFields(child) {
+          return true
+        }
+      }
+      return false
+    }
+    if let array = value as? [Any] {
+      return array.contains(where: analyticsContainsForbiddenPrivateFields)
+    }
+    return false
   }
 
   static func consumePendingIntervention() -> [String: Any]? {
@@ -76,7 +345,7 @@ enum AnastaFocusShared {
     guard !day.isEmpty, !planId.isEmpty else { return }
     var values = defaults.dictionary(forKey: targetLostDaysKey) as? [String: String] ?? [:]
     values[day] = planId
-    let retained = values.keys.sorted().suffix(400)
+    let retained = values.keys.sorted().suffix(800)
     let compact = Dictionary(uniqueKeysWithValues: retained.compactMap { key in
       values[key].map { (key, $0) }
     })
@@ -818,7 +1087,7 @@ enum AnastaFocusEngine {
   }
 
   static func interventionContext(for token: ApplicationToken) -> [String: Any] {
-    resolveInterventionContext(
+    return resolveInterventionContext(
       protectsByAllowlist: true,
       fallbackKind: "limit",
       matches: { $0.applicationTokens.contains(token) }
@@ -834,11 +1103,49 @@ enum AnastaFocusEngine {
   }
 
   static func interventionContext(for token: WebDomainToken) -> [String: Any] {
-    resolveInterventionContext(
+    if let neverContext = neverAllowedWebContext(for: token) {
+      return neverContext
+    }
+    return resolveInterventionContext(
       protectsByAllowlist: false,
       fallbackKind: "web",
       matches: { $0.webDomainTokens.contains(token) }
     )
+  }
+
+  private static func neverAllowedWebContext(for token: WebDomainToken) -> [String: Any]? {
+    guard
+      let web = AnastaFocusShared.payload()?["webProtection"] as? [String: Any],
+      let neverAllowed = web["neverAllowed"] as? [String: Any]
+    else { return nil }
+    for entry in neverAllowed["domains"] as? [[String: Any]] ?? [] {
+      guard
+        let domain = entry["domain"] as? String,
+        WebDomain(domain: domain).token == token
+      else { continue }
+      return [
+        "kind": "web-never",
+        "selectionId": "",
+        "strength": "strict",
+        "minutes": 0,
+        "practice": "prayer",
+        "commitmentId": entry["commitmentId"] as? String ?? "",
+        "label": entry["label"] as? String ?? domain,
+      ]
+    }
+    if let commitmentId = neverAllowed["adultFilterCommitmentId"] as? String,
+       !commitmentId.isEmpty {
+      return [
+        "kind": "web-never",
+        "selectionId": "",
+        "strength": "strict",
+        "minutes": 0,
+        "practice": "prayer",
+        "commitmentId": commitmentId,
+        "label": "Adult Content",
+      ]
+    }
+    return nil
   }
 
   private static func stopOwnedMonitoring(includeTemporaryAccess: Bool = true) {
@@ -1026,18 +1333,13 @@ enum AnastaFocusEngine {
     for offset in 0...1 {
       guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { continue }
       let dayKey = localDayKey(day)
-      guard
-        let plan = planForDay(payload: payload, day: day),
-        let planId = plan["id"] as? String,
-        let catalog = plan["groupCatalog"] as? [String: Any]
-      else {
-        dayScopes.removeValue(forKey: dayKey)
-        continue
-      }
+      let plan = planForDay(payload: payload, day: day)
+      let planId = plan?["id"] as? String ?? "no-plan"
+      let catalog = plan?["groupCatalog"] as? [String: Any] ?? [:]
 
       let groupIds = catalog.keys.sorted()
-      let dailyRules = plan["dailyRules"] as? [[String: Any]] ?? []
-      let sessionRules = (plan["sessions"] as? [[String: Any]] ?? []).flatMap { session in
+      let dailyRules = plan?["dailyRules"] as? [[String: Any]] ?? []
+      let sessionRules = (plan?["sessions"] as? [[String: Any]] ?? []).flatMap { session in
         session["rules"] as? [[String: Any]] ?? []
       }
       let appRulePairs: [(groupId: String, appId: String)] = (dailyRules + sessionRules).flatMap { rule in
@@ -1070,7 +1372,22 @@ enum AnastaFocusEngine {
           "appSelections": appSelections,
         ]
       }
-      let scope = "\(planId)-\(compactFingerprint(stableFingerprint(fingerprintGroups)))"
+      let alwaysStrict = AnastaSelectionStore.load(selectionId: "always.strict")
+      let alwaysLoose = AnastaSelectionStore.load(selectionId: "always.loose")
+      let fingerprint: [String: Any] = [
+        "groups": fingerprintGroups,
+        "alwaysStrict": [
+          "applications": encodedTokens(alwaysStrict.applicationTokens),
+          "categories": encodedTokens(alwaysStrict.categoryTokens),
+          "webDomains": encodedTokens(alwaysStrict.webDomainTokens),
+        ],
+        "alwaysLoose": [
+          "applications": encodedTokens(alwaysLoose.applicationTokens),
+          "categories": encodedTokens(alwaysLoose.categoryTokens),
+          "webDomains": encodedTokens(alwaysLoose.webDomainTokens),
+        ],
+      ]
+      let scope = "\(planId)-\(compactFingerprint(stableFingerprint(fingerprint)))"
       for groupId in groupIds {
         let selection = AnastaSelectionStore.load(
           selectionId: "plan.\(planId).group.\(groupId)"
@@ -1089,10 +1406,18 @@ enum AnastaFocusEngine {
           selectionId: "report.\(scope).group.\(pair.groupId).app.\(pair.appId)"
         )
       }
+      AnastaSelectionStore.save(
+        alwaysStrict,
+        selectionId: "report.\(scope).always.strict"
+      )
+      AnastaSelectionStore.save(
+        alwaysLoose,
+        selectionId: "report.\(scope).always.loose"
+      )
       dayScopes[dayKey] = scope
     }
 
-    let retainedDays = dayScopes.keys.sorted().suffix(400)
+    let retainedDays = dayScopes.keys.sorted().suffix(800)
     dayScopes = Dictionary(uniqueKeysWithValues: retainedDays.compactMap { key in
       dayScopes[key].map { (key, $0) }
     })
@@ -1198,7 +1523,7 @@ enum AnastaFocusEngine {
       }
       values[key] = planId
     }
-    let retained = values.keys.sorted().suffix(400)
+    let retained = values.keys.sorted().suffix(800)
     let compact = Dictionary(uniqueKeysWithValues: retained.compactMap { key in
       values[key].map { (key, $0) }
     })

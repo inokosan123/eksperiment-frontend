@@ -6,14 +6,16 @@ import {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { continuousAnimationElapsedNow } from '@/components/shared/continuous-animation-time';
 export {
   continuousPhase,
   easeInOutQuad,
   halfSinePulse,
   pingPongPhase,
+  trianglePhase,
+  windowedHalfSinePulse,
 } from '@/components/shared/animation-phase';
 
-const CLOCK_EPOCH_MS = Date.now();
 const CLOCK_WINDOW_MS = 10 * 60 * 1000;
 const CLOCK_RESYNC_MS = 9 * 60 * 1000;
 
@@ -24,11 +26,11 @@ const CLOCK_RESYNC_MS = 9 * 60 * 1000;
  * visually continuous to within a frame.
  */
 export function useContinuousAnimationClock(running: boolean): SharedValue<number> {
-  const clock = useSharedValue(Date.now() - CLOCK_EPOCH_MS);
+  const clock = useSharedValue(continuousAnimationElapsedNow());
 
   useEffect(() => {
     const syncToWallClock = () => {
-      const elapsed = Date.now() - CLOCK_EPOCH_MS;
+      const elapsed = continuousAnimationElapsedNow();
       cancelAnimation(clock);
       clock.value = elapsed;
       clock.value = withTiming(elapsed + CLOCK_WINDOW_MS, {
@@ -39,7 +41,7 @@ export function useContinuousAnimationClock(running: boolean): SharedValue<numbe
 
     if (!running) {
       cancelAnimation(clock);
-      clock.value = Date.now() - CLOCK_EPOCH_MS;
+      clock.value = continuousAnimationElapsedNow();
       return;
     }
 

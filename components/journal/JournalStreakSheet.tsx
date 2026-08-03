@@ -146,6 +146,7 @@ function CountUp({
         editable={false}
         caretHidden
         allowFontScaling={false}
+        maxFontSizeMultiplier={1}
         underlineColorAndroid="transparent"
         defaultValue="0"
         animatedProps={animatedProps}

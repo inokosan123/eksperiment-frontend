@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
   StyleProp,
   TextStyle,
@@ -21,6 +20,7 @@ import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { C, F } from '@/constants/tokens';
 import { FormatState, RichTextEditor, RichToolbar, RichTextEditorRef } from '@/components/shared/RichTextEditor';
+import { ReadableText, ReadableTextInput } from '@/components/shared/typographyScale';
 import type { TextSelection } from '@/components/shared/TextFormatToolbar';
 import { InnerNote, NoteColor, NoteKind, NoteSourceRef, useInnerTools } from './InnerToolsContext';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
@@ -895,7 +895,7 @@ function EditorModal({
           {/* Top area — title, swatches, toolbar (no scroll needed, always compact) */}
           <View style={[s.editorTop, { paddingHorizontal: 24 }]}>
             <View style={s.editorTitleRow}>
-              <TextInput
+              <ReadableTextInput
                 value={title}
                 onChangeText={onTitle}
                 placeholder="Title"
@@ -1027,7 +1027,7 @@ function ScriptureQuoteCard({
       {verseTexts.map(item => (
         <View key={`${item.verse}-${item.text.slice(0, 8)}`} style={s.quoteVerseRow}>
           <Text style={s.quoteVerseNumber}>{item.verse}</Text>
-          <Text style={s.quoteText}>{item.text}</Text>
+          <ReadableText style={s.quoteText}>{item.text}</ReadableText>
         </View>
       ))}
       <Text style={s.quoteSource}>- {sourceRef.label}</Text>

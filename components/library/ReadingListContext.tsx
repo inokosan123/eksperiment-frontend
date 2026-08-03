@@ -70,6 +70,7 @@ type ReadingListContextValue = {
   addBook: (book: ReadingBook) => Promise<void>;
   updateBook: (id: string, updates: Partial<ReadingBook>) => Promise<void>;
   deleteBook: (id: string) => Promise<void>;
+  commitReadingSession: (bookId: string | null, minutes: number, sessionDate?: string) => Promise<void>;
   recordSession: (bookId: string | null, minutes: number, sessionDate?: string) => Promise<void>;
   saveCategoryDefs: (defs: ReadingCategoryDef[]) => Promise<void>;
 };
@@ -150,17 +151,19 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
     await refresh();
   }, [refresh]);
 
-  const recordSession = useCallback(async (bookId: string | null, minutes: number, sessionDate?: string) => {
-    if (!bookId) return;
-
-    const now = Date.now();
-    const effectiveDate = sessionDate ?? getLocalDateKey(new Date(now));
+  const applyReadingSession = useCallback((
+    bookId: string,
+    minutes: number,
+    sessionDate: string,
+    now: number,
+  ) => {
+    const cleanMinutes = Math.max(1, Math.round(minutes));
     setBooks(current => current.map(book => {
       if (book.id !== bookId) return book;
       return {
         ...book,
         sessions: book.sessions + 1,
-        totalMinutes: book.totalMinutes + Math.max(1, Math.round(minutes)),
+        totalMinutes: book.totalMinutes + cleanMinutes,
         lastSessionAt: now,
         status: book.status === 'to_read' ? 'reading' : book.status,
         startedAt: book.startedAt ?? now,
@@ -169,14 +172,33 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
     setSessions(current => [{
       id: `pending_reading_session_${now}`,
       bookId,
-      minutes: Math.max(1, Math.round(minutes)),
-      sessionDate: effectiveDate,
+      minutes: cleanMinutes,
+      sessionDate,
       createdAt: now,
     }, ...current]);
+  }, []);
 
+  const commitReadingSession = useCallback(async (
+    bookId: string | null,
+    minutes: number,
+    sessionDate?: string,
+  ) => {
+    if (!bookId) return;
+
+    const now = Date.now();
+    const effectiveDate = sessionDate ?? getLocalDateKey(new Date(now));
+    await recordReadingSession(bookId, minutes, effectiveDate, { completeTask: false });
+    applyReadingSession(bookId, minutes, effectiveDate, now);
+  }, [applyReadingSession]);
+
+  const recordSession = useCallback(async (bookId: string | null, minutes: number, sessionDate?: string) => {
+    if (!bookId) return;
+    const now = Date.now();
+    const effectiveDate = sessionDate ?? getLocalDateKey(new Date(now));
     await recordReadingSession(bookId, minutes, effectiveDate);
+    applyReadingSession(bookId, minutes, effectiveDate, now);
     await refresh();
-  }, [refresh]);
+  }, [applyReadingSession, refresh]);
 
   const saveCategoryDefs = useCallback(async (defs: ReadingCategoryDef[]) => {
     setCategoryDefs(defs);
@@ -193,6 +215,7 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
     addBook,
     updateBook,
     deleteBook,
+    commitReadingSession,
     recordSession,
     saveCategoryDefs,
   }), [
@@ -204,6 +227,7 @@ export function ReadingListProvider({ children }: { children: React.ReactNode })
     addBook,
     updateBook,
     deleteBook,
+    commitReadingSession,
     recordSession,
     saveCategoryDefs,
   ]);

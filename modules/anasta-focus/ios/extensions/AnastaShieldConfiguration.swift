@@ -33,6 +33,7 @@ final class AnastaShieldConfiguration: ShieldConfigurationDataSource {
     let strength = context?["strength"] as? String ?? pending?["strength"] as? String ?? "strict"
     let kind = context?["kind"] as? String ?? pending?["kind"] as? String ?? (isWebsite ? "web" : "limit")
     let isLoose = strength == "loose" || kind == "checkin"
+    let isNeverAllowedWeb = kind == "web-never"
     let opensAnastaDirectly: Bool
     if #available(iOS 26.0, *) {
       opensAnastaDirectly = true
@@ -42,6 +43,11 @@ final class AnastaShieldConfiguration: ShieldConfigurationDataSource {
     let title: String
     var subtitle: String
     switch kind {
+    case "web-never":
+      title = "This stays blocked"
+      subtitle = opensAnastaDirectly
+        ? "You asked Anasta to keep this promise. Read the message you left for this moment."
+        : "You asked Anasta to keep this promise. Close this shield, then open Anasta to read your message."
     case "daily-hard":
       title = "Today's phone boundary is holding"
       subtitle = "Your Essentials and iOS system access remain available for the rest of today."
@@ -73,7 +79,9 @@ final class AnastaShieldConfiguration: ShieldConfigurationDataSource {
       title: ShieldConfiguration.Label(text: title, color: UIColor(red: 0.14, green: 0.13, blue: 0.11, alpha: 1)),
       subtitle: ShieldConfiguration.Label(text: subtitle, color: UIColor(red: 0.36, green: 0.34, blue: 0.30, alpha: 1)),
       primaryButtonLabel: ShieldConfiguration.Label(
-        text: isLoose
+        text: isNeverAllowedWeb
+          ? (opensAnastaDirectly ? "Read my promise" : "Close this shield")
+          : isLoose
           ? (opensAnastaDirectly ? "Open Anasta" : "Close this shield")
           : "Leave this app",
         color: .white

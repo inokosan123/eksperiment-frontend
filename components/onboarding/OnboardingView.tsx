@@ -128,7 +128,6 @@ import SetAsTaskSheet, {
   type JesusPrayerMode,
   type PrayerChallengeRuleChoice,
   type PrayerType,
-  type ScriptureReadingType,
 } from '@/components/shared/SetAsTaskSheet';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { useTasks } from '@/components/tasks/TaskProvider';
@@ -17813,7 +17812,7 @@ type OrganizeScheduleItem = {
 // (preselected to the right prayer/scripture type) or the routine task
 // editor (level 1 spiritual) — exactly the flows the real app uses.
 type SpiritualSetupTarget =
-  | { kind: 'sheet'; context: 'prayer' | 'scripture'; prayerType?: PrayerType; scriptureType?: ScriptureReadingType }
+  | { kind: 'sheet'; context: 'prayer' | 'scripture'; prayerType?: PrayerType }
   | { kind: 'editor'; type: TaskDefinition['type'] };
 
 type SpiritualTaskSuggestion = OrganizeScheduleItem & {
@@ -18024,52 +18023,16 @@ const SPIRITUAL_TASK_SUGGESTION_GROUPS: SpiritualTaskSuggestionGroup[] = [
     title: 'Scripture',
     items: [
       {
-        id: 'new-testament',
-        title: 'New Testament',
-        body: 'Give the Gospel and Epistles a visible place in your week.',
+        id: 'scripture-reading',
+        title: 'Scripture Reading',
+        body: 'Keep one reading rhythm, then choose the checkpoint you want to continue each session.',
         accent: '#4D8586',
         icon: <BookMarked s={18} c="#4D8586" w={2} />,
-        defaultTime: '20:30',
-        frequency: 'Mon - Sat',
-        taskType: 'reading',
-        habitIconName: 'Book',
-        setup: { kind: 'sheet', context: 'scripture', scriptureType: 'new_testament' },
-      },
-      {
-        id: 'old-testament',
-        title: 'Old Testament',
-        body: 'Build a steady rhythm for deeper Scripture reading.',
-        accent: '#6F7F58',
-        icon: <OpenBook s={18} c="#6F7F58" w={2} />,
-        defaultTime: '20:30',
-        frequency: 'Mon - Sat',
-        taskType: 'reading',
-        habitIconName: 'Book',
-        setup: { kind: 'sheet', context: 'scripture', scriptureType: 'old_testament' },
-      },
-      {
-        id: 'psalter',
-        title: 'Psalter',
-        body: 'Return to the Psalms with a rhythm you can keep.',
-        accent: GOLD,
-        icon: <Book s={18} c={GOLD} w={2} />,
-        defaultTime: '18:30',
-        frequency: 'Every day',
-        taskType: 'reading',
-        habitIconName: 'Book',
-        setup: { kind: 'sheet', context: 'scripture', scriptureType: 'psalter' },
-      },
-      {
-        id: 'custom-scripture',
-        title: 'Custom Scripture',
-        body: 'Create your own reading task and keep it in your week.',
-        accent: '#4D8586',
-        icon: <Pencil s={18} c="#4D8586" w={2} />,
         defaultTime: '19:00',
         frequency: 'Custom',
         taskType: 'reading',
-        habitIconName: 'Pencil',
-        setup: { kind: 'sheet', context: 'scripture', scriptureType: 'custom' },
+        habitIconName: 'Book',
+        setup: { kind: 'sheet', context: 'scripture' },
       },
     ],
   },
@@ -19251,7 +19214,6 @@ function OrganizeSpiritualTaskBuilderSlide({ onNext }: { onNext: () => void }) {
           visible={!!sheetTask}
           context={sheetTask.setup.kind === 'sheet' ? sheetTask.setup.context : 'prayer'}
           initialPrayerType={sheetTask.setup.kind === 'sheet' ? sheetTask.setup.prayerType : undefined}
-          initialScriptureType={sheetTask.setup.kind === 'sheet' ? sheetTask.setup.scriptureType : undefined}
           onClose={() => setSheetTask(null)}
           onTaskDraft={async draft => {
             const target = sheetTask;
@@ -21220,9 +21182,7 @@ const SPIRITUAL_V2_ITEMS: {
   { id: 'morning-prayer', title: 'Morning Prayer', hint: 'Every day', time: '07:00', type: 'prayer', icon: 'Sun', setup: { kind: 'sheet', context: 'prayer', prayerType: 'morning' } },
   { id: 'evening-prayer', title: 'Evening Prayer', hint: 'Every day', time: '21:30', type: 'prayer', icon: 'Moon', setup: { kind: 'sheet', context: 'prayer', prayerType: 'evening' } },
   { id: 'jesus-prayer', title: 'Jesus Prayer', hint: 'Every day', time: '12:00', type: 'prayer', icon: 'Candle', setup: { kind: 'sheet', context: 'prayer', prayerType: 'jesus' } },
-  { id: 'psalms-reading', title: 'Psalms Reading', hint: 'Every day', time: '18:30', type: 'reading', icon: 'Book', setup: { kind: 'sheet', context: 'scripture', scriptureType: 'psalter' } },
-  { id: 'new-testament', title: 'New Testament Reading', hint: 'Mon – Sat', time: '20:30', type: 'reading', icon: 'Book', setup: { kind: 'sheet', context: 'scripture', scriptureType: 'new_testament' } },
-  { id: 'old-testament', title: 'Old Testament Reading', hint: 'Mon – Sat', time: '20:30', type: 'reading', icon: 'Book', setup: { kind: 'sheet', context: 'scripture', scriptureType: 'old_testament' } },
+  { id: 'scripture-reading', title: 'Scripture Reading', hint: 'Your reading rhythm', time: '19:00', type: 'reading', icon: 'Book', setup: { kind: 'sheet', context: 'scripture' } },
   { id: 'church', title: 'Church', hint: 'Sunday', time: '09:00', type: 'church', icon: 'Cross', setup: { kind: 'editor', type: 'church' } },
   { id: 'custom-spiritual', title: 'Custom Spiritual Task', hint: 'Your own practice', type: 'custom', icon: 'Sparkles', setup: { kind: 'editor', type: 'custom' } },
 ];
@@ -21248,9 +21208,7 @@ function spiritualCatalogIdForTask(task: TaskDefinition): string | null {
   if (task.targetView === '/jesus-prayer' || title.includes('jesus prayer')) return 'jesus-prayer';
   if (task.type === 'prayer' && title.includes('morning')) return 'morning-prayer';
   if (task.type === 'prayer' && title.includes('evening')) return 'evening-prayer';
-  if (task.type === 'reading' && (title.includes('psalm') || title.includes('psalter'))) return 'psalms-reading';
-  if (task.type === 'reading' && title.includes('new testament')) return 'new-testament';
-  if (task.type === 'reading' && title.includes('old testament')) return 'old-testament';
+  if (task.type === 'reading') return 'scripture-reading';
   if (task.type === 'church') return 'church';
   if (task.type === 'custom') return 'custom-spiritual';
   return null;
@@ -21741,7 +21699,6 @@ function OrganizeSpiritualBuilderV2Slide({ onNext }: { onNext: () => void }) {
           visible={!!sheetItem}
           context={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.context : 'prayer'}
           initialPrayerType={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.prayerType : undefined}
-          initialScriptureType={sheetItem.setup.kind === 'sheet' ? sheetItem.setup.scriptureType : undefined}
           lockToPrimaryTask
           onClose={() => setSheetItem(null)}
           onTaskDraft={async draft => {

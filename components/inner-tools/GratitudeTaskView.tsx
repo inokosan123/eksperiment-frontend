@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -18,15 +19,18 @@ import Reanimated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { CheckSmall, Pencil, Plus, X } from '@/components/icons/Icons';
+import { CheckSmall, Pencil, Plus, Trash2, X } from '@/components/icons/Icons';
 import ConfirmModal from '@/components/shared/ConfirmModal';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { C, F } from '@/constants/tokens';
-import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 import { GratitudeEntry, useInnerTools } from './InnerToolsContext';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { ReadableText, ReadableTextInput } from '@/components/shared/typographyScale';
 
 
 type DraftBlessing = {
@@ -35,8 +39,6 @@ type DraftBlessing = {
 };
 
 const gratitudeTaskLayout = LinearTransition.springify().damping(18).stiffness(190).mass(0.82);
-const HOME_RETURN_DELAY_MS = 760;
-
 function newId(index: number) {
   return `gratitude_task_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -58,8 +60,13 @@ export default function GratitudeTaskView() {
   }>();
   const taskInstanceId = firstParam(params.taskInstanceId);
   const taskDate = firstParam(params.taskDate) ?? getLocalDateKey();
-  const { completeInstance } = useTasks();
-  const { gratitudeEntries, upsertGratitudeEntry } = useInnerTools();
+  const completion = useRoutedTaskCompletion({ taskInstanceId, taskDate });
+  const {
+    gratitudeEntries,
+    upsertGratitudeEntry,
+    saveGratitudeEntries,
+    deleteGratitudeEntry,
+  } = useInnerTools();
 
   const existingDaily = useMemo(
     () => gratitudeEntries
@@ -72,6 +79,7 @@ export default function GratitudeTaskView() {
     makeEmptyDrafts(existingDaily.length),
   );
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<GratitudeEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<GratitudeEntry | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishingEntryIds, setFinishingEntryIds] = useState<string[]>([]);
@@ -229,20 +237,20 @@ export default function GratitudeTaskView() {
     setIsFinishing(true);
     setFinishingEntryIds(entriesToSave.map(entry => entry.id));
     setFinishingTotalCount(totalCount);
+    const result = await completion.completeBeforeReturn({
+      persistCritical: () => saveGratitudeEntries(entriesToSave),
+    });
+    if (!result.ok) {
+      setIsFinishing(false);
+      setFinishingEntryIds([]);
+      setFinishingTotalCount(null);
+      return;
+    }
     setItems([]);
     setEditingEntry(null);
-
-    entriesToSave.forEach((entry) => {
-      upsertGratitudeEntry(entry);
-    });
-
-    if (taskInstanceId) {
-      await completeInstance(taskInstanceId, taskDate);
-      queueTaskCompletionReturnAnimation(taskInstanceId, HOME_RETURN_DELAY_MS);
-    } else if (Platform.OS !== 'web') {
+    if (!taskInstanceId && Platform.OS !== 'web') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-
     router.back();
   };
 
@@ -261,7 +269,11 @@ export default function GratitudeTaskView() {
           activeOpacity={0.82}
           style={[s.finishBtn, readyToFinish && s.finishBtnReady]}
         >
-          <Text style={[s.finishText, readyToFinish && s.finishTextReady]}>FINISH</Text>
+          {completion.showSlowIndicator ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={[s.finishText, readyToFinish && s.finishTextReady]}>FINISH</Text>
+          )}
         </TouchableOpacity>
         )}
       />
@@ -312,16 +324,28 @@ export default function GratitudeTaskView() {
                   <View style={s.existingCheck}>
                     <CheckSmall s={12} c="#FFFFFF" w={3} />
                   </View>
-                  <Text style={s.existingTitle} numberOfLines={1}>{entry.title}</Text>
-                  <TouchableOpacity
-                    onPress={() => editEntry(entry)}
-                    activeOpacity={0.78}
-                    hitSlop={8}
-                    haptic="selection"
-                    style={s.editSavedBtn}
-                  >
-                    <Pencil s={14} c="#A8A29E" w={1.9} />
-                  </TouchableOpacity>
+                  <ReadableText style={s.existingTitle} numberOfLines={1}>{entry.title}</ReadableText>
+                  <View style={s.savedActions}>
+                    <TouchableOpacity
+                      onPress={() => editEntry(entry)}
+                      activeOpacity={0.78}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 5 }}
+                      haptic="selection"
+                      style={s.editSavedBtn}
+                    >
+                      <Pencil s={14} c="#A8A29E" w={1.9} />
+                    </TouchableOpacity>
+                    <View style={s.savedActionDivider} />
+                    <TouchableOpacity
+                      onPress={() => setDeleteTarget(entry)}
+                      activeOpacity={0.78}
+                      hitSlop={{ top: 8, bottom: 8, left: 5, right: 8 }}
+                      haptic="selection"
+                      style={s.deleteSavedBtn}
+                    >
+                      <Trash2 s={14} c={C.red} w={1.9} />
+                    </TouchableOpacity>
+                  </View>
                 </Reanimated.View>
               ))}
             </Reanimated.View>
@@ -367,7 +391,7 @@ export default function GratitudeTaskView() {
               >
                 <View style={s.itemTitleRow}>
                   <Text style={s.heart}>♥</Text>
-                  <TextInput
+                  <ReadableTextInput
                     ref={ref => { titleRefs.current[index] = ref; }}
                     value={item.title}
                     onChangeText={value => updateItem(index, 'title', value)}
@@ -402,7 +426,7 @@ export default function GratitudeTaskView() {
                     </TouchableOpacity>
                   </View>
                 </View>
-                <TextInput
+                <ReadableTextInput
                   value={item.content}
                   onChangeText={value => updateItem(index, 'content', value)}
                   placeholder="Description (optional)"
@@ -424,9 +448,9 @@ export default function GratitudeTaskView() {
           )}
 
           <View style={s.quoteBlock}>
-            <Text style={s.quoteText}>
+            <ReadableText style={s.quoteText}>
               {'"In everything give thanks; for this is the will of God."'}
-            </Text>
+            </ReadableText>
             <Text style={s.quoteRef}>1 THESSALONIANS 5:18</Text>
           </View>
         </ScrollView>
@@ -445,6 +469,31 @@ export default function GratitudeTaskView() {
         onConfirm={() => {
           setShowExitConfirm(false);
           router.back();
+        }}
+      />
+
+      <RoutedTaskCompletionErrorModal
+        visible={completion.saveErrorVisible}
+        onKeepEditing={completion.keepEditing}
+        onRetry={completion.retry}
+      />
+
+      <ConfirmModal
+        visible={!!deleteTarget}
+        icon={<Trash2 s={22} c={C.red} />}
+        iconBg="#FEF2F2"
+        title="Delete gratitude?"
+        body="This gratitude entry will be permanently removed."
+        subject={deleteTarget?.title}
+        cancelLabel="KEEP"
+        confirmLabel="DELETE"
+        confirmColor={C.red}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) {
+            deleteGratitudeEntry(deleteTarget.id);
+          }
+          setDeleteTarget(null);
         }}
       />
     </View>
@@ -554,6 +603,11 @@ const s = StyleSheet.create({
     fontSize: 17,
     color: '#6B625A',
   },
+  savedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   editSavedBtn: {
     width: 34,
     height: 34,
@@ -561,6 +615,21 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(250,248,244,0.92)',
     borderWidth: 1,
     borderColor: 'rgba(197,160,89,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  savedActionDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(214,76,85,0.18)',
+  },
+  deleteSavedBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: 'rgba(220,38,38,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },

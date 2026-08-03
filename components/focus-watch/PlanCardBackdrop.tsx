@@ -1,18 +1,21 @@
-import { useEffect, useState } from 'react';
+import { memo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Line } from 'react-native-svg';
 import Animated, {
-  cancelAnimation,
-  Easing,
   interpolate,
   useAnimatedProps,
   useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
+  useDerivedValue,
+  type SharedValue,
 } from 'react-native-reanimated';
+import { useFocusMainMotion } from './focus-main-motion';
+import {
+  continuousPhase,
+  easeInOutQuad,
+  trianglePhase,
+} from '@/components/shared/use-continuous-animation-clock';
+import { useAmbientMotion } from '@/components/shared/ambient-motion';
 
 // The quiet "instrument face" behind Screen Time cards: a laid-paper weave of
 // diagonal hairlines across the whole surface, and an orbit system in the top
@@ -36,53 +39,45 @@ function OrbitingSatellite({
   cx,
   radius,
   accent,
-  live,
+  clock,
+  animate,
 }: {
   cx: number;
   radius: number;
   accent: string;
-  live: boolean;
+  clock: SharedValue<number>;
+  animate: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-  const animate = live && !reduceMotion;
-
-  useEffect(() => {
-    if (animate) {
-      t.value = 0;
-      t.value = withRepeat(
-        withTiming(1, { duration: 26000, easing: Easing.linear }),
-        -1,
-        false
-      );
-    } else {
-      cancelAnimation(t);
-      t.value = 0;
-    }
-    return () => cancelAnimation(t);
-  }, [animate, t]);
+  const orbitPosition = useDerivedValue(() => {
+    const phase = animate ? continuousPhase(clock.value, 26000) : 0;
+    const angle = SATELLITE_START_ANGLE + phase * Math.PI * 2;
+    const counterAngle = angle + Math.PI;
+    return {
+      x: cx + radius * Math.cos(angle),
+      y: cx + radius * Math.sin(angle),
+      counterX: cx + radius * Math.cos(counterAngle),
+      counterY: cx + radius * Math.sin(counterAngle),
+    };
+  });
 
   const ringProps = useAnimatedProps(() => {
-    const angle = SATELLITE_START_ANGLE + t.value * Math.PI * 2;
     return {
-      cx: cx + radius * Math.cos(angle),
-      cy: cx + radius * Math.sin(angle),
+      cx: orbitPosition.value.x,
+      cy: orbitPosition.value.y,
     };
   });
   const dotProps = useAnimatedProps(() => {
-    const angle = SATELLITE_START_ANGLE + t.value * Math.PI * 2;
     return {
-      cx: cx + radius * Math.cos(angle),
-      cy: cx + radius * Math.sin(angle),
+      cx: orbitPosition.value.x,
+      cy: orbitPosition.value.y,
     };
   });
   // A small counter-node half a revolution behind: while the satellite is off
   // the card's edge, this one is inside it — the orbit never looks frozen.
   const counterProps = useAnimatedProps(() => {
-    const angle = SATELLITE_START_ANGLE + Math.PI + t.value * Math.PI * 2;
     return {
-      cx: cx + radius * Math.cos(angle),
-      cy: cx + radius * Math.sin(angle),
+      cx: orbitPosition.value.counterX,
+      cy: orbitPosition.value.counterY,
     };
   });
 
@@ -117,34 +112,19 @@ function BreathingOrbit({
   cx,
   radius,
   accent,
-  live,
+  clock,
+  animate,
 }: {
   cx: number;
   radius: number;
   accent: string;
-  live: boolean;
+  clock: SharedValue<number>;
+  animate: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-  const animate = live && !reduceMotion;
-
-  useEffect(() => {
-    if (animate) {
-      t.value = 0;
-      t.value = withRepeat(
-        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
-        -1,
-        true
-      );
-    } else {
-      cancelAnimation(t);
-      t.value = 0;
-    }
-    return () => cancelAnimation(t);
-  }, [animate, t]);
-
   const orbitProps = useAnimatedProps(() => ({
-    strokeOpacity: 0.2 + t.value * 0.16,
+    strokeOpacity: 0.2 + (
+      animate ? easeInOutQuad(trianglePhase(clock.value, 2600)) : 0
+    ) * 0.16,
   }));
 
   return (
@@ -162,28 +142,30 @@ function BreathingOrbit({
 
 // A soft light band that sweeps the card every few seconds — the "glint" that
 // marks the active plan. Same grammar as the FocusMeter sheen.
-function LiveGlint({ boxW, boxH }: { boxW: number; boxH: number }) {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
+function LiveGlint({
+  boxW,
+  boxH,
+  clock,
+  animate,
+  reduceMotion,
+}: {
+  boxW: number;
+  boxH: number;
+  clock: SharedValue<number>;
+  animate: boolean;
+  reduceMotion: boolean;
+}) {
 
-  useEffect(() => {
-    if (reduceMotion) return;
-    t.value = 0;
-    t.value = withRepeat(
-      withTiming(1, { duration: 6800, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      false
-    );
-    return () => cancelAnimation(t);
-  }, [reduceMotion, t]);
-
-  const style = useAnimatedStyle(() => ({
-    opacity: interpolate(t.value, [0, 0.06, 0.3, 0.4, 1], [0, 0.7, 0.7, 0, 0]),
-    transform: [
-      { translateX: interpolate(t.value, [0, 0.4, 1], [-96, boxW + 48, boxW + 48]) },
-      { rotate: '14deg' },
-    ],
-  }));
+  const style = useAnimatedStyle(() => {
+    const phase = animate ? easeInOutQuad(continuousPhase(clock.value, 6800)) : 0;
+    return {
+      opacity: interpolate(phase, [0, 0.06, 0.3, 0.4, 1], [0, 0.7, 0.7, 0, 0]),
+      transform: [
+        { translateX: interpolate(phase, [0, 0.4, 1], [-96, boxW + 48, boxW + 48]) },
+        { rotate: '14deg' },
+      ],
+    };
+  });
 
   if (reduceMotion) return null;
   return (
@@ -201,7 +183,7 @@ function LiveGlint({ boxW, boxH }: { boxW: number; boxH: number }) {
   );
 }
 
-export default function PlanCardBackdrop({
+function PlanCardBackdrop({
   visual,
   compact = false,
   ringSize,
@@ -212,6 +194,11 @@ export default function PlanCardBackdrop({
   ringSize?: number;   // override the orbit system's footprint
   live?: boolean;      // today's active plan: the satellite travels its orbit
 }) {
+  const mainMotionEnabled = useFocusMainMotion();
+  // Every animated layer in this card reads the same viewport-scoped clock.
+  // Keeping the runtime here avoids three fallback clocks/reduced-motion
+  // subscriptions while preserving every layer's original phase formula.
+  const runtime = useAmbientMotion(live && mainMotionEnabled);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const ring = ringSize ?? (compact ? 150 : 230);
   const cx = ring / 2;
@@ -227,7 +214,9 @@ export default function PlanCardBackdrop({
       style={StyleSheet.absoluteFill}
       onLayout={event => {
         const { width, height } = event.nativeEvent.layout;
-        setBox({ w: width, h: height });
+        setBox(current => current.w === width && current.h === height
+          ? current
+          : { w: width, h: height });
       }}
     >
       {lineCount > 0 && (
@@ -269,7 +258,13 @@ export default function PlanCardBackdrop({
         {/* Outer orbit — fine dotted */}
         <Circle cx={cx} cy={cx} r={ring * 0.47} stroke={visual.accent} strokeOpacity={0.13} strokeWidth={1} fill="none" strokeDasharray="1 6" />
         {/* Main solid orbit — breathes on a live card */}
-        <BreathingOrbit cx={cx} radius={ring * 0.385} accent={visual.accent} live={live} />
+        <BreathingOrbit
+          cx={cx}
+          radius={ring * 0.385}
+          accent={visual.accent}
+          clock={runtime.clock}
+          animate={runtime.enabled}
+        />
         {/* Bezel ring: 24 hour ticks, the day-clock echo */}
         {Array.from({ length: 24 }).map((_, index) => {
           const angle = (index / 24) * Math.PI * 2;
@@ -295,7 +290,13 @@ export default function PlanCardBackdrop({
         {/* Center */}
         <Circle cx={cx} cy={cx} r={2.2} fill={visual.accent} fillOpacity={0.24} />
         {/* Orbit nodes: a ringed satellite on the main orbit, plain dots elsewhere */}
-        <OrbitingSatellite cx={cx} radius={ring * 0.385} accent={visual.accent} live={live} />
+        <OrbitingSatellite
+          cx={cx}
+          radius={ring * 0.385}
+          accent={visual.accent}
+          clock={runtime.clock}
+          animate={runtime.enabled}
+        />
         <Circle
           cx={cx + ring * 0.47 * Math.cos(-0.7)}
           cy={cx + ring * 0.47 * Math.sin(-0.7)}
@@ -318,7 +319,17 @@ export default function PlanCardBackdrop({
           fillOpacity={0.18}
         />
       </Svg>
-      {live && box.w > 0 && <LiveGlint boxW={box.w} boxH={box.h} />}
+      {live && box.w > 0 && (
+        <LiveGlint
+          boxW={box.w}
+          boxH={box.h}
+          clock={runtime.clock}
+          animate={runtime.enabled}
+          reduceMotion={runtime.reduceMotion}
+        />
+      )}
     </View>
   );
 }
+
+export default memo(PlanCardBackdrop);

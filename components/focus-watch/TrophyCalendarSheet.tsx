@@ -20,7 +20,7 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { FocusMedallionMark, MEDALLION } from '@/components/focus-watch/FocusMedallion';
 import MedalDayInProgress from '@/components/focus-watch/MedalDayInProgress';
 import { C, F } from '@/constants/tokens';
-import { dateKey, useDayPlan } from './dayPlanStore';
+import { dateKey, useDayPlanSelector } from './dayPlanStore';
 import type {
   TrophyCalendarDay,
   TrophyCalendarModel,
@@ -525,7 +525,10 @@ export function SharedTrophyCalendarSheet({
 }
 
 export default function TrophyCalendarSheet({ visible, onClose }: TrophyCalendarSheetProps) {
-  const state = useDayPlan();
+  const state = useDayPlanSelector(
+    snapshot => snapshot,
+    (previous, next) => previous.streak === next.streak && previous.days === next.days,
+  );
   const model: TrophyCalendarModel = {
     current: state.streak.current,
     best: state.streak.best,

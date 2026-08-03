@@ -1,5 +1,5 @@
 import type { TaskData, TaskState, TaskVariant } from '@/components/shared/TaskCards';
-import type { TaskInstance, TaskListItem, TaskType } from '@/components/tasks/taskTypes';
+import type { TaskInstance, TaskLaunchDescriptor, TaskListItem, TaskType } from '@/components/tasks/taskTypes';
 
 function instanceStateToCardState(status: TaskInstance['status']): TaskState {
   switch (status) {
@@ -132,10 +132,14 @@ export function taskInstanceToCard(instance: TaskInstance): TaskData {
   };
 }
 
-export function taskInstanceToListItem(instance: TaskInstance): TaskListItem {
+export function taskInstanceToListItem(
+  instance: TaskInstance,
+  launch?: TaskLaunchDescriptor,
+): TaskListItem {
   return {
     instance,
     card: taskInstanceToCard(instance),
     route: routeForTaskInstance(instance),
+    launch,
   };
 }

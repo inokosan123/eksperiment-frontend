@@ -58,8 +58,21 @@ type WebProtectionInput = {
     mode: 'off' | 'on' | 'never';
     extraDomains?: string[];
   }[];
-  customPacks: { mode: 'off' | 'on' | 'never'; domains: string[] }[];
+  customPacks: { id?: string; mode: 'off' | 'on' | 'never'; domains: string[] }[];
   customDomains: { domain: string }[];
+  neverAllowed?: {
+    id: string;
+    targetLabel: string;
+    targetKind: 'builtin-pack' | 'custom-pack' | 'domain';
+    targetId: string;
+    domainsSnapshot: string[];
+  }[];
+};
+
+export type NeverDomainContext = {
+  domain: string;
+  commitmentId: string;
+  label: string;
 };
 
 export function normalizeWebDomain(raw: string) {
@@ -91,16 +104,44 @@ export function resolveWebProtectionDomains(input: WebProtectionInput) {
     ordered.push(domain);
   };
 
-  // A person's explicit choices must never be displaced by a broad starter pack.
+  const neverDomainContexts: NeverDomainContext[] = [];
+  const neverSeen = new Set<string>();
+  const sealedBuiltInTargets = new Set<string>();
+  const sealedCustomTargets = new Set<string>();
+  const neverAllowed = Array.isArray(input.neverAllowed) ? input.neverAllowed : [];
+  for (const commitment of neverAllowed) {
+    if (commitment.targetKind === 'builtin-pack') sealedBuiltInTargets.add(commitment.targetId);
+    if (commitment.targetKind === 'custom-pack') sealedCustomTargets.add(commitment.targetId);
+    for (const raw of commitment.domainsSnapshot) {
+      const domain = normalizeWebDomain(raw);
+      if (!domain.includes('.') || neverSeen.has(domain)) continue;
+      neverSeen.add(domain);
+      neverDomainContexts.push({
+        domain,
+        commitmentId: commitment.id,
+        label: commitment.targetLabel,
+      });
+      add(domain);
+    }
+  }
+
+  // Permanent promises are inserted first. A person's explicit choices must
+  // never be displaced by a broad starter pack when Apple's explicit-domain
+  // limit is reached.
   input.customDomains.forEach(entry => add(entry.domain));
   input.packs
-    .filter(pack => pack.mode !== 'off')
+    .filter(pack => pack.mode !== 'off' && !sealedBuiltInTargets.has(pack.id))
     .forEach(pack => pack.extraDomains?.forEach(add));
   input.customPacks
-    .filter(pack => pack.mode !== 'off')
+    .filter((pack, index) => {
+      if (pack.mode === 'off') return false;
+      const id = pack.id;
+      return !id || !sealedCustomTargets.has(id);
+    })
     .forEach(pack => pack.domains.forEach(add));
 
   for (const id of Object.keys(WEB_PACK_DOMAINS) as (keyof typeof WEB_PACK_DOMAINS)[]) {
+    if (sealedBuiltInTargets.has(id)) continue;
     if (!input.packs.some(pack => pack.id === id && pack.mode !== 'off')) continue;
     WEB_PACK_DOMAINS[id].forEach(add);
   }
@@ -109,6 +150,13 @@ export function resolveWebProtectionDomains(input: WebProtectionInput) {
     domains: ordered.slice(0, WEB_DOMAIN_LIMIT),
     omittedDomains: ordered.slice(WEB_DOMAIN_LIMIT),
     requestedCount: ordered.length,
-    adultFilterActive: input.packs.some(pack => pack.id === 'adult' && pack.mode !== 'off'),
+    neverDomains: Array.from(neverSeen),
+    neverDomainContexts,
+    neverCapacityAvailable: Math.max(0, WEB_DOMAIN_LIMIT - neverSeen.size),
+    adultFilterActive: input.packs.some(pack => pack.id === 'adult' && pack.mode !== 'off')
+      || neverAllowed.some(commitment => commitment.targetKind === 'builtin-pack' && commitment.targetId === 'adult'),
+    adultFilterNeverCommitmentId: neverAllowed.find(
+      commitment => commitment.targetKind === 'builtin-pack' && commitment.targetId === 'adult'
+    )?.id ?? null,
   };
 }

@@ -26,6 +26,9 @@ export type DayRow = {
 export type EventRow = {
   id: string;
   ts: number;
+  local_day: string | null;
+  timezone_id: string | null;
+  utc_offset_minutes: number | null;
   kind: string;
   group_id: string | null;
   plan_id: string | null;
@@ -33,6 +36,71 @@ export type EventRow = {
 };
 
 let readyPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+let eventCalendarSchemaReady = false;
+
+const EVENT_CALENDAR_COLUMNS = [
+  'local_day',
+  'timezone_id',
+  'utc_offset_minutes',
+] as const;
+
+export function hasFocusEventCalendarColumns(
+  rows: readonly { name: string }[]
+) {
+  const names = new Set(rows.map(row => row.name));
+  return EVENT_CALENDAR_COLUMNS.every(name => names.has(name));
+}
+
+function localDateParts(timestampMs: number, timezoneId: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezoneId,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(timestampMs));
+  const values = Object.fromEntries(
+    parts
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, Number(part.value)])
+  ) as Record<string, number>;
+  return {
+    year: values.year,
+    month: values.month,
+    day: values.day,
+    hour: values.hour,
+    minute: values.minute,
+    second: values.second,
+  };
+}
+
+export function focusEventCalendarContext(
+  timestampMs: number,
+  timezoneId =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+) {
+  const value = Number.isFinite(timestampMs) ? timestampMs : Date.now();
+  const parts = localDateParts(value, timezoneId);
+  const pad = (number: number) => String(number).padStart(2, '0');
+  const representedUtcMs = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  );
+  return {
+    localDay: `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`,
+    timezoneId,
+    utcOffsetMinutes: Math.round(
+      (representedUtcMs - Math.floor(value / 1_000) * 1_000) / 60_000
+    ),
+  };
+}
 
 async function initFocusWatchDb(db: SQLite.SQLiteDatabase) {
   await db.execAsync(`
@@ -86,6 +154,38 @@ async function initFocusWatchDb(db: SQLite.SQLiteDatabase) {
     await db.execAsync('ALTER TABLE focus_watch_days ADD COLUMN target_lost INTEGER NOT NULL DEFAULT 0');
   } catch {
     // column already exists
+  }
+  try {
+    await db.execAsync('ALTER TABLE focus_watch_events ADD COLUMN local_day TEXT');
+  } catch {
+    // column already exists
+  }
+  try {
+    await db.execAsync('ALTER TABLE focus_watch_events ADD COLUMN timezone_id TEXT');
+  } catch {
+    // column already exists
+  }
+  try {
+    await db.execAsync('ALTER TABLE focus_watch_events ADD COLUMN utc_offset_minutes INTEGER');
+  } catch {
+    // column already exists
+  }
+  try {
+    await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_focus_watch_events_local_day
+        ON focus_watch_events(local_day);
+    `);
+  } catch {
+    // A partial migration disables only local event analytics below. The
+    // Apple-private DeviceActivity report and the rest of Focus still load.
+  }
+  try {
+    const columns = await db.getAllAsync<{ name: string }>(
+      'PRAGMA table_info(focus_watch_events)'
+    );
+    eventCalendarSchemaReady = hasFocusEventCalendarColumns(columns);
+  } catch {
+    eventCalendarSchemaReady = false;
   }
 }
 
@@ -173,10 +273,68 @@ export async function upsertDayRow(row: DayRow) {
 
 export async function insertEventRow(row: EventRow) {
   const db = await getFocusWatchDb();
+  if (!eventCalendarSchemaReady) return;
   await db.runAsync(
-    `INSERT OR IGNORE INTO focus_watch_events (id, ts, kind, group_id, plan_id, meta_json)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    row.id, row.ts, row.kind, row.group_id, row.plan_id, row.meta_json
+    `INSERT OR IGNORE INTO focus_watch_events (
+       id, ts, local_day, timezone_id, utc_offset_minutes,
+       kind, group_id, plan_id, meta_json
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    row.id,
+    row.ts,
+    row.local_day,
+    row.timezone_id,
+    row.utc_offset_minutes,
+    row.kind,
+    row.group_id,
+    row.plan_id,
+    row.meta_json
+  );
+}
+
+export async function getFocusEventRowsBetween(
+  startMsInclusive: number,
+  endMsExclusive: number
+): Promise<EventRow[]> {
+  const db = await getFocusWatchDb();
+  if (!eventCalendarSchemaReady) return [];
+  return db.getAllAsync<EventRow>(
+    `SELECT
+       id, ts, local_day, timezone_id, utc_offset_minutes,
+       kind, group_id, plan_id, meta_json
+     FROM focus_watch_events
+     WHERE ts >= ? AND ts < ?
+     ORDER BY ts ASC, id ASC`,
+    startMsInclusive,
+    endMsExclusive
+  );
+}
+
+export async function getFocusEventRowsForLocalDays(input: {
+  startDayInclusive: string;
+  endDayExclusive: string;
+  legacyStartMsInclusive: number;
+  legacyEndMsExclusive: number;
+}): Promise<EventRow[]> {
+  const db = await getFocusWatchDb();
+  if (!eventCalendarSchemaReady) return [];
+  return db.getAllAsync<EventRow>(
+    `SELECT
+       id, ts, local_day, timezone_id, utc_offset_minutes,
+       kind, group_id, plan_id, meta_json
+     FROM focus_watch_events
+     WHERE
+       (local_day >= ? AND local_day < ?)
+       OR (
+         local_day IS NULL
+         AND ts >= ?
+         AND ts < ?
+       )
+     ORDER BY ts ASC, id ASC`,
+    input.startDayInclusive,
+    input.endDayExclusive,
+    input.legacyStartMsInclusive,
+    input.legacyEndMsExclusive
   );
 }
 

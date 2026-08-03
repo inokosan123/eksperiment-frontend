@@ -31,6 +31,10 @@ public final class AnastaFocusModule: Module {
       }
     }
 
+    AsyncFunction("syncAnalyticsContext") { (payloadJson: String) throws -> [String: Any] in
+      try AnastaFocusShared.storeAnalyticsContext(payloadJson: payloadJson)
+    }
+
     AsyncFunction("runtimeStatus") { () -> [String: Any] in
       AnastaFocusEngine.runtimeStatus()
     }
@@ -119,6 +123,10 @@ public final class AnastaFocusModule: Module {
       }
       Prop("endMinutes") { (view: AnastaActivityReportView, endMinutes: Int) in
         view.endMinutes = endMinutes
+      }
+      Prop("analyticsRequestJson") {
+        (view: AnastaActivityReportView, analyticsRequestJson: String) in
+        view.analyticsRequestJson = analyticsRequestJson
       }
     }
   }

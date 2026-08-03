@@ -2,12 +2,39 @@ import * as SQLite from 'expo-sqlite';
 import { openUserContentDb } from '@/data/userContentDb';
 import type {
   ChallengeChurchConfig,
+  ChallengeChurchWeek,
   ChallengePrayerConfig,
   ChallengeRecord,
   ChallengeScriptureConfig,
   ChallengeStatus,
 } from '@/components/challenges/challengeData';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
+import {
+  addChurchDays,
+  churchDateFromKey,
+  churchRequiredDatesForWeek,
+  churchSchedulesMatch,
+  churchStartWeekQualifies,
+  churchWeekStart,
+  evaluateChurchWeek,
+  summarizeChurchWeekStreaks,
+  type ChurchWeekEvaluation,
+  type ChurchWeekStatus,
+} from '@/components/challenges/churchWeeklyTrophies';
+import { challengeIdFromTaskId } from '@/components/challenges/challenge-task-identity';
+import {
+  challengeUsesFiniteScriptureReader,
+  resolveDayCountChallengeTotal,
+  resolveDayCountProgress,
+} from '@/components/challenges/challenge-progress';
+import {
+  CHALLENGE_COMPLETION_EVENT_INSERT_SQL,
+  CHALLENGE_COMPLETION_EVENT_RETRACT_SQL,
+  CHALLENGE_DAILY_STATUS_REPAIR_SQL,
+  CHALLENGE_RECORD_UPSERT_SQL,
+  CHALLENGE_TASK_LINK_REPAIR_SQL,
+  challengeCompletionEventId,
+} from '@/components/challenges/challenge-persistence-sql';
 import {
   getScriptureChallengeProgressUnit,
   getScriptureChallengeTotal,
@@ -81,6 +108,76 @@ type ChurchConfigRow = {
   notification_mode: ChallengeChurchConfig['notificationMode'] | null;
   reminder_minutes: number | null;
 };
+
+type ChurchTaskScheduleRow = {
+  frequency: ChallengeChurchConfig['frequency'];
+  time: string | null;
+  same_time_every_day: number;
+  notification_mode: ChallengeChurchConfig['notificationMode'] | null;
+  reminder_minutes: number | null;
+};
+
+type ChurchWeekRow = {
+  challenge_id: string;
+  week_start: string;
+  week_end: string;
+  required_dates: string;
+  status: ChurchWeekStatus;
+  earned_at: number | null;
+  celebrated_at: number | null;
+  created_at: number;
+  updated_at: number;
+};
+
+type ChallengeCompletionEventRow = {
+  id: string;
+  challenge_id: string;
+  kind: 'challenge' | 'church_week';
+  title: string;
+  week_start: string | null;
+  trophy_count: number | null;
+  current_streak: number | null;
+  created_at: number;
+  acknowledged_at: number | null;
+};
+
+export type ChallengeCompletionCelebration = {
+  eventId: string;
+  challengeId: string;
+  title: string;
+  variant: 'challenge' | 'churchWeek';
+  weekStart?: string;
+  trophyCount?: number;
+  currentStreak?: number;
+};
+
+export type ChurchWeekSyncResult = {
+  challengeId: string;
+  challengeTitle: string;
+  trophyAwarded: boolean;
+  week: ChallengeChurchWeek;
+  trophyCount: number;
+  currentStreak: number;
+  celebration?: ChallengeCompletionCelebration;
+};
+
+/**
+ * A day-counted challenge (prayer, journal) reaching its last day.
+ *
+ * Scripture reports its own finish through the reader, which is why finishing
+ * a reading plan raises the trophy overlay; the day-counted categories worked
+ * the completion out here, wrote `status: 'completed'` to the record — and
+ * then returned null, so nothing upstream ever learned of it. The rule simply
+ * stopped appearing and the last tick felt like any other tick.
+ */
+export type ChallengeCompletedSyncResult = {
+  challengeCompleted: true;
+  challengeId: string;
+  challengeTitle: string;
+  celebration: ChallengeCompletionCelebration;
+};
+
+export type ChallengeSyncResult = ChurchWeekSyncResult | ChallengeCompletedSyncResult;
 
 type DayTimeRow = {
   challenge_id: string;
@@ -169,6 +266,11 @@ export async function initChallengeDb(db?: SQLite.SQLiteDatabase) {
   if (!initPromise) {
     initPromise = (async () => {
       const conn = db ?? await openUserContentDb();
+      const completionEventsExisted = !!(await conn.getFirstAsync<{ name: string }>(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table' AND name = 'challenge_completion_events'
+         LIMIT 1`,
+      ));
       await conn.execAsync(`
         CREATE TABLE IF NOT EXISTS challenges (
           id TEXT PRIMARY KEY,
@@ -263,6 +365,20 @@ export async function initChallengeDb(db?: SQLite.SQLiteDatabase) {
           FOREIGN KEY (challenge_id) REFERENCES challenges(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS challenge_church_weeks (
+          challenge_id TEXT NOT NULL,
+          week_start TEXT NOT NULL,
+          week_end TEXT NOT NULL,
+          required_dates TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          earned_at INTEGER,
+          celebrated_at INTEGER,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (challenge_id, week_start),
+          FOREIGN KEY (challenge_id) REFERENCES challenges(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS challenge_daily_status (
           challenge_id TEXT NOT NULL,
           date TEXT NOT NULL,
@@ -285,11 +401,100 @@ export async function initChallengeDb(db?: SQLite.SQLiteDatabase) {
           FOREIGN KEY (challenge_id) REFERENCES challenges(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS challenge_completion_events (
+          id TEXT PRIMARY KEY,
+          challenge_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          title TEXT NOT NULL,
+          week_start TEXT,
+          trophy_count INTEGER,
+          current_streak INTEGER,
+          created_at INTEGER NOT NULL,
+          acknowledged_at INTEGER,
+          FOREIGN KEY (challenge_id) REFERENCES challenges(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_challenges_status ON challenges(status, started_at DESC);
         CREATE INDEX IF NOT EXISTS idx_challenge_daily_status ON challenge_daily_status(date, status);
         CREATE INDEX IF NOT EXISTS idx_challenge_scripture_sessions ON challenge_scripture_sessions(challenge_id, date);
+        CREATE INDEX IF NOT EXISTS idx_challenge_church_weeks ON challenge_church_weeks(challenge_id, week_start);
+        CREATE INDEX IF NOT EXISTS idx_challenge_completion_events_pending
+          ON challenge_completion_events(acknowledged_at, created_at);
       `);
+
+      const churchWeekColumns = await conn.getAllAsync<{ name: string }>(
+        'PRAGMA table_info(challenge_church_weeks)',
+      );
+      if (!churchWeekColumns.some(column => column.name === 'celebrated_at')) {
+        await conn.execAsync('ALTER TABLE challenge_church_weeks ADD COLUMN celebrated_at INTEGER;');
+        // Historical trophies pre-date this acknowledgement column and should
+        // not all replay. Keep only the current week unacknowledged so a trophy
+        // affected by the old missing-popup bug gets one recovery celebration.
+        await conn.runAsync(
+          `UPDATE challenge_church_weeks
+           SET celebrated_at = earned_at
+           WHERE status = 'earned' AND celebrated_at IS NULL AND week_start < ?`,
+          churchWeekStart(getLocalDateKey()),
+        );
+      }
+
+      if (!completionEventsExisted) {
+        const now = Date.now();
+        // Recent completions may be exactly the rewards lost by the old RAM
+        // queue. Recover those once; seed older ids as acknowledged so an
+        // upgrade cannot replay a whole archive.
+        await conn.runAsync(
+          `INSERT OR IGNORE INTO challenge_completion_events (
+             id, challenge_id, kind, title, created_at, acknowledged_at
+           )
+           SELECT 'challenge:' || id, id, 'challenge', title,
+                  COALESCE(updated_at, ?),
+                  CASE WHEN completed_at >= ? THEN NULL ELSE COALESCE(updated_at, ?) END
+           FROM challenges
+           WHERE status = 'completed'`,
+          now,
+          addChurchDays(getLocalDateKey(), -7),
+          now,
+        );
+        // Keep an unacknowledged current-week Church trophy recoverable. Older
+        // rows are seeded as acknowledged so an upgrade never floods Home with
+        // months of historical popups.
+        await conn.runAsync(
+          `INSERT OR IGNORE INTO challenge_completion_events (
+             id, challenge_id, kind, title, week_start, trophy_count,
+             current_streak, created_at, acknowledged_at
+           )
+           SELECT 'church_week:' || week.challenge_id || ':' || week.week_start,
+                  week.challenge_id, 'church_week', challenge.title,
+                  week.week_start,
+                  (SELECT COUNT(*) FROM challenge_church_weeks earned
+                   WHERE earned.challenge_id = week.challenge_id
+                     AND earned.status = 'earned'
+                     AND earned.week_start <= week.week_start),
+                  challenge.streak,
+                  COALESCE(week.earned_at, week.updated_at, ?),
+                  COALESCE(
+                    week.celebrated_at,
+                    CASE WHEN week.week_start < ?
+                      THEN COALESCE(week.earned_at, week.updated_at, ?)
+                      ELSE NULL
+                    END
+                  )
+           FROM challenge_church_weeks week
+           JOIN challenges challenge ON challenge.id = week.challenge_id
+           WHERE week.status = 'earned'`,
+          now,
+          churchWeekStart(getLocalDateKey()),
+          now,
+        );
+      }
     })();
+    initPromise = initPromise.catch(error => {
+      // A transient native SQLite startup error must not poison every later
+      // attempt for the remainder of the app process.
+      initPromise = null;
+      throw error;
+    });
   }
 
   return initPromise;
@@ -374,17 +579,24 @@ function safeNumberList(value: string | null | undefined, fallback: number[]) {
 }
 
 async function saveChurchConfig(db: SQLite.SQLiteDatabase, record: ChallengeRecord) {
-  await db.runAsync('DELETE FROM challenge_church_config WHERE challenge_id = ?', record.id);
-  await db.runAsync('DELETE FROM challenge_church_day_times WHERE challenge_id = ?', record.id);
+  await replaceChurchConfig(db, record.id, record.churchConfig);
+}
 
-  if (!record.churchConfig) return;
-  const config = record.churchConfig;
+async function replaceChurchConfig(
+  db: SQLite.SQLiteDatabase,
+  challengeId: string,
+  config: ChallengeChurchConfig | undefined,
+) {
+  await db.runAsync('DELETE FROM challenge_church_config WHERE challenge_id = ?', challengeId);
+  await db.runAsync('DELETE FROM challenge_church_day_times WHERE challenge_id = ?', challengeId);
+
+  if (!config) return;
   await db.runAsync(
     `INSERT OR REPLACE INTO challenge_church_config (
       challenge_id, frequency, selected_days, monthly_days, time, same_time_every_day,
       notification_mode, reminder_minutes
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    record.id,
+    challengeId,
     config.frequency,
     JSON.stringify(config.selectedDays ?? []),
     JSON.stringify(config.monthlyDays ?? [1]),
@@ -393,7 +605,7 @@ async function saveChurchConfig(db: SQLite.SQLiteDatabase, record: ChallengeReco
     config.notificationMode ?? null,
     config.notificationMode === 'double' ? config.reminderMinutes ?? null : null,
   );
-  await replaceDayTimes(db, 'challenge_church_day_times', record.id, config.dayTimes);
+  await replaceDayTimes(db, 'challenge_church_day_times', challengeId, config.dayTimes);
 }
 
 function dayTimesFor(rows: DayTimeRow[], challengeId: string) {
@@ -446,6 +658,7 @@ function rowToRecord(
     totalUnits: row.total_units ?? undefined,
     durationDays: row.duration_days ?? undefined,
     startedAt: row.started_at,
+    createdAt: row.created_at,
     pausedAt: row.paused_at ?? undefined,
     completedAt: row.completed_at ?? undefined,
     cancelledAt: row.cancelled_at ?? undefined,
@@ -486,19 +699,109 @@ function rowToRecord(
   };
 }
 
-export async function saveChallengeRecord(record: ChallengeRecord) {
-  const db = await openChallengeDb();
+async function getStoredChurchConfig(
+  db: SQLite.SQLiteDatabase,
+  challengeId: string,
+): Promise<ChallengeChurchConfig | undefined> {
+  const row = await db.getFirstAsync<ChurchConfigRow>(
+    'SELECT * FROM challenge_church_config WHERE challenge_id = ? LIMIT 1',
+    challengeId,
+  );
+  if (!row) return undefined;
+  const timeRows = await db.getAllAsync<DayTimeRow>(
+    'SELECT challenge_id, day_index, time FROM challenge_church_day_times WHERE challenge_id = ?',
+    challengeId,
+  );
+  return {
+    frequency: row.frequency,
+    selectedDays: safeNumberList(row.selected_days, [6]),
+    monthlyDays: safeNumberList(row.monthly_days, [1]),
+    time: row.time ?? undefined,
+    sameTimeEveryDay: toBool(row.same_time_every_day),
+    dayTimes: dayTimesFor(timeRows, challengeId),
+    notificationMode: row.notification_mode ?? undefined,
+    reminderMinutes: row.reminder_minutes ?? undefined,
+  };
+}
+
+async function getChurchConfigFromTask(
+  db: SQLite.SQLiteDatabase,
+  taskId: string,
+): Promise<ChallengeChurchConfig | null> {
+  const row = await db.getFirstAsync<ChurchTaskScheduleRow>(
+    `SELECT frequency, time, same_time_every_day, notification_mode, reminder_minutes
+     FROM tasks
+     WHERE id = ? AND source = 'challenge'
+     LIMIT 1`,
+    taskId,
+  );
+  if (!row) return null;
+  const [selectedRows, monthlyRows, timeRows] = await Promise.all([
+    db.getAllAsync<{ day_index: number }>(
+      'SELECT day_index FROM task_schedule_days WHERE task_id = ? ORDER BY day_index ASC',
+      taskId,
+    ),
+    db.getAllAsync<{ month_day: number }>(
+      'SELECT month_day FROM task_schedule_month_days WHERE task_id = ? ORDER BY month_day ASC',
+      taskId,
+    ),
+    db.getAllAsync<{ day_index: number; time: string }>(
+      'SELECT day_index, time FROM task_day_times WHERE task_id = ? ORDER BY day_index ASC',
+      taskId,
+    ),
+  ]);
+  return {
+    frequency: row.frequency,
+    selectedDays: selectedRows.map(item => item.day_index),
+    monthlyDays: monthlyRows.map(item => item.month_day),
+    time: row.time ?? undefined,
+    sameTimeEveryDay: toBool(row.same_time_every_day),
+    dayTimes: Object.fromEntries(timeRows.map(item => [item.day_index, item.time])),
+    notificationMode: row.notification_mode ?? undefined,
+    reminderMinutes: row.reminder_minutes ?? undefined,
+  };
+}
+
+/**
+ * The task schedule is what the user can actually see and check on Home, so
+ * it is the authoritative Church scoring schedule if a legacy/partial write
+ * left the two stores apart. Reset only the still-unearned current week; earned
+ * history remains immutable and schedule edits continue to affect next week.
+ */
+async function synchronizeChurchConfigFromTask(
+  db: SQLite.SQLiteDatabase,
+  challengeId: string,
+  taskId: string,
+  referenceDate: string,
+) {
+  const challenge = await db.getFirstAsync<{ category: ChallengeRecord['category'] }>(
+    'SELECT category FROM challenges WHERE id = ? LIMIT 1',
+    challengeId,
+  );
+  if (challenge?.category !== 'church') return false;
+
+  const taskConfig = await getChurchConfigFromTask(db, taskId);
+  if (!taskConfig) return false;
+  const storedConfig = await getStoredChurchConfig(db, challengeId);
+  if (churchSchedulesMatch(storedConfig, taskConfig)) return false;
+
+  await replaceChurchConfig(db, challengeId, taskConfig);
+  await db.runAsync(
+    `DELETE FROM challenge_church_weeks
+     WHERE challenge_id = ? AND week_start = ?
+       AND status <> 'earned' AND earned_at IS NULL`,
+    challengeId,
+    churchWeekStart(referenceDate),
+  );
+  return true;
+}
+
+async function persistChallengeRecord(db: SQLite.SQLiteDatabase, record: ChallengeRecord) {
   const now = Date.now();
   const startedAt = record.startedAt ?? getLocalDateKey();
 
   await db.runAsync(
-    `INSERT OR REPLACE INTO challenges (
-      id, template_id, title, description, category, group_key, icon, status,
-      progress_current, progress_total, progress_unit, headline, subline,
-      show_bar, streak, best_streak, time, schedule_label, pace_label,
-      ended_label, total_units, duration_days, started_at, paused_at,
-      completed_at, cancelled_at, last_completed_date, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM challenges WHERE id = ?), ?), ?)`,
+    CHALLENGE_RECORD_UPSERT_SQL,
     record.id,
     record.templateId,
     record.title,
@@ -526,8 +829,7 @@ export async function saveChallengeRecord(record: ChallengeRecord) {
     record.completedAt ?? null,
     record.cancelledAt ?? null,
     record.lastCompletedDate ?? null,
-    record.id,
-    now,
+    record.createdAt ?? now,
     now,
   );
 
@@ -537,9 +839,19 @@ export async function saveChallengeRecord(record: ChallengeRecord) {
   return { ...record, startedAt };
 }
 
+export async function saveChallengeRecord(record: ChallengeRecord) {
+  const db = await openChallengeDb();
+  let saved: ChallengeRecord | undefined;
+  await db.withTransactionAsync(async () => {
+    saved = await persistChallengeRecord(db, record);
+  });
+  return saved ?? record;
+}
+
 export async function deleteChallengeRecord(challengeId: string) {
   const db = await openChallengeDb();
   await db.runAsync('DELETE FROM challenge_daily_status WHERE challenge_id = ?', challengeId);
+  await db.runAsync('DELETE FROM challenge_church_weeks WHERE challenge_id = ?', challengeId);
   await db.runAsync('DELETE FROM challenge_scripture_sessions WHERE challenge_id = ?', challengeId);
   await db.runAsync('DELETE FROM challenge_scripture_day_times WHERE challenge_id = ?', challengeId);
   await db.runAsync('DELETE FROM challenge_scripture_config WHERE challenge_id = ?', challengeId);
@@ -548,6 +860,214 @@ export async function deleteChallengeRecord(challengeId: string) {
   await db.runAsync('DELETE FROM challenge_church_day_times WHERE challenge_id = ?', challengeId);
   await db.runAsync('DELETE FROM challenge_church_config WHERE challenge_id = ?', challengeId);
   await db.runAsync('DELETE FROM challenges WHERE id = ?', challengeId);
+}
+
+function safeStringList(value: string | null | undefined) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed.filter(item => typeof item === 'string'))].sort();
+  } catch {
+    return [];
+  }
+}
+
+function toChallengeChurchWeek(week: ChurchWeekEvaluation): ChallengeChurchWeek {
+  return {
+    weekStart: week.weekStart,
+    weekEnd: week.weekEnd,
+    requiredDates: week.requiredDates,
+    completedDates: week.completedDates,
+    requiredCount: week.requiredCount,
+    completedCount: week.completedCount,
+    status: week.status,
+  };
+}
+
+async function writeChurchWeek(
+  db: SQLite.SQLiteDatabase,
+  challengeId: string,
+  week: ChurchWeekEvaluation,
+  previous?: ChurchWeekRow,
+) {
+  const now = Date.now();
+  const earnedAt = week.status === 'earned'
+    ? previous?.earned_at ?? now
+    : previous?.earned_at ?? null;
+  // An explicit uncheck revokes this completion occurrence. Keep the original
+  // earned timestamp for the week's identity, but clear delivery state so a
+  // later re-check can celebrate the restored trophy without adding a second
+  // week to History.
+  const celebratedAt = week.status === 'earned' ? previous?.celebrated_at ?? null : null;
+  await db.runAsync(
+    `INSERT OR REPLACE INTO challenge_church_weeks (
+      challenge_id, week_start, week_end, required_dates, status,
+      earned_at, celebrated_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM challenge_church_weeks WHERE challenge_id = ? AND week_start = ?), ?), ?)`,
+    challengeId,
+    week.weekStart,
+    week.weekEnd,
+    JSON.stringify(week.requiredDates),
+    week.status,
+    earnedAt,
+    celebratedAt,
+    challengeId,
+    week.weekStart,
+    now,
+    now,
+  );
+}
+
+async function reconcileChurchWeeks(
+  db: SQLite.SQLiteDatabase,
+  record: ChallengeRecord,
+  todayKey = getLocalDateKey(),
+) {
+  const config: ChallengeChurchConfig = record.churchConfig ?? {
+    frequency: 'specific_days',
+    selectedDays: [6],
+  };
+  const [storedRows, dailyRows] = await Promise.all([
+    db.getAllAsync<ChurchWeekRow>(
+      'SELECT * FROM challenge_church_weeks WHERE challenge_id = ? ORDER BY week_start ASC',
+      record.id,
+    ),
+    db.getAllAsync<DailyStatusRow>(
+      'SELECT challenge_id, date, status FROM challenge_daily_status WHERE challenge_id = ? ORDER BY date ASC',
+      record.id,
+    ),
+  ]);
+  const storedByWeek = new Map(storedRows.map(row => [row.week_start, row]));
+  const completedDates = new Set(dailyRows.filter(row => row.status === 'completed').map(row => row.date));
+  const skippedDates = new Set(dailyRows.filter(row => row.status === 'skipped').map(row => row.date));
+  const firstWeek = churchWeekStart(record.startedAt ?? todayKey);
+  const currentWeekStart = churchWeekStart(todayKey);
+  const startedDate = record.startedAt ? churchDateFromKey(record.startedAt) : null;
+  const startedDayIndex = startedDate
+    ? (startedDate.getDay() === 0 ? 6 : startedDate.getDay() - 1)
+    : 6;
+  const startDayTime = config.sameTimeEveryDay === false
+    ? config.dayTimes?.[startedDayIndex] ?? config.time
+    : config.time;
+  const evaluations: ChurchWeekEvaluation[] = [];
+
+  // A Church rhythm is open-ended. Materializing one compact row per week
+  // keeps its scoring deterministic even after the user later changes days.
+  for (let weekStart = firstWeek; weekStart <= currentWeekStart; weekStart = addChurchDays(weekStart, 7)) {
+    const previous = storedByWeek.get(weekStart);
+    const requiredDates = previous
+      ? safeStringList(previous.required_dates)
+      : churchRequiredDatesForWeek(config, weekStart);
+    const isStartWeek = weekStart === firstWeek;
+    const pausedThisWeek = record.status === 'paused'
+      && !!record.pausedAt
+      && weekStart >= churchWeekStart(record.pausedAt);
+    const practice = previous?.status === 'practice'
+      || (!previous && isStartWeek && !churchStartWeekQualifies(
+        requiredDates,
+        record.startedAt,
+        record.createdAt,
+        startDayTime,
+      ))
+      || (!previous && pausedThisWeek);
+    const evaluation = evaluateChurchWeek({
+      weekStart,
+      requiredDates,
+      completedDates,
+      skippedDates,
+      todayKey,
+      practice,
+    });
+    evaluations.push(evaluation);
+
+    const requiredJson = JSON.stringify(evaluation.requiredDates);
+    if (
+      !previous
+      || previous.status !== evaluation.status
+      || previous.week_end !== evaluation.weekEnd
+      || previous.required_dates !== requiredJson
+    ) {
+      await writeChurchWeek(db, record.id, evaluation, previous);
+    }
+  }
+
+  const trophyWeeks = evaluations
+    .filter(week => week.status === 'earned')
+    .map(week => week.weekStart);
+  const currentWeek = evaluations.find(week => week.weekStart === currentWeekStart)
+    ?? evaluateChurchWeek({
+      weekStart: currentWeekStart,
+      requiredDates: churchRequiredDatesForWeek(config, currentWeekStart),
+      completedDates,
+      skippedDates,
+      todayKey,
+    });
+  const streaks = summarizeChurchWeekStreaks(evaluations);
+
+  const weeklyCopy = currentWeek.status === 'practice'
+    ? { headline: 'Practice week', subline: 'Your next full week can earn a trophy' }
+    : currentWeek.status === 'earned'
+      ? { headline: `${currentWeek.completedCount}/${currentWeek.requiredCount} this week`, subline: 'Weekly trophy earned' }
+      : currentWeek.status === 'missed'
+        ? { headline: `${currentWeek.completedCount}/${currentWeek.requiredCount} this week`, subline: 'A fresh trophy week begins Monday' }
+        : {
+          headline: `${currentWeek.completedCount}/${currentWeek.requiredCount} this week`,
+          subline: currentWeek.requiredCount === 1
+            ? 'Complete this visit to earn the weekly trophy'
+            : 'Complete every planned visit to earn the weekly trophy',
+        };
+
+  return {
+    record: {
+      ...record,
+      progressCurrent: trophyWeeks.length,
+      progressUnit: 'trophies',
+      headline: weeklyCopy.headline,
+      subline: weeklyCopy.subline,
+      streak: streaks.current,
+      bestStreak: streaks.best,
+      lastCompletedDate: trophyWeeks.length
+        ? addChurchDays(trophyWeeks[trophyWeeks.length - 1], 6)
+        : undefined,
+      churchWeek: toChallengeChurchWeek(currentWeek),
+      churchTrophyWeeks: trophyWeeks,
+      churchTrophyCount: trophyWeeks.length,
+    } satisfies ChallengeRecord,
+    currentWeek,
+  };
+}
+
+export async function markChurchWeeksPractice(
+  record: ChallengeRecord,
+  fromDate: string,
+  throughDate: string = fromDate,
+) {
+  if (record.category !== 'church') return;
+  const db = await openChallengeDb();
+  const config = record.churchConfig ?? { frequency: 'specific_days' as const, selectedDays: [6] };
+  const first = churchWeekStart(fromDate);
+  const last = churchWeekStart(throughDate);
+
+  for (let weekStart = first; weekStart <= last; weekStart = addChurchDays(weekStart, 7)) {
+    const previous = await db.getFirstAsync<ChurchWeekRow>(
+      'SELECT * FROM challenge_church_weeks WHERE challenge_id = ? AND week_start = ? LIMIT 1',
+      record.id,
+      weekStart,
+    );
+    if (previous?.status === 'earned') continue;
+    const evaluation = evaluateChurchWeek({
+      weekStart,
+      requiredDates: previous
+        ? safeStringList(previous.required_dates)
+        : churchRequiredDatesForWeek(config, weekStart),
+      completedDates: [],
+      skippedDates: [],
+      todayKey: throughDate,
+      practice: true,
+    });
+    await writeChurchWeek(db, record.id, evaluation, previous ?? undefined);
+  }
 }
 
 export async function listChallengeRecords() {
@@ -576,7 +1096,7 @@ export async function listChallengeRecords() {
   const prayerById = new Map(prayerRows.map(row => [row.challenge_id, row]));
   const churchById = new Map(churchRows.map(row => [row.challenge_id, row]));
 
-  return rows.map(row => rowToRecord(
+  const records = rows.map(row => rowToRecord(
     row,
     scriptureById.get(row.id),
     dayTimesFor(scriptureTimeRows, row.id),
@@ -586,6 +1106,163 @@ export async function listChallengeRecords() {
     dayTimesFor(churchTimeRows, row.id),
     dailyRows,
   ));
+
+  return Promise.all(records.map(async record => (
+    record.category === 'church'
+      ? (await reconcileChurchWeeks(db, record)).record
+      : record
+  )));
+}
+
+function eventRowToCelebration(row: ChallengeCompletionEventRow): ChallengeCompletionCelebration {
+  return {
+    eventId: row.id,
+    challengeId: row.challenge_id,
+    title: row.title,
+    variant: row.kind === 'church_week' ? 'churchWeek' : 'challenge',
+    weekStart: row.week_start ?? undefined,
+    trophyCount: row.trophy_count ?? undefined,
+    currentStreak: row.current_streak ?? undefined,
+  };
+}
+
+async function createChallengeCompletionEvent(
+  db: SQLite.SQLiteDatabase,
+  celebration: Omit<ChallengeCompletionCelebration, 'eventId'>,
+) {
+  const kind: ChallengeCompletionEventRow['kind'] = celebration.variant === 'churchWeek'
+    ? 'church_week'
+    : 'challenge';
+  const eventId = challengeCompletionEventId(kind, celebration.challengeId, celebration.weekStart);
+  const createdAt = Date.now();
+  const inserted = await db.runAsync(
+    CHALLENGE_COMPLETION_EVENT_INSERT_SQL,
+    eventId,
+    celebration.challengeId,
+    kind,
+    celebration.title,
+    celebration.weekStart ?? null,
+    celebration.trophyCount ?? null,
+    celebration.currentStreak ?? null,
+    createdAt,
+  );
+  if (inserted.changes === 0) return null;
+  return { ...celebration, eventId } satisfies ChallengeCompletionCelebration;
+}
+
+async function retractChallengeCompletionEvent(
+  db: SQLite.SQLiteDatabase,
+  kind: ChallengeCompletionEventRow['kind'],
+  challengeId: string,
+  weekStart?: string,
+) {
+  await db.runAsync(
+    CHALLENGE_COMPLETION_EVENT_RETRACT_SQL,
+    challengeCompletionEventId(kind, challengeId, weekStart),
+  );
+}
+
+async function repairChurchRewardInputs(db: SQLite.SQLiteDatabase) {
+  const taskStoreReady = !!(await db.getFirstAsync<{ name: string }>(
+    `SELECT name FROM sqlite_master
+     WHERE type = 'table' AND name = 'task_instances'
+     LIMIT 1`,
+  ));
+  if (!taskStoreReady) return;
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(CHALLENGE_TASK_LINK_REPAIR_SQL);
+    await synchronizeStoredChurchConfigs(db);
+    await db.runAsync(CHALLENGE_DAILY_STATUS_REPAIR_SQL, Date.now());
+  });
+}
+
+/**
+ * Returns the oldest reward that has not yet been dismissed on Home.
+ *
+ * Unlike the previous in-memory return queue, this outbox survives native
+ * route timing, background notification actions, process death and app
+ * restarts. Reconciliation runs first so legacy Church progress is visible.
+ */
+export async function getPendingChallengeCelebration(): Promise<ChallengeCompletionCelebration | null> {
+  const db = await openChallengeDb();
+  // Home is the final delivery boundary. Reconcile the two legacy stores here
+  // as well as at TaskProvider boot so Fast Refresh, notification actions and
+  // previously checked Church tasks cannot leave the popup/history waiting for
+  // another process restart.
+  await repairChurchRewardInputs(db);
+  const records = await listChallengeRecords();
+  let pending = await db.getFirstAsync<ChallengeCompletionEventRow>(
+    `SELECT * FROM challenge_completion_events
+     WHERE acknowledged_at IS NULL
+     ORDER BY created_at ASC, id ASC
+     LIMIT 1`,
+  );
+
+  // Compatibility bridge for a Church trophy earned by a build that had only
+  // `celebrated_at`. Limit recovery to the current week so old achievements do
+  // not replay in a burst after an upgrade.
+  if (!pending) {
+    const currentWeekStart = churchWeekStart(getLocalDateKey());
+    const legacy = await db.getFirstAsync<Pick<ChurchWeekRow, 'challenge_id' | 'week_start'>>(
+      `SELECT challenge_id, week_start
+       FROM challenge_church_weeks
+       WHERE status = 'earned' AND celebrated_at IS NULL AND week_start = ?
+       ORDER BY earned_at DESC
+       LIMIT 1`,
+      currentWeekStart,
+    );
+    const record = legacy ? records.find(item => item.id === legacy.challenge_id) : undefined;
+    if (legacy && record) {
+      await createChallengeCompletionEvent(db, {
+        challengeId: record.id,
+        title: record.title,
+        variant: 'churchWeek',
+        weekStart: legacy.week_start,
+        trophyCount: record.churchTrophyCount ?? 0,
+        currentStreak: record.streak,
+      });
+      pending = await db.getFirstAsync<ChallengeCompletionEventRow>(
+        `SELECT * FROM challenge_completion_events
+         WHERE acknowledged_at IS NULL
+         ORDER BY created_at ASC, id ASC
+         LIMIT 1`,
+      );
+    }
+  }
+
+  return pending ? eventRowToCelebration(pending) : null;
+}
+
+export async function acknowledgeChallengeCelebration(eventId: string) {
+  const db = await openChallengeDb();
+  const event = await db.getFirstAsync<ChallengeCompletionEventRow>(
+    'SELECT * FROM challenge_completion_events WHERE id = ? LIMIT 1',
+    eventId,
+  );
+  if (!event) return;
+
+  const now = Date.now();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE challenge_completion_events
+       SET acknowledged_at = ?
+       WHERE id = ? AND acknowledged_at IS NULL`,
+      now,
+      eventId,
+    );
+    if (event.kind === 'church_week' && event.week_start) {
+      await db.runAsync(
+        `UPDATE challenge_church_weeks
+         SET celebrated_at = ?, updated_at = ?
+         WHERE challenge_id = ? AND week_start = ? AND status = 'earned'`,
+        now,
+        now,
+        event.challenge_id,
+        event.week_start,
+      );
+    }
+  });
 }
 
 function recalcStreak(rows: DailyStatusRow[]) {
@@ -686,7 +1363,7 @@ function scriptureProgressCopy(record: ChallengeRecord, progress: number, comple
 }
 
 function progressCopy(record: ChallengeRecord, progress: number, completedAt?: string) {
-  const total = record.progressTotal ?? record.durationDays ?? record.totalUnits ?? 0;
+  const total = resolveDayCountChallengeTotal(record);
   if (completedAt) {
     return {
       headline: `Completed ${total || progress}`,
@@ -708,11 +1385,217 @@ function progressCopy(record: ChallengeRecord, progress: number, completedAt?: s
   };
 }
 
+function buildDayCountProgressRecord(
+  record: ChallengeRecord,
+  dailyRows: DailyStatusRow[],
+  completionDate: string,
+) {
+  const { completedCount, total, completedAt } = resolveDayCountProgress(
+    record,
+    dailyRows.map(row => row.status),
+    completionDate,
+  );
+  const streak = recalcStreak(dailyRows);
+  const copy = progressCopy(record, completedCount, completedAt);
+  const nextRecord: ChallengeRecord = {
+    ...record,
+    status: completedAt ? 'completed' : record.status === 'completed' ? 'active' : record.status,
+    progressCurrent: completedCount,
+    progressTotal: record.templateId === 'lectionary_daily' ? total : record.progressTotal,
+    streak: streak.currentStreak,
+    bestStreak: Math.max(record.bestStreak ?? record.streak, streak.currentStreak),
+    lastCompletedDate: streak.lastCompletedDate,
+    completedAt,
+    endedLabel: completedAt
+      ? `Completed ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(`${completedAt}T12:00:00`))}`
+      : record.status === 'completed'
+        ? undefined
+        : record.endedLabel,
+    headline: copy.headline,
+    subline: copy.subline,
+  };
+  return { nextRecord, completedAt };
+}
+
 async function getTaskChallengeConfig(db: SQLite.SQLiteDatabase, taskId: string) {
-  return db.getFirstAsync<{ challenge_id: string; task_id: string }>(
-    'SELECT task_id, challenge_id FROM task_challenge_config WHERE task_id = ? LIMIT 1',
+  const stored = await db.getFirstAsync<{ challenge_id: string; task_id: string }>(
+    `SELECT config.task_id, config.challenge_id
+     FROM task_challenge_config config
+     JOIN challenges challenge ON challenge.id = config.challenge_id
+     WHERE config.task_id = ?
+     LIMIT 1`,
     taskId,
   );
+  if (stored) return stored;
+
+  // Challenge tasks created by older app versions can exist without their
+  // config row. The task id has always carried the challenge id, so repair the
+  // missing relationship at the exact point where progress needs it.
+  const challengeId = challengeIdFromTaskId(taskId);
+  if (!challengeId) return null;
+  const legacyPair = await db.getFirstAsync<{ task_id: string; challenge_id: string; template_id: string }>(
+    `SELECT t.id AS task_id, c.id AS challenge_id, c.template_id
+     FROM tasks t
+     JOIN challenges c ON c.id = ?
+     WHERE t.id = ? AND t.source = 'challenge'
+     LIMIT 1`,
+    challengeId,
+    taskId,
+  );
+  if (!legacyPair) return null;
+  await db.runAsync(
+    `INSERT INTO task_challenge_config (
+      task_id, challenge_id, template_id, progress_current, progress_total, progress_unit
+    ) SELECT ?, id, template_id, progress_current,
+        COALESCE(progress_total, duration_days, total_units, 0), progress_unit
+      FROM challenges WHERE id = ?
+      ON CONFLICT(task_id) DO UPDATE SET
+        challenge_id = excluded.challenge_id,
+        template_id = excluded.template_id,
+        progress_current = excluded.progress_current,
+        progress_total = excluded.progress_total,
+        progress_unit = excluded.progress_unit`,
+    taskId,
+    challengeId,
+  );
+  return { task_id: legacyPair.task_id, challenge_id: legacyPair.challenge_id };
+}
+
+async function reconcileStoredDayCountChallenges(db: SQLite.SQLiteDatabase) {
+  const records = await listChallengeRecords();
+  const dailyRows = await db.getAllAsync<DailyStatusRow>(
+    'SELECT challenge_id, date, status FROM challenge_daily_status ORDER BY date ASC',
+  );
+  let repaired = 0;
+
+  for (const record of records) {
+    const dayCounted = record.category === 'prayer'
+      || record.category === 'journal'
+      || record.templateId === 'lectionary_daily';
+    if (!dayCounted) continue;
+
+    const rows = dailyRows.filter(row => row.challenge_id === record.id);
+    if (rows.length === 0) continue;
+    const completedRows = rows.filter(row => row.status === 'completed');
+    // Never reduce trusted legacy progress when old task snapshots themselves
+    // are missing. This repair is for recoverable checked instances only.
+    if (completedRows.length < record.progressCurrent) continue;
+
+    const completionDate = completedRows.at(-1)?.date ?? getLocalDateKey();
+    const { nextRecord, completedAt } = buildDayCountProgressRecord(record, rows, completionDate);
+    const changed = nextRecord.progressCurrent !== record.progressCurrent
+      || nextRecord.status !== record.status
+      || nextRecord.completedAt !== record.completedAt
+      || nextRecord.streak !== record.streak
+      || nextRecord.lastCompletedDate !== record.lastCompletedDate;
+    if (!changed) continue;
+
+    const taskId = challengeTaskId(record.id);
+    await persistChallengeRecord(db, nextRecord);
+    await applyTaskLifecycleForChallengeCompletion(db, taskId, record, nextRecord, completionDate);
+    await updateTaskChallengeProgress(db, taskId, nextRecord, completionDate);
+
+    if (!completedAt && record.completedAt) {
+      await retractChallengeCompletionEvent(db, 'challenge', record.id);
+    } else if (completedAt && !record.completedAt) {
+      const celebration = await createChallengeCompletionEvent(db, {
+        challengeId: nextRecord.id,
+        title: nextRecord.title,
+        variant: 'challenge',
+      });
+      if (celebration && completionDate < addChurchDays(getLocalDateKey(), -7)) {
+        await db.runAsync(
+          'UPDATE challenge_completion_events SET acknowledged_at = ? WHERE id = ?',
+          Date.now(),
+          celebration.eventId,
+        );
+      }
+    }
+    repaired += 1;
+  }
+
+  return repaired;
+}
+
+async function synchronizeStoredChurchConfigs(db: SQLite.SQLiteDatabase) {
+  const rows = await db.getAllAsync<{ challenge_id: string; task_id: string }>(
+    `SELECT challenge.id AS challenge_id, task.id AS task_id
+     FROM challenges challenge
+     JOIN tasks task ON task.id = ('challenge_task_' || challenge.id)
+     WHERE challenge.category = 'church'
+       AND task.source = 'challenge'`,
+  );
+  let repaired = 0;
+  for (const row of rows) {
+    if (await synchronizeChurchConfigFromTask(
+      db,
+      row.challenge_id,
+      row.task_id,
+      getLocalDateKey(),
+    )) repaired += 1;
+  }
+  return repaired;
+}
+
+async function reconcileStoredChurchChallenges(db: SQLite.SQLiteDatabase) {
+  const currentWeekStart = churchWeekStart(getLocalDateKey());
+  const records = await listChallengeRecords();
+  let repaired = 0;
+  for (const record of records) {
+    if (
+      record.category !== 'church'
+      || record.churchWeek?.weekStart !== currentWeekStart
+      || record.churchWeek.status !== 'earned'
+    ) continue;
+    const celebration = await createChallengeCompletionEvent(db, {
+      challengeId: record.id,
+      title: record.title,
+      variant: 'churchWeek',
+      weekStart: currentWeekStart,
+      trophyCount: record.churchTrophyCount ?? 0,
+      currentStreak: record.streak,
+    });
+    if (celebration) repaired += 1;
+  }
+  return repaired;
+}
+
+/** Repairs Church history even when the user opens Challenges before Home. */
+export async function repairChurchChallengeState() {
+  const db = await openChallengeDb();
+  await repairChurchRewardInputs(db);
+  return reconcileStoredChurchChallenges(db);
+}
+
+/**
+ * Repairs challenge tasks made before task_challenge_config was introduced,
+ * then imports their already checked/skipped instances into challenge
+ * progress. Without this bridge Home looked complete while Challenges still
+ * saw zero progress, which also meant no trophy event could be emitted.
+ */
+export async function repairLegacyChallengeTaskProgress() {
+  const db = await openChallengeDb();
+  let repairedLinks = 0;
+  let repairedChurchConfigs = 0;
+  let importedStatuses = 0;
+  let reconciledRecords = 0;
+  let reconciledChurchRewards = 0;
+  await db.withTransactionAsync(async () => {
+    repairedLinks = (await db.runAsync(CHALLENGE_TASK_LINK_REPAIR_SQL)).changes;
+    repairedChurchConfigs = await synchronizeStoredChurchConfigs(db);
+    importedStatuses = (await db.runAsync(
+      CHALLENGE_DAILY_STATUS_REPAIR_SQL,
+      Date.now(),
+    )).changes;
+    reconciledRecords = await reconcileStoredDayCountChallenges(db);
+    reconciledChurchRewards = await reconcileStoredChurchChallenges(db);
+  });
+
+  return repairedLinks
+    + repairedChurchConfigs
+    + importedStatuses
+    + reconciledRecords
+    + reconciledChurchRewards;
 }
 
 async function getChallengeRecord(challengeId: string) {
@@ -1030,35 +1913,62 @@ async function syncScriptureChallengeRecord(
     subline: copy.subline,
   };
 
-  await saveChallengeRecord(nextRecord);
+  await persistChallengeRecord(db, nextRecord);
   await applyTaskLifecycleForChallengeCompletion(db, taskId, record, nextRecord, date);
   await updateTaskChallengeProgress(db, taskId, nextRecord, date);
+
+  if (!completedAt && record.completedAt) {
+    await retractChallengeCompletionEvent(db, 'challenge', nextRecord.id);
+  }
+  if (completedAt && !record.completedAt) {
+    const celebration = await createChallengeCompletionEvent(db, {
+      challengeId: nextRecord.id,
+      title: nextRecord.title,
+      variant: 'challenge',
+    });
+    if (celebration) {
+      return {
+        challengeCompleted: true,
+        challengeId: nextRecord.id,
+        challengeTitle: nextRecord.title,
+        celebration,
+      } satisfies ChallengeCompletedSyncResult;
+    }
+  }
+  return null;
 }
 
 export async function syncChallengeProgressForTaskInstance(
   instanceId: string,
   nextStatus: 'pending' | 'completed' | 'skipped',
-) {
+): Promise<ChallengeSyncResult | null> {
   const parsed = parseInstanceId(instanceId);
-  if (!parsed) return;
+  if (!parsed) return null;
   const db = await openChallengeDb();
   const config = await getTaskChallengeConfig(db, parsed.taskId);
-  if (!config) return;
+  if (!config) return null;
+  await synchronizeChurchConfigFromTask(
+    db,
+    config.challenge_id,
+    config.task_id,
+    parsed.date,
+  );
+  const weekStart = churchWeekStart(parsed.date);
 
   const previous = await db.getFirstAsync<{ status: DailyStatusRow['status'] }>(
     'SELECT status FROM challenge_daily_status WHERE challenge_id = ? AND date = ? LIMIT 1',
     config.challenge_id,
     parsed.date,
   );
-  if (previous?.status === nextStatus) return;
+  const statusAlreadySynchronized = previous?.status === nextStatus;
 
-  if (nextStatus === 'pending') {
+  if (!statusAlreadySynchronized && nextStatus === 'pending') {
     await db.runAsync(
       'DELETE FROM challenge_daily_status WHERE challenge_id = ? AND date = ?',
       config.challenge_id,
       parsed.date,
     );
-  } else {
+  } else if (!statusAlreadySynchronized) {
     await db.runAsync(
       `INSERT OR REPLACE INTO challenge_daily_status (
         challenge_id, date, status, updated_at
@@ -1071,9 +1981,56 @@ export async function syncChallengeProgressForTaskInstance(
   }
 
   const record = await getChallengeRecord(config.challenge_id);
-  if (!record) return;
+  if (!record) return null;
 
-  if (record.category === 'scripture') {
+  if (record.category === 'church') {
+    await persistChallengeRecord(db, record);
+    await updateTaskChallengeProgress(db, config.task_id, record, parsed.date);
+    const week = record.churchWeek;
+    if (!week) return null;
+    if (week.status !== 'earned') {
+      await retractChallengeCompletionEvent(db, 'church_week', record.id, weekStart);
+    }
+    const earnedForThisCompletion = nextStatus === 'completed'
+      && week.weekStart === weekStart
+      && week.status === 'earned';
+    let celebration = earnedForThisCompletion
+      ? await createChallengeCompletionEvent(db, {
+        challengeId: record.id,
+        title: record.title,
+        variant: 'churchWeek',
+        weekStart: week.weekStart,
+        trophyCount: record.churchTrophyCount ?? 0,
+        currentStreak: record.streak,
+      })
+      : null;
+    // A previous partial write may already have the durable event while the
+    // UI never consumed it. Returning the still-pending row lets the same Home
+    // tap display it. An explicit uncheck deletes the occurrence first, so a
+    // later re-check can celebrate again without duplicating the trophy row.
+    if (!celebration && earnedForThisCompletion) {
+      const pending = await db.getFirstAsync<ChallengeCompletionEventRow>(
+        `SELECT * FROM challenge_completion_events
+         WHERE id = ? AND acknowledged_at IS NULL
+         LIMIT 1`,
+        challengeCompletionEventId('church_week', record.id, week.weekStart),
+      );
+      celebration = pending ? eventRowToCelebration(pending) : null;
+    }
+    return {
+      challengeId: record.id,
+      challengeTitle: record.title,
+      trophyAwarded: !!celebration,
+      week,
+      trophyCount: record.churchTrophyCount ?? 0,
+      currentStreak: record.streak,
+      celebration: celebration ?? undefined,
+    };
+  }
+
+  if (statusAlreadySynchronized) return null;
+
+  if (challengeUsesFiniteScriptureReader(record)) {
     let removedSessionProgress: number | undefined;
     if (nextStatus === 'pending') {
       const removedSession = await db.getFirstAsync<Pick<ScriptureSessionRow, 'start_unit_index'>>(
@@ -1089,34 +2046,46 @@ export async function syncChallengeProgressForTaskInstance(
       await ensureDefaultScriptureSession(db, instanceId, parsed.date, record, config.challenge_id);
     }
 
-    await syncScriptureChallengeRecord(db, config.task_id, config.challenge_id, record, parsed.date, removedSessionProgress);
-    return;
+    return syncScriptureChallengeRecord(
+      db,
+      config.task_id,
+      config.challenge_id,
+      record,
+      parsed.date,
+      removedSessionProgress,
+    );
   }
 
   const dailyRows = await db.getAllAsync<DailyStatusRow>(
     'SELECT challenge_id, date, status FROM challenge_daily_status WHERE challenge_id = ? ORDER BY date ASC',
     config.challenge_id,
   );
-  const completedCount = dailyRows.filter(row => row.status === 'completed').length;
-  const streak = recalcStreak(dailyRows);
-  const total = record.progressTotal ?? record.durationDays ?? 0;
-  const completedAt = total > 0 && completedCount >= total ? parsed.date : undefined;
-  const copy = progressCopy(record, completedCount, completedAt);
+  const { nextRecord, completedAt } = buildDayCountProgressRecord(record, dailyRows, parsed.date);
 
-  const nextRecord: ChallengeRecord = {
-    ...record,
-    status: completedAt ? 'completed' : record.status === 'completed' ? 'active' : record.status,
-    progressCurrent: completedCount,
-    streak: streak.currentStreak,
-    bestStreak: Math.max(record.bestStreak ?? record.streak, streak.currentStreak),
-    lastCompletedDate: streak.lastCompletedDate,
-    completedAt,
-    endedLabel: completedAt ? `Completed ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(`${completedAt}T12:00:00`))}` : record.endedLabel,
-    headline: copy.headline,
-    subline: copy.subline,
-  };
-
-  await saveChallengeRecord(nextRecord);
+  await persistChallengeRecord(db, nextRecord);
   await applyTaskLifecycleForChallengeCompletion(db, config.task_id, record, nextRecord, parsed.date);
   await updateTaskChallengeProgress(db, config.task_id, nextRecord, parsed.date);
+
+  if (!completedAt && record.completedAt) {
+    await retractChallengeCompletionEvent(db, 'challenge', nextRecord.id);
+  }
+  // Only on the tick that finished it: `record` is the state before this one,
+  // so a challenge already carrying a completion does not announce itself
+  // again if a later day is ticked or a day is un-ticked and re-ticked.
+  if (completedAt && !record.completedAt) {
+    const celebration = await createChallengeCompletionEvent(db, {
+      challengeId: nextRecord.id,
+      title: nextRecord.title,
+      variant: 'challenge',
+    });
+    if (celebration) {
+      return {
+        challengeCompleted: true,
+        challengeId: nextRecord.id,
+        challengeTitle: nextRecord.title,
+        celebration,
+      };
+    }
+  }
+  return null;
 }

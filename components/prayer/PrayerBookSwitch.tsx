@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Reanimated, {
   FadeIn,
@@ -77,6 +77,12 @@ const TRACK_GAP = 4;
 // The app's one selection spring. Same figures as Set as Task and the task
 // frequency seats, so every choice in Anasta settles with the same weight.
 const SELECT_SPRING = { damping: 18, stiffness: 235, mass: 0.72 };
+const NOTE_ENTER = FadeIn.duration(240);
+// Orthodox now opens on a lightweight preview boundary, so its controls can
+// appear in the next few frames. My Rule still mounts its richer home page and
+// keeps the longer head start for the existing selector spring.
+const ORTHODOX_COMMIT_DELAY_MS = 48;
+const MY_RULE_COMMIT_DELAY_MS = 120;
 
 /**
  * The emblem, built to the switch's own pattern: a 32 seat, a 28 disc, a 22
@@ -131,15 +137,62 @@ export default function PrayerBookSwitch({
   lang: PrayerLanguage;
 }) {
   const reduceMotion = useReducedMotion();
-  const orthodox = value === 'orthodox';
+  // Keep the lightweight selector intent local while its existing spring is
+  // moving. Mounting the other prayer book used to happen in the same React
+  // commit and competed with this animation on the native/UI thread.
+  const [visualValue, setVisualValue] = useState(value);
+  const visualValueRef = useRef(value);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const orthodox = visualValue === 'orthodox';
   const motion = useSharedValue(orthodox ? 1 : 0);
   const [trackWidth, setTrackWidth] = useState(0);
   const notes = PRAYER_BOOK_SWITCH_NOTES[lang];
 
+  // External changes (guided setup and deep links) still drive the exact same
+  // spring. A user tap starts it directly below and commits the heavy page only
+  // after it settles.
   useEffect(() => {
-    const target = orthodox ? 1 : 0;
+    // A locally selected value is already animating. When its deferred parent
+    // commit comes back through props, do not restart that spring.
+    if (visualValueRef.current === value) return;
+    // A genuine external navigation/update wins over a still-pending tap.
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    visualValueRef.current = value;
+    setVisualValue(value);
+    const target = value === 'orthodox' ? 1 : 0;
     motion.value = reduceMotion ? target : withSpring(target, SELECT_SPRING);
-  }, [motion, orthodox, reduceMotion]);
+  }, [motion, reduceMotion, value]);
+
+  useEffect(() => () => {
+    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+  }, []);
+
+  const selectBook = useCallback((next: PrayerBookMode) => {
+    if (next === visualValueRef.current) return;
+
+    visualValueRef.current = next;
+    setVisualValue(next);
+    const target = next === 'orthodox' ? 1 : 0;
+    if (reduceMotion) {
+      motion.value = target;
+      onChange(next);
+      return;
+    }
+
+    // Same spring, same faces and same transforms as before. Give its first
+    // frames an uncontested start, then guarantee the React page commit. A
+    // spring-completion callback is intentionally not used: interrupted or
+    // runtime-cancelled springs must never leave the selector and page apart.
+    motion.value = withSpring(target, SELECT_SPRING);
+    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = setTimeout(() => {
+      commitTimerRef.current = null;
+      onChange(next);
+    }, next === 'orthodox' ? ORTHODOX_COMMIT_DELAY_MS : MY_RULE_COMMIT_DELAY_MS);
+  }, [motion, onChange, reduceMotion]);
 
   // The plaque is exactly one half wide and travels that half plus the gap —
   // measured, so it lands on the seat rather than near it.
@@ -185,7 +238,11 @@ export default function PrayerBookSwitch({
             carrying both pages at once — only their opacity differs. */}
         {half > 0 && (
           <Reanimated.View pointerEvents="none" style={[s.pill, { width: half }, pillStyle]}>
-            <Reanimated.View style={[StyleSheet.absoluteFill, mineFaceStyle]}>
+            <Reanimated.View
+              style={[StyleSheet.absoluteFill, mineFaceStyle]}
+              shouldRasterizeIOS
+              renderToHardwareTextureAndroid
+            >
               <LinearGradient
                 colors={['#FFFFFF', MINE_TINT]}
                 start={{ x: 0, y: 0 }}
@@ -198,7 +255,11 @@ export default function PrayerBookSwitch({
               <View style={[s.writingLine, s.writingLineLower]} />
             </Reanimated.View>
 
-            <Reanimated.View style={[StyleSheet.absoluteFill, orthFaceStyle]}>
+            <Reanimated.View
+              style={[StyleSheet.absoluteFill, orthFaceStyle]}
+              shouldRasterizeIOS
+              renderToHardwareTextureAndroid
+            >
               <LinearGradient
                 colors={['#FFFDF6', '#FBF2DC']}
                 start={{ x: 0, y: 0 }}
@@ -221,7 +282,7 @@ export default function PrayerBookSwitch({
 
         <TouchableOpacity
           style={s.half}
-          onPress={() => onChange('mine')}
+          onPress={() => selectBook('mine')}
           activeOpacity={0.86}
           haptic="selection"
           accessibilityRole="radio"
@@ -239,7 +300,7 @@ export default function PrayerBookSwitch({
 
         <TouchableOpacity
           style={s.half}
-          onPress={() => onChange('orthodox')}
+          onPress={() => selectBook('orthodox')}
           activeOpacity={0.86}
           haptic="selection"
           accessibilityRole="radio"
@@ -277,8 +338,8 @@ export default function PrayerBookSwitch({
       <View style={s.note}>
         <Reanimated.View style={[s.noteMark, markStyle]} />
         <Reanimated.Text
-          key={value}
-          entering={FadeIn.duration(240)}
+          key={visualValue}
+          entering={NOTE_ENTER}
           style={[s.noteText, { color: orthodox ? ORTH_NOTE_INK : MINE_NOTE_INK }]}
         >
           {notes[orthodox ? 'orthodox' : 'mine']}

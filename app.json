@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -34,6 +37,7 @@
           },
           "asyncRoutes": {
             "web": false,
+            "ios": false,
             "default": "development"
           }
         }
@@ -78,6 +82,7 @@
         },
         "asyncRoutes": {
           "web": false,
+          "ios": false,
           "default": "development"
         }
       },

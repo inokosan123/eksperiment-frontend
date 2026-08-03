@@ -2,13 +2,14 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import ScriptureChallengeReaderView from '@/components/scripture/ScriptureChallengeReaderView';
 import { saveScriptureChallengeSessionProgress } from '@/components/challenges/challengeDb';
 import { useChallenges } from '@/components/challenges/ChallengesContext';
-import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 
 export default function ScriptureChallengeScreen() {
   const router = useRouter();
-  const { completeInstance } = useTasks();
   const { refreshChallenges } = useChallenges();
   const { title, taskInstanceId, taskDate } = useLocalSearchParams<{
     title?: string;
@@ -17,6 +18,10 @@ export default function ScriptureChallengeScreen() {
   }>();
   const instanceId = taskInstanceId ?? '';
   const date = taskDate ?? getLocalDateKey();
+  const completion = useRoutedTaskCompletion({
+    taskInstanceId: instanceId || undefined,
+    taskDate: date,
+  });
 
   return (
     <>
@@ -24,26 +29,21 @@ export default function ScriptureChallengeScreen() {
       <ScriptureChallengeReaderView
         title={title}
         taskInstanceId={instanceId}
+        showFinishLoader={completion.showSlowIndicator}
         onBack={() => router.back()}
         onComplete={async readUnits => {
-          if (!instanceId) return null;
-          const result = await saveScriptureChallengeSessionProgress(instanceId, readUnits);
-          await completeInstance(instanceId, date);
-          await refreshChallenges();
-          queueTaskCompletionReturnAnimation(
-            instanceId,
-            result?.completed ? 680 : 420,
-            result?.completed
-              ? {
-                celebration: {
-                  type: 'challengeComplete',
-                  title: title ?? 'Challenge Complete',
-                },
-              }
-              : undefined,
-          );
-          return result;
+          if (!instanceId) return false;
+          const result = await completion.completeBeforeReturn({
+            persistCritical: () => saveScriptureChallengeSessionProgress(instanceId, readUnits),
+            reconcileAfterReturn: refreshChallenges,
+          });
+          return result.ok ? result.value : false;
         }}
+      />
+      <RoutedTaskCompletionErrorModal
+        visible={completion.saveErrorVisible}
+        onKeepEditing={completion.keepEditing}
+        onRetry={completion.retry}
       />
     </>
   );

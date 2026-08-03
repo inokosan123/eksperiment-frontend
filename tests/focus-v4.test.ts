@@ -11,6 +11,7 @@ import {
   cancelPendingChange,
   computeStreak,
   connectedSessionsAreValid,
+  createNeverAllowedCommitment,
   dateKey,
   deleteDayPlan,
   describeRules,
@@ -20,8 +21,10 @@ import {
   getEffectivePlan,
   getPlanSnapshotForDate,
   getWebProtectionSummary,
+  grantScreenTimePermission,
+  createCustomGroupId,
+  groupIcon,
   groupName,
-  HARD_LOCK_DISABLE_DELAY_MS,
   hardLockDelayMs,
   normalizeConnectedSessions,
   planHasProtectionNow,
@@ -41,6 +44,7 @@ import {
   saveDayPlan,
   saveOptionalEssentialApps,
   setPackMode,
+  setNativeProtectionState,
   splitSessionAt,
   startQuietHour,
   swapTodayPlan,
@@ -51,6 +55,7 @@ import {
   zoneContains,
   zoneDurationMinutes,
   customGroupNameAvailable,
+  saveCustomGroup,
   type DayPlan,
   type DayPlanState,
   type FocusUsageSnapshot,
@@ -63,10 +68,29 @@ import {
   WEB_DOMAIN_LIMIT,
 } from '../components/focus-watch/webProtectionCatalog';
 import {
+  focusBoundaryAppearance,
+  focusInheritedBoundaryLabel,
+  focusOverByMinutes,
+  focusRailFraction,
+  focusRemainingMinutes,
+  focusSecondarySignal,
+  focusSecondarySignalLabel,
+  focusShowsProgressRail,
+  focusStatusLabel,
   sortUsageRows,
   usageActivityState,
   usageBoundaryState,
+  usageVisualState,
+  type FocusBoundaryAppearance,
 } from '../components/focus-watch/todayUsageModel';
+import { gaugeStanding } from '../components/focus-watch/dayGaugeState';
+import {
+  allocatedGroupMinutes,
+  appLimitBounds,
+  groupLimitBounds,
+  nearestValidLimitMinutes,
+  validateFocusLimitBudget,
+} from '../components/focus-watch/focusLimitBudget';
 
 declare global {
   var __focusTestDb: { calls: { kind: string; sql: string }[] };
@@ -80,7 +104,7 @@ function rule(groupId: string, overrides: Partial<GroupRule> = {}): GroupRule {
     dailyMinutes: null,
     strength: 'loose',
     practice: 'prayer',
-    mode: 'noLimit',
+    mode: 'limit',
     checkInMinutes: null,
     appRules: [],
     ...overrides,
@@ -149,6 +173,196 @@ before(async () => {
     await new Promise(resolve => setTimeout(resolve, 5));
   }
   assert.equal(getDayPlanState().hydrated, true);
+});
+
+describe('Focus hierarchical limit budgets', () => {
+  test('finite groups share one Daily Target without penalizing the group being edited', () => {
+    const rules = [
+      rule('social', { mode: 'limit', dailyMinutes: 180 }),
+      rule('shopping', { mode: 'limit', dailyMinutes: 120 }),
+      rule('games', { mode: 'limit', dailyMinutes: null }),
+      rule('news', { mode: 'blocked', dailyMinutes: null }),
+    ];
+
+    assert.equal(allocatedGroupMinutes(rules), 300);
+    assert.deepEqual(groupLimitBounds({
+      dailyTargetMinutes: 300,
+      rules,
+      groupId: 'shopping',
+    }), {
+      currentMinutes: 120,
+      minimumMinutes: 15,
+      maximumMinutes: 120,
+      allocatedElsewhereMinutes: 180,
+      parentMinutes: 300,
+      hasCapacity: true,
+    });
+    assert.equal(groupLimitBounds({
+      dailyTargetMinutes: 300,
+      rules,
+      groupId: 'games',
+    }).maximumMinutes, 0);
+  });
+
+  test('individual app limits share a finite group allowance', () => {
+    const social = rule('social', {
+      mode: 'limit',
+      dailyMinutes: 180,
+      appRules: [
+        {
+          appId: 'instagram',
+          mode: 'limit',
+          minutes: 45,
+          strength: 'strict',
+          practice: 'prayer',
+          checkInMinutes: 15,
+        },
+        {
+          appId: 'tiktok',
+          mode: 'limit',
+          minutes: 60,
+          strength: 'loose',
+          practice: 'prayer',
+          checkInMinutes: 15,
+        },
+      ],
+    });
+
+    assert.equal(appLimitBounds({
+      dailyTargetMinutes: 300,
+      groupRule: social,
+      appId: 'tiktok',
+    }).maximumMinutes, 135);
+    assert.equal(appLimitBounds({
+      dailyTargetMinutes: 300,
+      groupRule: social,
+      appId: 'youtube',
+    }).maximumMinutes, 75);
+  });
+
+  test('invalid parent reductions are reported instead of silently rewriting children', () => {
+    const rules = [
+      rule('social', {
+        mode: 'limit',
+        dailyMinutes: 60,
+        appRules: [
+          {
+            appId: 'instagram',
+            mode: 'limit',
+            minutes: 45,
+            strength: 'strict',
+            practice: 'prayer',
+            checkInMinutes: 15,
+          },
+          {
+            appId: 'tiktok',
+            mode: 'limit',
+            minutes: 30,
+            strength: 'strict',
+            practice: 'prayer',
+            checkInMinutes: 15,
+          },
+        ],
+      }),
+      rule('shopping', { mode: 'limit', dailyMinutes: 180 }),
+    ];
+    const issues = validateFocusLimitBudget({
+      dailyTargetMinutes: 210,
+      rules,
+    });
+
+    assert.ok(issues.some(issue => issue.code === 'groups-over-target'));
+    assert.ok(issues.some(issue => issue.code === 'apps-over-group' && issue.groupId === 'social'));
+  });
+
+  test('wheel defaults snap to 15-minute values inside the available range', () => {
+    assert.equal(nearestValidLimitMinutes(47, {
+      minimumMinutes: 30,
+      maximumMinutes: 80,
+      hasCapacity: true,
+    }), 45);
+    assert.equal(nearestValidLimitMinutes(90, {
+      minimumMinutes: 30,
+      maximumMinutes: 80,
+      hasCapacity: true,
+    }), 75);
+    assert.equal(nearestValidLimitMinutes(30, {
+      minimumMinutes: 35,
+      maximumMinutes: 30,
+      hasCapacity: false,
+    }), null);
+  });
+
+  test('five-minute boundaries are rejected by the 15-minute rule', () => {
+    const issues = validateFocusLimitBudget({
+      dailyTargetMinutes: 120,
+      rules: [rule('social', { mode: 'limit', dailyMinutes: 35 })],
+    });
+
+    assert.ok(issues.some(issue => issue.code === 'invalid-duration'));
+  });
+
+  test('the persistence boundary rejects an over-allocated plan', () => {
+    assert.throws(() => saveDayPlan({
+      name: 'Invalid allocation',
+      budgetMinutes: 120,
+      strength: 'strict',
+      rules: [
+        rule('social', { mode: 'limit', dailyMinutes: 90 }),
+        rule('shopping', { mode: 'limit', dailyMinutes: 60 }),
+      ],
+      zones: [],
+    }), /Group limits use more time than the Daily Target/);
+  });
+
+  test('unlimited is Limit with no duration and does not reserve group capacity', () => {
+    const rules = [
+      rule('social', { mode: 'limit', dailyMinutes: null }),
+      rule('shopping', { mode: 'limit', dailyMinutes: 90 }),
+    ];
+
+    assert.equal(allocatedGroupMinutes(rules), 90);
+    assert.equal(groupLimitBounds({
+      dailyTargetMinutes: 180,
+      rules,
+      groupId: 'social',
+    }).maximumMinutes, 90);
+  });
+
+  test('blocked groups ignore dormant app budgets and preserve a zero-minute wall', () => {
+    const blocked = rule('social', {
+      mode: 'blocked',
+      dailyMinutes: null,
+      appRules: [{
+        appId: 'instagram',
+        mode: 'limit',
+        minutes: 45,
+        strength: 'loose',
+        practice: 'prayer',
+        checkInMinutes: 15,
+      }],
+    });
+
+    assert.deepEqual(validateFocusLimitBudget({
+      dailyTargetMinutes: 60,
+      rules: [blocked],
+    }), []);
+    assert.equal(allocatedGroupMinutes([blocked]), 0);
+  });
+
+  test('legacy noLimit rules save as Limit with no duration', () => {
+    const saved = saveDayPlan({
+      name: 'Legacy mode migration',
+      budgetMinutes: 120,
+      strength: 'loose',
+      rules: [rule('social', { mode: 'noLimit', dailyMinutes: null })],
+      zones: [],
+    });
+    const social = saved.rules.find(entry => entry.groupId === 'social');
+
+    assert.equal(social?.mode, 'limit');
+    assert.equal(social?.dailyMinutes, null);
+  });
 });
 
 describe('legacy persistence hydration', () => {
@@ -477,7 +691,8 @@ describe('Clean Sight domain rules', () => {
           { id: 'custom-off', name: 'Inactive', domains: ['hidden.example.com'], mode: 'off' },
         ],
         customDomains: [{ domain: 'personal.example.com', never: false }],
-        locks: { enabled: false, locked: false, cooldown: '45m' },
+        neverAllowed: [],
+        locks: { enabled: false, locked: false, cooldown: '12h' },
       },
     });
 
@@ -521,6 +736,63 @@ describe('Clean Sight domain rules', () => {
     assert.equal(new Set(resolved.domains).size, WEB_DOMAIN_LIMIT);
     assert.ok(resolved.omittedDomains.length > 3);
     assert.equal(resolved.adultFilterActive, false);
+  });
+
+  test('gives Never Allowed domains first priority and carries only native routing metadata', () => {
+    const ordinary = Array.from({ length: WEB_DOMAIN_LIMIT }, (_, index) => ({
+      domain: `ordinary-${index}.example.com`,
+    }));
+    const resolved = resolveWebProtectionDomains({
+      packs: [
+        { id: 'gambling', mode: 'off' },
+        { id: 'adult', mode: 'off' },
+        { id: 'social', mode: 'off' },
+        { id: 'news', mode: 'off' },
+      ],
+      customPacks: [],
+      customDomains: ordinary,
+      neverAllowed: [{
+        id: 'promise-adult',
+        targetKind: 'builtin-pack',
+        targetId: 'adult',
+        targetLabel: 'Adult Content',
+        domainsSnapshot: ['promise.example.com'],
+      }],
+    });
+
+    assert.equal(resolved.domains[0], 'promise.example.com');
+    assert.equal(resolved.domains.length, WEB_DOMAIN_LIMIT);
+    assert.equal(resolved.omittedDomains.length, 1);
+    assert.deepEqual(resolved.neverDomainContexts, [{
+      domain: 'promise.example.com',
+      commitmentId: 'promise-adult',
+      label: 'Adult Content',
+    }]);
+    assert.equal(resolved.adultFilterActive, true);
+    assert.equal(resolved.adultFilterNeverCommitmentId, 'promise-adult');
+    assert.equal('reason' in resolved.neverDomainContexts[0], false);
+  });
+
+  test('does not silently expand a permanent pack snapshot when the catalog grows', () => {
+    const resolved = resolveWebProtectionDomains({
+      packs: [
+        { id: 'gambling', mode: 'off' },
+        { id: 'adult', mode: 'off' },
+        { id: 'social', mode: 'on' },
+        { id: 'news', mode: 'off' },
+      ],
+      customPacks: [],
+      customDomains: [],
+      neverAllowed: [{
+        id: 'social-snapshot',
+        targetKind: 'builtin-pack',
+        targetId: 'social',
+        targetLabel: 'Social Web',
+        domainsSnapshot: ['instagram.com'],
+      }],
+    });
+    assert.deepEqual(resolved.domains, ['instagram.com']);
+    assert.equal(resolved.domains.includes('x.com'), false);
   });
 
   test('keeps one domain in multiple protection packs while shielding it once', () => {
@@ -568,10 +840,11 @@ describe('Clean Sight domain rules', () => {
 
   test('Hard Lock keeps pack and domain weakening requests blocked until the delay ends', () => {
     const domain = 'hard-lock-test.example.com';
-    assert.equal(hardLockDelayMs('45m'), 45 * 60_000);
+    assert.equal(hardLockDelayMs('12h'), 12 * 60 * 60_000);
+    assert.equal(hardLockDelayMs('2d'), 2 * 24 * 60 * 60_000);
     assert.equal(hardLockDelayMs('3d'), 3 * 24 * 60 * 60_000);
 
-    updateWebHardLock({ cooldown: '45m' });
+    updateWebHardLock({ cooldown: '12h' });
     updateWebHardLock({ enabled: true });
     addCustomDomain(domain);
     setPackMode('gambling', 'on');
@@ -596,7 +869,7 @@ describe('Clean Sight domain rules', () => {
     assert.equal(getDayPlanState().purity.packs.find(pack => pack.id === 'gambling')?.mode, 'off');
   });
 
-  test('Hard Lock uses a full-day exit delay and preserves legacy permanent locks', () => {
+  test('Hard Lock uses its selected exit delay and preserves legacy permanent locks', () => {
     assert.equal(getDayPlanState().purity.locks.enabled, true);
     const requestedAt = Date.now();
     updateWebHardLock({ enabled: false });
@@ -604,8 +877,9 @@ describe('Clean Sight domain rules', () => {
       change.action.kind === 'locks' && change.action.partial.enabled === false
     );
     assert.ok(pendingDisable);
-    assert.ok(pendingDisable.effectiveAt - requestedAt >= HARD_LOCK_DISABLE_DELAY_MS);
-    assert.ok(pendingDisable.effectiveAt - requestedAt < HARD_LOCK_DISABLE_DELAY_MS + 1_000);
+    const selectedDelay = hardLockDelayMs(getDayPlanState().purity.locks.cooldown);
+    assert.ok(pendingDisable.effectiveAt - requestedAt >= selectedDelay);
+    assert.ok(pendingDisable.effectiveAt - requestedAt < selectedDelay + 1_000);
     assert.equal(getDayPlanState().purity.locks.enabled, true);
     cancelPendingChange(pendingDisable.id);
 
@@ -624,9 +898,9 @@ describe('Clean Sight domain rules', () => {
 
     // A shorter delay is itself a weakening request. The current three-day
     // delay stays visible until that request becomes due.
-    assert.equal(updateWebHardLock({ cooldown: '45m' }), true);
+    assert.equal(updateWebHardLock({ cooldown: '12h' }), true);
     const pendingShorterDelay = getDayPlanState().pendingChanges.find(change =>
-      change.action.kind === 'locks' && change.action.partial.cooldown === '45m'
+      change.action.kind === 'locks' && change.action.partial.cooldown === '12h'
     );
     assert.ok(pendingShorterDelay);
     assert.equal(getDayPlanState().purity.locks.cooldown, '3d');
@@ -634,8 +908,26 @@ describe('Clean Sight domain rules', () => {
     assert.deepEqual(getDayPlanState().purity.locks, {
       enabled: true,
       locked: true,
-      cooldown: '45m',
+      cooldown: '12h',
     });
+  });
+
+  test('persists a permanent promise and refuses every ordinary removal path', () => {
+    const domain = 'never-guard.example.com';
+    grantScreenTimePermission('approved');
+    setNativeProtectionState({ status: 'applied', appliedAt: Date.now(), error: null, hardWallDate: null });
+    addCustomDomain(domain);
+    const created = createNeverAllowedCommitment({
+      targetKind: 'domain',
+      targetId: domain,
+      reason: 'This has taken time and peace that I want to protect from now on.',
+      temptation: 'It usually begins when I feel restless, alone, or tired late in the day.',
+      nextStep: 'I will put the phone down, breathe, pray, and call someone I trust.',
+    });
+    assert.equal(created.ok, true);
+    assert.equal(removeCustomDomain(domain), false);
+    assert.equal(getDayPlanState().purity.customDomains.some(entry => entry.domain === domain), true);
+    assert.equal(getDayPlanState().purity.neverAllowed.some(entry => entry.domainsSnapshot.includes(domain)), true);
   });
 });
 
@@ -737,14 +1029,247 @@ describe('Today usage breakdown', () => {
     ]);
   });
 
-  test('distinguishes planned, within, over, blocked, and open boundaries', () => {
+  test('distinguishes planned, within, met, over, blocked, and open boundaries', () => {
     assert.equal(usageBoundaryState('limit', 45, null), 'planned');
     assert.equal(usageBoundaryState('limit', 45, 0), 'planned');
     assert.equal(usageBoundaryState('limit', 45, 44), 'within');
+    assert.equal(usageBoundaryState('limit', 45, 45), 'met');
     assert.equal(usageBoundaryState('limit', 45, 46), 'over');
     assert.equal(usageBoundaryState('blocked', null, 0), 'blocked');
     assert.equal(usageBoundaryState('blocked', null, 1), 'over');
     assert.equal(usageBoundaryState('noLimit', null, 240), 'open');
+  });
+
+  test('maps boundaries to the five report visual states', () => {
+    assert.equal(usageVisualState('limit', 45, null), 'pending');
+    assert.equal(usageVisualState('noLimit', null, 120), 'noLimit');
+    assert.equal(usageVisualState('limit', 45, 0), 'limitActive');
+    assert.equal(usageVisualState('limit', 45, 44), 'limitActive');
+    assert.equal(usageVisualState('limit', 45, 45), 'atLimit');
+    assert.equal(usageVisualState('limit', 45, 46), 'overLimit');
+    assert.equal(usageVisualState('blocked', null, 0), 'atLimit');
+    assert.equal(usageVisualState('blocked', null, 1), 'overLimit');
+  });
+});
+
+describe('Today plan standing', () => {
+  test('keeps the goal boundary healthy and makes the hard wall inclusive', () => {
+    assert.equal(gaugeStanding(60, 90, null), 'unknown');
+    assert.equal(gaugeStanding(60, 90, 60), 'under');
+    assert.equal(gaugeStanding(60, 90, 61), 'tolerance');
+    assert.equal(gaugeStanding(60, 90, 89), 'tolerance');
+    assert.equal(gaugeStanding(60, 90, 90), 'essentials');
+  });
+
+  test('enters Essentials at the shared boundary when tolerance is zero', () => {
+    assert.equal(gaugeStanding(60, 60, 59), 'under');
+    assert.equal(gaugeStanding(60, 60, 60), 'essentials');
+  });
+});
+
+describe('focus boundary appearance', () => {
+  const cases: {
+    name: string;
+    mode: 'blocked' | 'limit' | 'noLimit';
+    limitMinutes: number | null;
+    usedMinutes: number | null;
+    expected: FocusBoundaryAppearance;
+  }[] = [
+    // Pending outranks every other rule, including a configured block.
+    { name: 'unknown usage on a limit', mode: 'limit', limitMinutes: 45, usedMinutes: null, expected: 'pending' },
+    { name: 'unknown usage on a block', mode: 'blocked', limitMinutes: null, usedMinutes: null, expected: 'pending' },
+    { name: 'unknown usage with no limit', mode: 'noLimit', limitMinutes: null, usedMinutes: null, expected: 'pending' },
+
+    // A configured block stays a block whether or not minutes were recorded.
+    { name: 'block held', mode: 'blocked', limitMinutes: null, usedMinutes: 0, expected: 'blocked' },
+    { name: 'block with recorded usage', mode: 'blocked', limitMinutes: null, usedMinutes: 42, expected: 'blocked' },
+    // Zero minutes allowed is a block wearing a limit's clothes.
+    { name: 'zero-minute limit, unused', mode: 'limit', limitMinutes: 0, usedMinutes: 0, expected: 'blocked' },
+    { name: 'zero-minute limit, used', mode: 'limit', limitMinutes: 0, usedMinutes: 9, expected: 'blocked' },
+
+    { name: 'no limit, unused', mode: 'noLimit', limitMinutes: null, usedMinutes: 0, expected: 'noLimit' },
+    { name: 'no limit, used', mode: 'noLimit', limitMinutes: null, usedMinutes: 240, expected: 'noLimit' },
+    { name: 'limit mode without minutes', mode: 'limit', limitMinutes: null, usedMinutes: 30, expected: 'noLimit' },
+
+    // The exact boundary values.
+    { name: 'limit untouched', mode: 'limit', limitMinutes: 45, usedMinutes: 0, expected: 'limitActive' },
+    { name: 'one minute under', mode: 'limit', limitMinutes: 45, usedMinutes: 44, expected: 'limitActive' },
+    { name: 'exactly at limit', mode: 'limit', limitMinutes: 45, usedMinutes: 45, expected: 'atLimit' },
+    { name: 'one minute over', mode: 'limit', limitMinutes: 45, usedMinutes: 46, expected: 'overLimit' },
+    { name: 'far over', mode: 'limit', limitMinutes: 45, usedMinutes: 300, expected: 'overLimit' },
+  ];
+
+  for (const entry of cases) {
+    test(entry.name, () => {
+      assert.equal(
+        focusBoundaryAppearance({
+          mode: entry.mode,
+          limitMinutes: entry.limitMinutes,
+          usedMinutes: entry.usedMinutes,
+        }),
+        entry.expected
+      );
+    });
+  }
+
+  test('a configured block never reads as an over-limit violation', () => {
+    // Apple's report counts the whole day, including minutes spent before the
+    // plan became active, so recorded time under a block is a fact, not a
+    // broken boundary.
+    const appearance = focusBoundaryAppearance({
+      mode: 'blocked',
+      limitMinutes: null,
+      usedMinutes: 42,
+    });
+    assert.equal(appearance, 'blocked');
+    assert.notEqual(appearance, 'overLimit');
+    assert.equal(focusStatusLabel(appearance), 'BLOCKED');
+  });
+});
+
+describe('focus status copy', () => {
+  test('names each state', () => {
+    assert.equal(focusStatusLabel('pending'), 'PENDING');
+    assert.equal(focusStatusLabel('noLimit'), 'NO LIMIT');
+    assert.equal(focusStatusLabel('blocked'), 'BLOCKED');
+    assert.equal(focusStatusLabel('atLimit'), 'AT LIMIT');
+    // A limit that has not been touched yet is set, not "on track".
+    assert.equal(focusStatusLabel('limitActive', { limitMinutes: 45, usedMinutes: 0 }), 'LIMIT SET');
+    assert.equal(focusStatusLabel('limitActive', { limitMinutes: 45, usedMinutes: 20 }), 'ON TRACK');
+    assert.equal(focusStatusLabel('overLimit', { limitMinutes: 45, usedMinutes: 57 }), 'OVER BY 12m');
+  });
+
+  test('states how far past the boundary the day went', () => {
+    assert.equal(focusOverByMinutes(45, 57), 12);
+    assert.equal(focusOverByMinutes(45, 45), 0);
+    assert.equal(focusOverByMinutes(45, 10), 0);
+    assert.equal(focusOverByMinutes(null, 10), 0);
+    assert.equal(focusRemainingMinutes(45, 10), 35);
+    assert.equal(focusRemainingMinutes(45, 90), 0);
+  });
+
+  test('never presents an app as escaping its group boundary', () => {
+    assert.equal(focusInheritedBoundaryLabel('blocked', 'blocked'), 'GROUP BLOCKED');
+    assert.equal(focusInheritedBoundaryLabel('limitActive', 'limit'), 'USES GROUP BOUNDARY');
+    assert.equal(focusInheritedBoundaryLabel('noLimit', 'noLimit'), 'NO INDIVIDUAL LIMIT');
+  });
+
+  test('draws a rail only for a live finite limit', () => {
+    assert.equal(focusShowsProgressRail('limitActive', 45), true);
+    assert.equal(focusShowsProgressRail('atLimit', 45), true);
+    assert.equal(focusShowsProgressRail('overLimit', 45), true);
+    assert.equal(focusShowsProgressRail('blocked', null), false);
+    assert.equal(focusShowsProgressRail('pending', 45), false);
+    assert.equal(focusShowsProgressRail('noLimit', null), false);
+    // Going over fills the rail rather than overflowing it.
+    assert.equal(focusRailFraction(45, 90), 1);
+    assert.equal(focusRailFraction(45, 0), 0);
+    assert.equal(focusRailFraction(null, 30), 0);
+  });
+});
+
+describe('focus secondary signal', () => {
+  test('reports recorded minutes under a block as a fact', () => {
+    assert.deepEqual(
+      focusSecondarySignal({ appearance: 'blocked', usedMinutes: 42 }),
+      { kind: 'recordedWhileBlocked', minutes: 42 }
+    );
+    assert.equal(
+      focusSecondarySignalLabel({ kind: 'recordedWhileBlocked', minutes: 42 }),
+      '42m RECORDED TODAY'
+    );
+    assert.equal(focusSecondarySignal({ appearance: 'blocked', usedMinutes: 0 }), null);
+  });
+
+  test('rolls child states up without repainting the parent', () => {
+    assert.deepEqual(
+      focusSecondarySignal({
+        appearance: 'limitActive',
+        usedMinutes: 20,
+        childAppearances: ['limitActive', 'overLimit', 'atLimit', 'overLimit'],
+      }),
+      { kind: 'childOver', count: 2 }
+    );
+    assert.deepEqual(
+      focusSecondarySignal({
+        appearance: 'limitActive',
+        usedMinutes: 20,
+        childAppearances: ['limitActive', 'atLimit'],
+      }),
+      { kind: 'childAtLimit', count: 1 }
+    );
+    assert.equal(
+      focusSecondarySignal({
+        appearance: 'limitActive',
+        usedMinutes: 20,
+        childAppearances: ['limitActive', 'noLimit'],
+      }),
+      null
+    );
+  });
+
+  test('over outranks at limit', () => {
+    const signal = focusSecondarySignal({
+      appearance: 'noLimit',
+      usedMinutes: 60,
+      childAppearances: ['atLimit', 'atLimit', 'overLimit'],
+    });
+    assert.deepEqual(signal, { kind: 'childOver', count: 1 });
+  });
+
+  test('claims nothing while any child is still pending', () => {
+    assert.equal(
+      focusSecondarySignal({
+        appearance: 'limitActive',
+        usedMinutes: 20,
+        childAppearances: ['overLimit', 'pending'],
+      }),
+      null
+    );
+    assert.equal(focusSecondarySignal({ appearance: 'pending', usedMinutes: null }), null);
+  });
+
+  test('labels child counts with singular and plural', () => {
+    assert.equal(focusSecondarySignalLabel({ kind: 'childOver', count: 1 }), '1 APP OVER');
+    assert.equal(focusSecondarySignalLabel({ kind: 'childOver', count: 3 }), '3 APPS OVER');
+    assert.equal(focusSecondarySignalLabel({ kind: 'childAtLimit', count: 1 }), '1 APP AT LIMIT');
+    assert.equal(focusSecondarySignalLabel({ kind: 'childAtLimit', count: 2 }), '2 APPS AT LIMIT');
+    assert.equal(focusSecondarySignalLabel(null), null);
+  });
+});
+
+describe('custom groups', () => {
+  test('stores a brand-new group that arrives with an id already minted', () => {
+    // The create sheet mints the id up front so it has something to hang the
+    // native app selection on while the form is still being filled. Saving used
+    // to treat "has an id" as "already stored" and map over the list, which
+    // matched nothing and dropped the group — while still handing the caller
+    // its group back, so the plan recorded an id whose name and face were gone.
+    const id = createCustomGroupId();
+    const saved = saveCustomGroup({
+      id,
+      name: 'Evening scroll',
+      appIds: ['instagram'],
+      icon: 'mobile-phone',
+    });
+
+    assert.ok(saved);
+    assert.equal(saved?.id, id);
+    assert.equal(getDayPlanState().customGroups.some(group => group.id === id), true);
+    // What the plan board actually reads back.
+    assert.equal(groupName(getDayPlanState(), id), 'Evening scroll');
+    assert.equal(groupIcon(getDayPlanState(), id), 'mobile-phone');
+  });
+
+  test('updates in place rather than duplicating when the group is already stored', () => {
+    const id = createCustomGroupId();
+    saveCustomGroup({ id, name: 'Late news', appIds: [], icon: 'newspaper' });
+    saveCustomGroup({ id, name: 'Late news', appIds: ['reddit'], icon: 'books' });
+
+    const matches = getDayPlanState().customGroups.filter(group => group.id === id);
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].appIds.length, 1);
+    assert.equal(groupIcon(getDayPlanState(), id), 'books');
   });
 });
 

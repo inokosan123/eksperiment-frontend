@@ -156,6 +156,94 @@ motion is involved.
     and battery impact. The primary Lottie pauses off-screen/backgrounded and
     no second continuous animation competes with it.
 
+## Focus Analytics Acceptance Matrix
+
+Analytics is a separate release gate because the report is an out-of-process
+Apple privacy surface. Web, Expo Go, and Simulator show only the explicitly
+labeled `PREVIEW DATA` fixture.
+
+For every physical-device run, record iPhone model, iOS version, Xcode version,
+build type, commit, authorization state, period, result, load time, and any
+extension termination.
+
+1. Open Analytics from a fresh launch. It must start on the current
+   Monday-through-Sunday Week and show Sunday as the seventh day.
+2. Open Day, Week, Month, and Year for current and historical periods. Change
+   periods rapidly 50 times. The header and report must never disagree and the
+   native view hierarchy must never contain two `DeviceActivityReport` views.
+3. Start vertical pans over the hero, chart, chart callout, group rows, and
+   blank space. The native report must own the scroll everywhere; there is no
+   parent React Native vertical `ScrollView`.
+4. Leave each period open until it resolves: 20/20 runs for Day and Week and
+   10/10 for Month and Year. A slow report keeps the warm skeleton and exposes
+   one Retry; it never leaves an infinite white/blank spinner.
+5. Background during preparation, wait more than five minutes, and return.
+   Only a current period refreshes once. Historical periods do not poll or
+   remount.
+6. Deny, grant, revoke, and re-grant Screen Time authorization. Not-determined
+   shows `Allow Screen Time access`; denied shows Settings recovery; revoked
+   opaque labels are never presented as current truth.
+7. Test no plan, a plan with no Daily Target, an edited/deleted historical
+   plan, apps moved between groups, and apps moved to Always Blocked. Total
+   iPhone context may remain, while managed data uses the retained historical
+   scope or an honest unavailable state.
+8. Hand-check a small Day against Apple Screen Time. Category, app, and website
+   hierarchy must not double-count; Always Blocked wins attribution, followed
+   by historical plan order.
+9. Test a partial current day, missing intervals, no Apple activity, weak
+   previous coverage, zero previous activity, and an intentionally impossible
+   duration fixture. Unknown data stays missing, current data says `SO FAR`,
+   and invalid data never enters a comparison or Year projection.
+10. Test February 28/29, Sunday, the Europe/Belgrade spring-forward and
+    fall-back days, local midnight, and a time-zone change while Analytics is
+    open. Calendar intervals remain local and duplicated clock labels never
+    merge absolute hourly buckets.
+11. Test Year on the weakest supported phone. Capture extension peak memory and
+    collection time for a selected plus previous calendar year. Year retains
+    monthly summaries only and does not render private app rows.
+12. Run with Dynamic Type at the largest supported size, VoiceOver, Increase
+    Contrast, grayscale, RTL locale, and Reduce Motion. All host targets remain
+    at least 44 points; chart summaries are understandable without color or
+    precise tapping; the 365 field is one VoiceOver element.
+13. Repeat the matrix in a local Release build and TestFlight. Debug success
+    does not waive a release-only blank report, entitlement, signing, or
+    extension-memory failure.
+
+Before building, run:
+
+```powershell
+npm.cmd run test:focus
+npm.cmd run test:focus-plugin
+npm.cmd run typegen:routes
+npx.cmd eslint components/focus-watch/FocusAnalyticsView.tsx components/focus-watch/FocusAnalyticsNativeReport.tsx components/focus-watch/analytics
+npx.cmd expo config --type public
+```
+
+On macOS, generate from a clean disposable checkout twice. The second Prebuild
+must have no semantic Xcode-project diff. Confirm every analytics Swift file is
+present exactly once in `AnastaActivityReport` Sources, `Charts.framework` is
+linked once, the report plist has no invented principal class, and host/
+extension version, build, App Group, bundle IDs, and entitlements match.
+
+The plugin also generates a hostless `AnastaAnalyticsTests` target and shared
+scheme. It compiles the same Foundation-only formulas used by the report
+collector. After Prebuild, list the generated project and run:
+
+```bash
+xcodebuild -list -project ios/Anasta.xcodeproj
+xcodebuild \
+  -project ios/Anasta.xcodeproj \
+  -scheme AnastaAnalyticsTests \
+  -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  test
+```
+
+If the local simulator name differs, use any installed iOS 16-or-newer
+simulator returned by `xcrun simctl list devices available`. The app scheme
+must not depend on `AnastaAnalyticsTests`, and an Archive must not contain its
+`.xctest` product.
+
 ## Release Gate
 
 A production/TestFlight build is not ready until:

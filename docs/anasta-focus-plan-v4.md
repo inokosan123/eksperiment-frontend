@@ -368,9 +368,11 @@ not an edit to historical phone use.
 Every Phone Plan starts with a Daily Target: the user's intended total phone
 use for that day, such as under four hours.
 
-Finite Daily Targets and finite group allowances use 15-minute precision. The
-person can choose values such as `5h 45m`; the interface must not collapse the
-plan into whole-hour presets. `No limit` remains the explicit end state.
+Daily Targets, finite group allowances, and finite individual app allowances
+all use 15-minute precision. The person can choose values such as `5h 45m` or
+`45m`; the interface must not collapse the plan into whole-hour presets.
+`No limit` remains an explicit value inside the Limit mode rather than a third
+rule mode.
 
 The target has three states:
 
@@ -506,12 +508,14 @@ The Daily Target is the basis for planning category budgets. The tolerable zone
 and Essential-only threshold are protection layers; they are never presented as
 extra time for a person to distribute across distracting apps.
 
-Focus reserves 20 percent of the Daily Target for necessary and unplanned phone
-use. The remaining 80 percent is the recommended Planning Capacity that a
-person can distribute among their top-level app groups.
+Focus recommends leaving 20 percent of the Daily Target for necessary and
+unplanned phone use. This is guidance, not a hard reservation. The person may
+distribute anywhere from zero to 100 percent of the Daily Target among finite
+top-level app groups, but may never distribute more than the Daily Target.
 
-Example: a four-hour Daily Target has a Planning Capacity of three hours and
-twelve minutes, with forty-eight minutes held as an Unplanned Reserve.
+Example: a four-hour Daily Target recommends planning no more than three hours
+and twelve minutes, leaving forty-eight minutes unassigned. The editor still
+permits an exact four-hour allocation when the person deliberately chooses it.
 
 - The editor displays one live planning rail rather than explanatory prose
   below every change.
@@ -524,9 +528,8 @@ twelve minutes, with forty-eight minutes held as an Unplanned Reserve.
   Session Plan, it is the sum of that group's finite allowances across all
   Sessions in the day. An individual app is part of its parent group segment
   and never double-counts time.
-- `No limit` is not drawn as zero planned time. It has no finite segment and is
-  represented as an unbounded `infinity` state in the relevant group detail,
-  so the rail never pretends that unrestricted time was planned.
+- `Limit` with `No limit` selected is not drawn as zero planned time. It has no
+  finite segment, so the rail never pretends that unrestricted time was planned.
 - The projection updates immediately whenever an allowance changes, a Session
   is added or removed, or a group is changed.
 
@@ -534,10 +537,11 @@ The 80 percent marker is visual guidance, not a warning on its own. Focus stays
 quiet while the finite group plan is at or below 90 percent of the Daily Target.
 Once the colored plan crosses 90 percent of the Daily Target, Focus shows a
 small warning with a triangle and a concrete reason: the plan leaves very
-little room for ordinary or unplanned phone use. At and beyond the Daily Target
-the warning becomes stronger, but saving remains allowed. The Essential-only
-threshold remains a safety boundary, never an amount that the person is invited
-to plan into.
+little room for ordinary or unplanned phone use. An allocation exactly equal
+to the Daily Target remains valid but receives the stronger leave-room warning.
+An allocation above the Daily Target is invalid and cannot be saved. The
+Essential-only threshold remains a safety boundary, never an amount that the
+person is invited to plan into.
 
 This is the product's projection moment. It helps a person make a realistic
 plan before the day starts, rather than discovering halfway through the day
@@ -550,6 +554,48 @@ reserve.
 - A group limit is a shared daily budget for the apps inside that group.
 - An app limit is the maximum daily use of that specific app.
 - The most restrictive active rule always wins.
+- All finite group limits together must fit inside the Daily Target. Editing a
+  group adds its current value back into the available pool, so the person is
+  never penalized merely for opening an existing boundary.
+- Inside a finite group, all finite individual app limits together must fit
+  inside that group's allowance. A Blocked app consumes zero planned minutes.
+  Apps without a specific rule continue to share whatever group time remains.
+- `Limit` with no duration reserves no planned minutes. It does not bypass the Daily Target,
+  Essential-only wall, Always Blocked, Quiet Hour intersections, or Clean
+  Sight. A specific app cap beneath an unlimited group remains an independent
+  stricter boundary; it is not presented as a reserved group allocation.
+- The editor exposes exactly two rule modes: `Limit` and `Blocked`. `Limit`
+  starts at `No limit` and receives a finite boundary only when the person
+  chooses one. `Blocked` always means zero minutes.
+- A Blocked group hides all individual app controls because no child allowance
+  can weaken its zero-minute parent. Existing child rules remain dormant so
+  switching the group back to Limit is non-destructive.
+- Reducing a parent below already configured children never silently rewrites
+  those child rules. Focus names the conflict, keeps the existing values
+  visible, and disables plan saving until the person deliberately reduces the
+  affected children or raises the parent.
+
+### Limit picker
+
+Group and individual app allowances use the same vertical duration wheel in
+15-minute steps. The selected value, parent boundary, time already allocated
+elsewhere, and time left after the selection remain visible together.
+
+- A group wheel may not go above `Daily Target - all other finite groups`.
+- A finite group wheel may not go below the sum of its finite app limits.
+- An app wheel inside a finite group may not go above
+  `group allowance - all other finite app limits`.
+- An app wheel beneath an unlimited group is capped by the finite Daily Target
+  when one exists; otherwise the product's 12-hour picker ceiling applies.
+- Values outside those bounds stay visible but inactive. Selecting one disables
+  the confirmation action and shows the exact reason, such as another group's
+  existing allocation or child app limits that must be reduced first.
+- `No limit` is a secondary action beneath the duration wheel. It removes the
+  local duration while keeping the rule in Limit mode.
+- Apple Device Activity's 15-minute minimum applies to a monitoring schedule,
+  not to a `DeviceActivityEvent` usage threshold. Anasta's daily schedule spans
+  the full local day, while the event threshold is expressed in minutes. Anasta
+  nevertheless uses one consistent 15-minute product step for clearer planning.
 
 Daily Plan limits are enforceable boundaries, unlike the Daily Target which
 begins as a goal and only becomes a broad protective action at the
@@ -886,17 +932,16 @@ group boundaries.
 ### Session Setup and Reuse
 
 New Sessions begin blank in the useful sense: they start with the plan's
-default group catalog, but every group and app rule is explicitly set to
-`No limit`. This is a real usable state, not a missing required field. A person
+default group catalog, and every group and app starts in `Limit` with no
+duration. This is a real usable state, not a missing required field. A person
 can configure rules from scratch, add or reuse custom groups through the plan
 catalog, or reuse a Session they have already made well.
 
-`No limit` means the Session imposes no local time boundary on that group or
+`Limit` with `No limit` means the Session imposes no local time boundary on that group or
 app. It does not mean the usage disappears: the time still contributes to the
 global Daily Target, and Always Blocked, Clean Sight, and the Essential-only
-threshold continue to apply. In the time control, `No limit` sits at the
-far-right endpoint as a stable `infinity` state. Moving away from that endpoint
-activates a concrete allowance and exposes its related protection settings.
+threshold continue to apply. The time control offers `No limit` as a clear
+secondary action beneath the finite duration wheel.
 
 `Copy existing Session` is a shortcut inside Session setup:
 
@@ -1217,7 +1262,7 @@ raising the limit afterward.
   Controls does not expose exact foreground usage to the host app, so Focus
   cannot safely reconstruct only the remaining minutes after rebuilding a
   monitor. The higher limit starts with the next Session (or the next day in a
-  Daily Plan). Choosing `No limit` is an explicit removal of that local
+  Daily Plan). Choosing `No limit` inside Limit mode explicitly removes that local
   boundary and applies immediately, while the Daily Target and stronger layers
   still remain in force.
 - Essential Apps are a safety allowlist, not a behavioral target, so editing

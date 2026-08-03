@@ -1,25 +1,28 @@
-import { useEffect, useState } from 'react';
+import { memo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
-  cancelAnimation,
-  Easing,
   useAnimatedProps,
   useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
+  useDerivedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
-import { Eye, Shield } from '@/components/icons/Icons';
+import { Shield } from '@/components/icons/Icons';
+import ShieldedGlobe from '@/components/icons/ShieldedGlobe';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import { formatMinutesShort, type DayPlan } from './dayPlanStore';
 import { PulseDot } from './FocusMeter';
 import PlanCardBackdrop from './PlanCardBackdrop';
 import { planVisualFor, planVisualForTheme, type PlanVisual } from './planVisuals';
+import { useFocusMainMotion } from './focus-main-motion';
+import {
+  continuousPhase,
+  easeInOutQuad,
+  pingPongPhase,
+  trianglePhase,
+} from '@/components/shared/use-continuous-animation-clock';
+import { useAmbientMotion } from '@/components/shared/ambient-motion';
 
 type ScreenTimePlan = Pick<DayPlan, 'id' | 'name' | 'themeId' | 'essentialsOnly'>;
 
@@ -129,26 +132,12 @@ const HERO_FOOTER_LABEL: Record<WebProtectionHeroState, string> = {
 // One shared visual for the live Focus protection pillar and My Routine.
 // Keeping the ornament and motion here means both surfaces evolve together.
 function RadiantPlanSeal({ visual }: { visual: PlanVisual }) {
-  const reduceMotion = useReducedMotion();
-  const breathe = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      breathe.value = 0.6;
-      return;
-    }
-    breathe.value = 0;
-    breathe.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1,
-    );
-    return () => cancelAnimation(breathe);
-  }, [breathe, reduceMotion]);
-
-  const glowStyle = useAnimatedStyle(() => ({ opacity: 0.4 + breathe.value * 0.6 }));
+  const mainMotionEnabled = useFocusMainMotion();
+  const runtime = useAmbientMotion(mainMotionEnabled);
+  const glowStyle = useAnimatedStyle(() => {
+    const breathe = runtime.enabled ? pingPongPhase(runtime.clock.value, 2600) : 0.6;
+    return { opacity: 0.4 + breathe * 0.6 };
+  });
   const field = 92;
   const center = field / 2;
   const innerRadius = 29;
@@ -199,7 +188,9 @@ function LatticeWeave({ color }: { color: string }) {
       style={StyleSheet.absoluteFill}
       onLayout={event => {
         const { width, height } = event.nativeEvent.layout;
-        setBox({ width, height });
+        setBox(current => current.width === width && current.height === height
+          ? current
+          : { width, height });
       }}
     >
       {lineCount > 0 && (
@@ -251,28 +242,26 @@ function GuardedSightEmblem({
   line?: string;
   disc?: string;
 }) {
-  const reduceMotion = useReducedMotion();
-  const patrol = useSharedValue(0);
-  const animate = active && !reduceMotion;
-
-  useEffect(() => {
-    if (animate) {
-      patrol.value = 0;
-      patrol.value = withRepeat(withTiming(1, { duration: 11000, easing: Easing.linear }), -1, false);
-    } else {
-      cancelAnimation(patrol);
-      patrol.value = 0;
-    }
-    return () => cancelAnimation(patrol);
-  }, [animate, patrol]);
+  const mainMotionEnabled = useFocusMainMotion();
+  const runtime = useAmbientMotion(active && mainMotionEnabled);
+  const animate = runtime.enabled;
+  const orbitPosition = useDerivedValue(() => {
+    const phase = animate ? continuousPhase(runtime.clock.value, 11000) : 0;
+    const angle = -Math.PI / 2 + phase * Math.PI * 2;
+    const counterAngle = angle + Math.PI;
+    return {
+      x: 32 + 29 * Math.cos(angle),
+      y: 32 + 29 * Math.sin(angle),
+      counterX: 32 + 29 * Math.cos(counterAngle),
+      counterY: 32 + 29 * Math.sin(counterAngle),
+    };
+  });
 
   const sentinelProps = useAnimatedProps(() => {
-    const angle = -Math.PI / 2 + patrol.value * Math.PI * 2;
-    return { cx: 32 + 29 * Math.cos(angle), cy: 32 + 29 * Math.sin(angle) };
+    return { cx: orbitPosition.value.x, cy: orbitPosition.value.y };
   });
   const counterProps = useAnimatedProps(() => {
-    const angle = Math.PI / 2 + patrol.value * Math.PI * 2;
-    return { cx: 32 + 29 * Math.cos(angle), cy: 32 + 29 * Math.sin(angle) };
+    return { cx: orbitPosition.value.counterX, cy: orbitPosition.value.counterY };
   });
 
   return (
@@ -298,33 +287,16 @@ function GuardedSightEmblem({
         )}
       </Svg>
       <View style={[s.webEmblemDisc, { borderColor: disc }, !active && s.webEmblemDiscOff]}>
-        <Eye s={21} c={line} w={1.9} />
-        <Svg pointerEvents="none" width={42} height={42} style={StyleSheet.absoluteFill}>
-          {[
-            { y: 9, x1: 6.3, x2: 35.7 },
-            { y: 13.5, x1: 3.9, x2: 38.1 },
-            { y: 18, x1: 2.7, x2: 39.3 },
-          ].map(rowLine => (
-            <Line
-              key={rowLine.y}
-              x1={rowLine.x1}
-              y1={rowLine.y}
-              x2={rowLine.x2}
-              y2={rowLine.y}
-              stroke={line}
-              strokeOpacity={active ? 0.38 : 0.2}
-              strokeWidth={1.3}
-              strokeLinecap="round"
-              strokeDasharray={active ? undefined : '2 4'}
-            />
-          ))}
-        </Svg>
+        {/* The three ruled lines that used to run behind the eye are gone: they
+            stood for the content being watched, and a globe says that itself.
+            Behind a sphere they were only noise. */}
+        <ShieldedGlobe s={33} c={line} w={active ? 1.55 : 1.35} />
       </View>
     </View>
   );
 }
 
-export function ScreenTimeProtectionCard({
+export const ScreenTimeProtectionCard = memo(function ScreenTimeProtectionCard({
   plan,
   kicker = 'TODAY’S PLAN',
   statusText,
@@ -366,8 +338,30 @@ export function ScreenTimeProtectionCard({
                 {statusText}
               </Text>
             )}
+            {/* How much of the day has gone is the one number people come to
+                this card for, and it used to be set at 14.5 beside a 46pt stub
+                of a rail — the smallest thing in the card's most useful spot.
+                The figure now carries the card's slash grammar at reading size,
+                and the rail has moved under it at full width, so the line is
+                still the decorative stroke it was while also measuring what the
+                number says. Nothing else about the card changes. */}
             {showSpent && (
-              <View style={s.todaySpentRow}>
+              <View style={s.todaySpent}>
+                <Text numberOfLines={1} style={s.todaySpentFigure}>
+                  <Text style={[s.todaySpentValue, { color: numbersColor }]}>
+                    {usedMinutes == null ? '– –' : formatMinutesShort(usedMinutes)}
+                  </Text>
+                  {!essentialsOnly && targetMinutes != null ? (
+                    <>
+                      <Text style={[s.todaySpentSlash, { color: visual.body }]}> / </Text>
+                      <Text style={[s.todaySpentMeta, { color: visual.body }]}>
+                        {formatMinutesShort(targetMinutes)}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={[s.todaySpentMeta, { color: visual.body }]}> today</Text>
+                  )}
+                </Text>
                 {!essentialsOnly && targetMinutes != null && (
                   <View style={[s.todaySpentRail, { backgroundColor: visual.track }]}>
                     <View
@@ -375,24 +369,15 @@ export function ScreenTimeProtectionCard({
                         s.todaySpentFill,
                         {
                           backgroundColor: numbersColor,
-                          width: usedMinutes
-                            ? Math.max(4, Math.min(1, usedMinutes / targetMinutes) * 46)
-                            : 0,
+                          // A percentage now the rail is full width. Capped, so
+                          // going over fills it rather than overflowing — the
+                          // figure's colour is what says you passed the limit.
+                          width: `${usedMinutes ? Math.max(3, Math.min(1, usedMinutes / targetMinutes) * 100) : 0}%`,
                         },
                       ]}
                     />
                   </View>
                 )}
-                <Text numberOfLines={1}>
-                  <Text style={[s.todaySpentValue, { color: numbersColor }]}>
-                    {usedMinutes == null ? '– –' : formatMinutesShort(usedMinutes)}
-                  </Text>
-                  <Text style={[s.todaySpentMeta, { color: visual.body }]}>
-                    {!essentialsOnly && targetMinutes != null
-                      ? ` of ${formatMinutesShort(targetMinutes)}`
-                      : ' today'}
-                  </Text>
-                </Text>
               </View>
             )}
           </View>
@@ -408,9 +393,9 @@ export function ScreenTimeProtectionCard({
       </TouchableOpacity>
     </View>
   );
-}
+});
 
-export function WebProtectionCard({
+export const WebProtectionCard = memo(function WebProtectionCard({
   state,
   packsOn,
   customSites,
@@ -482,31 +467,19 @@ export function WebProtectionCard({
       </TouchableOpacity>
     </View>
   );
-}
+});
 
 // A soft halo that breathes on the card — the glow the active states wear. It
 // lives just inside the rounded card, opacity-only so nothing pixelates on
 // Android, and rests to a still frame under reduce-motion or when inactive.
 function CardGlow({ color, active }: { color: string; active: boolean }) {
-  const reduceMotion = useReducedMotion();
-  const breath = useSharedValue(0);
-
-  useEffect(() => {
-    if (!active || reduceMotion) {
-      cancelAnimation(breath);
-      breath.value = active ? 0.5 : 0;
-      return;
-    }
-    breath.value = 0;
-    breath.value = withRepeat(
-      withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      true,
-    );
-    return () => cancelAnimation(breath);
-  }, [active, breath, reduceMotion]);
-
-  const style = useAnimatedStyle(() => ({ opacity: 0.32 + breath.value * 0.45 }));
+  const runtime = useAmbientMotion(active);
+  const style = useAnimatedStyle(() => {
+    const breath = runtime.enabled
+      ? easeInOutQuad(trianglePhase(runtime.clock.value, 2600))
+      : active ? 0.5 : 0;
+    return { opacity: 0.32 + breath * 0.45 };
+  });
 
   if (!active) return null;
 
@@ -520,25 +493,13 @@ function CardGlow({ color, active }: { color: string; active: boolean }) {
 // the state's colour, and breathe faintly when the guard is awake (the orbit
 // instrument that used to spin here belongs to app blocking, not the web).
 function CleanSightCrest({ color, active }: { color: string; active: boolean }) {
-  const reduceMotion = useReducedMotion();
-  const breath = useSharedValue(0);
-
-  useEffect(() => {
-    if (!active || reduceMotion) {
-      cancelAnimation(breath);
-      breath.value = active ? 0.5 : 0;
-      return;
-    }
-    breath.value = 0;
-    breath.value = withRepeat(
-      withTiming(1, { duration: 3600, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      true,
-    );
-    return () => cancelAnimation(breath);
-  }, [active, breath, reduceMotion]);
-
-  const style = useAnimatedStyle(() => ({ opacity: 0.07 + breath.value * 0.055 }));
+  const runtime = useAmbientMotion(active);
+  const style = useAnimatedStyle(() => {
+    const breath = runtime.enabled
+      ? easeInOutQuad(trianglePhase(runtime.clock.value, 3600))
+      : active ? 0.5 : 0;
+    return { opacity: 0.07 + breath * 0.055 };
+  });
 
   return (
     <Animated.View pointerEvents="none" style={[s.heroCrest, style]}>
@@ -697,11 +658,18 @@ const s = StyleSheet.create({
   todayValueBlock: { maxWidth: 104, alignItems: 'flex-end' },
   todayValue: { fontFamily: F.serifSemiBold, fontSize: 19, fontVariant: ['tabular-nums'] },
   todayValueCaption: { marginTop: 1.5, fontFamily: F.sansBold, fontSize: 8, letterSpacing: 1.1 },
-  todaySpentRow: { marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
-  todaySpentRail: { width: 46, height: 3, borderRadius: 1.5, overflow: 'hidden' },
+  todaySpent: { marginTop: 6, minWidth: 0 },
+  todaySpentFigure: { lineHeight: 24 },
+  // 20 sits with the card's other figure on the right rather than with the
+  // plan name above it, so the two numbers read as a pair and neither fights
+  // the title.
+  todaySpentValue: { fontFamily: F.serifSemiBold, fontSize: 20, fontVariant: ['tabular-nums'] },
+  todaySpentSlash: { fontFamily: F.serif, fontSize: 15, opacity: 0.65 },
+  todaySpentMeta: { fontFamily: F.serif, fontSize: 14, fontVariant: ['tabular-nums'] },
+  // The line, moved under the figure and run the full width of the copy
+  // column. Same stroke as before, now with something to measure.
+  todaySpentRail: { marginTop: 6, width: '100%', height: 3, borderRadius: 1.5, overflow: 'hidden' },
   todaySpentFill: { height: 3, borderRadius: 1.5 },
-  todaySpentValue: { fontFamily: F.serifSemiBold, fontSize: 14.5, fontVariant: ['tabular-nums'] },
-  todaySpentMeta: { fontFamily: F.serif, fontSize: 12.5 },
   webCard: {
     position: 'relative',
     overflow: 'hidden',
@@ -725,10 +693,12 @@ const s = StyleSheet.create({
   webStatusLine: { marginTop: 2.5, fontFamily: F.serif, fontSize: 13.5, lineHeight: 17, color: '#3D8273' },
   webEmblemStage: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center' },
   webEmblemGlow: { position: 'absolute', left: 5, top: 5, width: 54, height: 54, borderRadius: 27 },
+  // 46, not 42 — see `sealDisc`. It stops there rather than matching it: the
+  // dashed patrol ring is drawn at r=24.5, and a disc past 47 would swallow it.
   webEmblemDisc: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     borderWidth: 1,
     borderColor: '#B7D8CA',
     backgroundColor: 'rgba(255,255,255,0.88)',

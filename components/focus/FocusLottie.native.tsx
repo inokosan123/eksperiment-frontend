@@ -1,3 +1,4 @@
+import { memo, useEffect, useRef } from 'react';
 import { StyleProp, ViewStyle } from 'react-native';
 import LottieView from 'lottie-react-native';
 
@@ -13,11 +14,12 @@ const sources: Record<FocusAnimation, any> = {
   target: require('@/assets/animations/target.json'),
 };
 
-export default function FocusLottie({
+function FocusLottie({
   name,
   style,
   loop = true,
   autoplay = true,
+  playing = autoplay,
   speed = 1,
   colorFilters,
 }: {
@@ -25,13 +27,33 @@ export default function FocusLottie({
   style?: StyleProp<ViewStyle>;
   loop?: boolean;
   autoplay?: boolean;
+  playing?: boolean;
   speed?: number;
   colorFilters?: ColorFilter[];
 }) {
+  const animationRef = useRef<LottieView>(null);
+  const hasStartedRef = useRef(autoplay && playing);
+
+  useEffect(() => {
+    const animation = animationRef.current;
+    if (!animation) return;
+    if (!playing) {
+      animation.pause();
+      return;
+    }
+    if (hasStartedRef.current) {
+      animation.resume();
+      return;
+    }
+    hasStartedRef.current = true;
+    animation.play();
+  }, [playing]);
+
   return (
     <LottieView
+      ref={animationRef}
       source={sources[name]}
-      autoPlay={autoplay}
+      autoPlay={autoplay && playing}
       loop={loop}
       speed={speed}
       style={style}
@@ -39,3 +61,5 @@ export default function FocusLottie({
     />
   );
 }
+
+export default memo(FocusLottie);

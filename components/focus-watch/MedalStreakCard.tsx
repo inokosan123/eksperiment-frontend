@@ -1,4 +1,4 @@
-import { forwardRef, useState, type ComponentRef } from 'react';
+import { forwardRef, memo, useState, type ComponentRef } from 'react';
 import { StyleSheet, Text, View, type LayoutChangeEvent, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
@@ -334,7 +334,7 @@ const MedalStreakCard = forwardRef<ComponentRef<typeof TouchableOpacity>, MedalS
   },
 );
 
-export default MedalStreakCard;
+export default memo(MedalStreakCard);
 
 const s = StyleSheet.create({
   // The card is a quiet warm plate with a gold rim — the app's own card, not

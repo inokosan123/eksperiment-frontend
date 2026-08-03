@@ -27,6 +27,7 @@ import {
 import { getScriptureChallengeUnitLabel } from '@/components/scripture/scriptureChallengePlan';
 import { BibleVerse, useScripture } from '@/components/scripture/ScriptureContext';
 import ScriptureReaderView from '@/components/scripture/ScriptureReaderView';
+import { ReadableText } from '@/components/shared/typographyScale';
 
 const BG = '#FCFCFC';
 const GOLD = '#C5A059';
@@ -35,13 +36,15 @@ const INK = '#1C1917';
 type Props = {
   taskInstanceId: string;
   title?: string;
+  showFinishLoader?: boolean;
   onBack: () => void;
-  onComplete: (readUnits: number) => Promise<ScriptureChallengeSessionResult | null>;
+  onComplete: (readUnits: number) => Promise<ScriptureChallengeSessionResult | null | false>;
 };
 
 export default function ScriptureChallengeReaderView({
   taskInstanceId,
   title,
+  showFinishLoader = false,
   onBack,
   onComplete,
 }: Props) {
@@ -175,10 +178,7 @@ export default function ScriptureChallengeReaderView({
     setFinishing(true);
     try {
       const result = await onComplete(currentReadUnits);
-      if (result?.completed) {
-        onBack();
-        return;
-      }
+      if (result === false) return;
       onBack();
     } finally {
       setFinishing(false);
@@ -218,7 +218,11 @@ export default function ScriptureChallengeReaderView({
               activeOpacity={0.82}
               style={[s.secondaryBtn, (finishing || chapterControlsDisabled) && s.disabledBtn]}
             >
-              <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.secondaryText}>FINISH EARLY</Text>
+              {showFinishLoader ? (
+                <ActivityIndicator size="small" color={GOLD} />
+              ) : (
+                <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.secondaryText}>FINISH EARLY</Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               onPress={goNext}
@@ -238,8 +242,14 @@ export default function ScriptureChallengeReaderView({
                 activeOpacity={0.84}
                 style={[s.primaryBtn, !canReadMore && s.primaryBtnWide, (finishing || chapterControlsDisabled) && s.disabledBtn]}
               >
-                <CheckSmall s={15} c="#FFFFFF" w={2.6} />
-                <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>FINISH</Text>
+                {showFinishLoader ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <CheckSmall s={15} c="#FFFFFF" w={2.6} />
+                    <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78} style={s.primaryText}>FINISH</Text>
+                  </>
+                )}
               </TouchableOpacity>
             {canReadMore ? (
               <TouchableOpacity
@@ -310,7 +320,7 @@ function ChallengeVerseRow({ verse }: { verse: BibleVerse }) {
       <View style={s.verseMarker}>
         <Text style={s.verseNum}>{verse.verse}</Text>
       </View>
-      <Text style={s.verseText}>{verse.text}</Text>
+      <ReadableText style={s.verseText}>{verse.text}</ReadableText>
     </View>
   );
 }

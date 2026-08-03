@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -10,7 +10,10 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { useInnerTools } from '@/components/inner-tools/InnerToolsContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { buildInstanceId } from '@/components/tasks/taskScheduler';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 import { F } from '@/constants/tokens';
 import {
   GUIDED_BG,
@@ -143,6 +146,10 @@ export default function DailyGuidedEntryView() {
   const { ready, getEntry, sections: storedSections, upsertEntry } = useJournal();
   const { idealSelf, gratitudeEntries, upsertGratitudeEntry } = useInnerTools();
   const { completeInstance, resetInstance } = useTasks();
+  const routedCompletion = useRoutedTaskCompletion({
+    taskInstanceId: params.taskInstanceId,
+    taskDate: params.taskDate ?? selectedDateKey,
+  });
   const [sections, setSections] = useState<JournalSection[]>(DEFAULT_SECTIONS);
   const [draft, setDraft] = useState<GuidedDraft>(() => draftFromEntry(getEntry(selectedDateKey)));
   const draftRef = useRef(draft);
@@ -326,13 +333,14 @@ export default function DailyGuidedEntryView() {
       const entry = getEntry(selectedDateKey);
       const completion = { ...entry, ...buildPatch(draftRef.current) };
       if (isTaskLaunch && params.taskInstanceId && hasDailyJournalContent(completion)) {
-        const completionDate = params.taskDate ?? selectedDateKey;
-        await completeInstance(params.taskInstanceId, completionDate);
-        queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
+        const result = await routedCompletion.completeBeforeReturn({});
+        if (!result.ok) return false;
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      return true;
     } catch (error) {
       console.warn('Guided journal finish failed', error);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -437,13 +445,24 @@ export default function DailyGuidedEntryView() {
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
         {page > 0 && !isFinished ? <TouchableOpacity onPress={goBack} style={styles.backBtn} activeOpacity={0.75}><ChevronLeft s={18} c="#817668" /><Text style={styles.backText}>BACK</Text></TouchableOpacity> : <View style={styles.backPlaceholder} />}
-        <TouchableOpacity disabled={saving} onPress={() => { if (isFinished) { void close(); } else if (page === steps.length - 1) { void finish().then(() => { setTransitionDirection(1); setPage(steps.length); }); } else { void advance(); } }} style={[styles.primary, saving && styles.primaryDisabled]} activeOpacity={0.86}>
+        <TouchableOpacity disabled={saving} onPress={() => { if (isFinished) { void close(); } else if (page === steps.length - 1) { void finish().then(completed => { if (completed) { setTransitionDirection(1); setPage(steps.length); } }); } else { void advance(); } }} style={[styles.primary, saving && styles.primaryDisabled]} activeOpacity={0.86}>
           <LinearGradient colors={['#302B24', '#181510']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryGradient}>
             <Text style={styles.primaryText}>{isFinished ? 'BACK TO JOURNAL' : primaryLabel.toUpperCase()}</Text>
-            {!isFinished && <View style={styles.primaryIcon}><Sparkles s={15} c="#F2D79B" w={1.9} /></View>}
+            {!isFinished && (
+              <View style={styles.primaryIcon}>
+                {routedCompletion.showSlowIndicator
+                  ? <ActivityIndicator size="small" color="#F2D79B" />
+                  : <Sparkles s={15} c="#F2D79B" w={1.9} />}
+              </View>
+            )}
           </LinearGradient>
         </TouchableOpacity>
       </View>
+      <RoutedTaskCompletionErrorModal
+        visible={routedCompletion.saveErrorVisible}
+        onKeepEditing={routedCompletion.keepEditing}
+        onRetry={routedCompletion.retry}
+      />
     </KeyboardAvoidingView>
   );
 }

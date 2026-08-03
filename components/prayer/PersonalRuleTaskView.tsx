@@ -268,8 +268,9 @@ type Props = {
   title?: string;
   prayerType?: string;
   isTask?: boolean;
+  showFinishLoader?: boolean;
   onBack: () => void;
-  onComplete?: () => void | Promise<void>;
+  onComplete?: () => boolean | void | Promise<boolean | void>;
   selectedRule?: PersonalPrayerRuleChoice;
   onRuleChange?: (rule: PersonalPrayerRuleChoice) => void | Promise<void>;
 };
@@ -464,6 +465,7 @@ export default function PersonalRuleTaskView({
   title,
   prayerType,
   isTask = false,
+  showFinishLoader = false,
   onBack,
   onComplete,
   selectedRule = 'personal',
@@ -473,7 +475,28 @@ export default function PersonalRuleTaskView({
   const reduceMotion = useReducedMotion();
   const { height, width: screenWidth } = useWindowDimensions();
   const { settings, updateSettings } = useAppSettings();
-  const focus: PrayerFocus = settings.prayerFocus === 'icon' ? 'icon' : 'cross';
+  /* ── WHAT STANDS THERE WHEN YOU ARRIVE ─────────────────────────────
+   *
+   * ⚠ ALWAYS THE CROSS, AND IT IS NOT READ FROM SETTINGS ANY MORE.
+   *
+   * The stored default was already 'cross' — in DEFAULT_SETTINGS, in the
+   * normaliser, and in the fallback here. What put the icon on the
+   * screen was that the choice PERSISTED: tap JESUS once and every visit
+   * afterwards opened on the icon.
+   *
+   * That is the wrong way round for this screen. My Rule is written for
+   * Christians of every tradition, and for some of them praying before
+   * an image is precisely what they do not do. The cross is the ground
+   * all of them share, so it is what the room contains when you walk in;
+   * the icon is an OFFER, and an offer is made each time rather than
+   * assumed from something you did once.
+   *
+   * ⚠ SO THE CHOICE NOW LASTS THE VISIT, NOT FOREVER. It is React state
+   * seeded at 'cross' instead of a settings read. `commitFocus` still
+   * writes the setting — see the note there — so nothing else in the app
+   * that may come to care about this loses its record.
+   */
+  const [focus, setFocus] = useState<PrayerFocus>('cross');
   const [running, setRunning] = useState(false);
   const [hasElapsed, setHasElapsed] = useState(false);
   const [timerResetToken, setTimerResetToken] = useState(0);
@@ -651,6 +674,12 @@ export default function PersonalRuleTaskView({
   }, [swap]);
 
   const commitFocus = useCallback((next: PrayerFocus) => {
+    setFocus(next);
+    // ⚠ STILL WRITTEN, THOUGH THIS SCREEN NO LONGER READS IT BACK. The
+    // setting is the app's record of what someone chose; a screen
+    // deciding not to OPEN on it is a different question from the record
+    // being worth keeping, and dropping the write would quietly delete a
+    // preference other surfaces may come to want.
     updateSettings({ prayerFocus: next });
   }, [updateSettings]);
 
@@ -721,7 +750,11 @@ export default function PersonalRuleTaskView({
     if (Platform.OS !== 'web' && !isTask) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
-    await onComplete?.();
+    const completedSuccessfully = await onComplete?.();
+    if (completedSuccessfully === false) {
+      finishLockRef.current = false;
+      return;
+    }
     onBack();
   }, [animateIgnition, isTask, onBack, onComplete]);
 
@@ -850,7 +883,7 @@ export default function PersonalRuleTaskView({
    * only state it is ever seen in, so it holds at every size on every
    * phone; clamped at zero for the phones with no slack to give.
    *
-   * ⚠ AND IT LEAVES WHEN THE PRAYER BEGINS. It is a door to seven pages
+   * ⚠ AND IT LEAVES WHEN THE PRAYER BEGINS. It is a door to five pages
    * of history and craft — a thing to read before or after praying and
    * never during. Every other invitation on this screen withdraws at that
    * moment; the one that stayed was the one offering the longest detour.
@@ -1049,7 +1082,7 @@ export default function PersonalRuleTaskView({
         )}
       </View>
 
-      {/* ── The door to the seven pages ──────────────────────────────
+      {/* ── The door to the pages behind the icon ────────────────────
           ⚠ DIRECTLY UNDER THE ICON, which is where it was asked to be and
           where it belongs: it is the icon's own footnote, and down among
           the controls it read as a fourth control. It keeps its row
@@ -1087,7 +1120,7 @@ export default function PersonalRuleTaskView({
 
             <OpenBook s={14} c={ABOUT_INK} w={1.6} />
             <Text style={s.aboutText}>About the icon</Text>
-            {/* ⚠ It opens a seven-page sheet, and nothing about a label
+            {/* ⚠ It opens a five-page sheet, and nothing about a label
                 said so. The app's own arrow orb, at the size a footnote
                 can carry. */}
             <View style={s.aboutChevron}>
@@ -1277,6 +1310,7 @@ export default function PersonalRuleTaskView({
         cancelLabel="CANCEL"
         confirmLabel="COMPLETE"
         confirmColor={C.gold}
+        confirmLoading={showFinishLoader}
         onCancel={closeFinish}
         onConfirm={handleFinish}
       />

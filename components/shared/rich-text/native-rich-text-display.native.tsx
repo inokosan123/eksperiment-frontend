@@ -4,6 +4,7 @@ import type { EnrichedTextProps } from 'react-native-enriched-html';
 import { C, F } from '@/constants/tokens';
 import { toNativeRichTextTransportHtml } from '@/components/shared/rich-text/rich-text-html';
 import { isNativeRichTextEditorEnabled } from '@/components/shared/rich-text/native-rich-text-feature';
+import { useReadableFontScale } from '@/components/shared/typographyScale';
 
 type EnrichedModule = typeof import('react-native-enriched-html');
 
@@ -24,6 +25,7 @@ export function NativeRichTextDisplay({
   selectable = true,
   style,
 }: NativeRichTextDisplayProps) {
+  const readableScale = useReadableFontScale();
   if (!isNativeRichTextEditorEnabled()) {
     throw new Error('NativeRichTextDisplay was rendered without a native development build');
   }
@@ -41,24 +43,24 @@ export function NativeRichTextDisplay({
   const textStyle = useMemo<NonNullable<EnrichedTextProps['style']>>(() => ({
     color,
     fontFamily: F.serif,
-    fontSize: 17,
-    lineHeight: 28,
+    fontSize: 17 * readableScale,
+    lineHeight: 28 * readableScale,
     paddingHorizontal: 13,
     paddingVertical: 13,
-  }), [color]);
+  }), [color, readableScale]);
 
   return (
     <View style={[{ minHeight, backgroundColor }, style]}>
       <EnrichedText
         style={textStyle}
         htmlStyle={{
-          ul: { bulletColor: color, bulletSize: 5, marginLeft: 20, gapWidth: 8 },
-          ol: { markerColor: color, marginLeft: 20, gapWidth: 8 },
+          ul: { bulletColor: color, bulletSize: 5 * readableScale, marginLeft: 20 * readableScale, gapWidth: 8 * readableScale },
+          ol: { markerColor: color, marginLeft: 20 * readableScale, gapWidth: 8 * readableScale },
         }}
         useHtmlNormalizer={false}
         selectable={selectable}
         selectionColor="rgba(197,160,89,0.28)"
-        allowFontScaling
+        allowFontScaling={false}
       >
         {transportHtml}
       </EnrichedText>

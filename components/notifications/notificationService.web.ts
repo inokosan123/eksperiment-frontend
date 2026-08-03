@@ -1,4 +1,5 @@
 import type { AppSettings } from '@/components/settings/SettingsContext';
+import { NOTIFICATION_HOME_ROUTE } from '@/components/notifications/notification-navigation';
 
 export const NOTIFICATION_CATEGORY_TASK = 'anasta-task-reminder';
 export const NOTIFICATION_ACTION_COMPLETE = 'anasta-task-complete';
@@ -13,7 +14,7 @@ export type ManagedNotificationData = {
   kind: 'reminder' | 'due' | 'snooze';
   title: string;
   body: string;
-  route?: string;
+  route: typeof NOTIFICATION_HOME_ROUTE;
   source?: string;
   taskType?: string;
   fireAt: number;
@@ -47,15 +48,4 @@ export async function snoozeTaskNotification(
 
 export function getManagedNotificationData(_response: unknown) {
   return null;
-}
-
-export function notificationRouteParams(data: ManagedNotificationData) {
-  return {
-    title: data.title.replace(/^Anasta:\s*/i, ''),
-    taskInstanceId: data.instanceId,
-    taskDate: data.instanceDate,
-    date: data.instanceDate,
-    isTask: 'true',
-    fromNotification: 'true',
-  };
 }

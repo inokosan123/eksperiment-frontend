@@ -1,8 +1,10 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import JesusPrayerTaskView from '@/components/prayer/JesusPrayerTaskView';
-import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 
 function numberParam(value: string | undefined, fallback: number) {
   const parsed = Number.parseInt(value ?? '', 10);
@@ -11,7 +13,6 @@ function numberParam(value: string | undefined, fallback: number) {
 
 export default function JesusPrayerScreen() {
   const router = useRouter();
-  const { completeInstance } = useTasks();
   const {
     title,
     mode,
@@ -29,6 +30,10 @@ export default function JesusPrayerScreen() {
     taskInstanceId?: string;
     taskDate?: string;
   }>();
+  const completion = useRoutedTaskCompletion({
+    taskInstanceId,
+    taskDate: taskDate ?? getLocalDateKey(),
+  });
 
   return (
     <>
@@ -39,13 +44,18 @@ export default function JesusPrayerScreen() {
         durationMinutes={numberParam(duration, 15)}
         targetCount={numberParam(count, 100)}
         isTask={isTask === 'true'}
+        showFinishLoader={completion.showSlowIndicator}
         onBack={() => router.back()}
         onComplete={async () => {
-          if (taskInstanceId) {
-            await completeInstance(taskInstanceId, taskDate ?? getLocalDateKey());
-            queueTaskCompletionReturnAnimation(taskInstanceId);
-          }
+          if (!taskInstanceId) return true;
+          const result = await completion.completeBeforeReturn({});
+          return result.ok;
         }}
+      />
+      <RoutedTaskCompletionErrorModal
+        visible={completion.saveErrorVisible}
+        onKeepEditing={completion.keepEditing}
+        onRetry={completion.retry}
       />
     </>
   );

@@ -1,11 +1,11 @@
-import { Stack } from 'expo-router';
+﻿import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SQLiteProvider } from 'expo-sqlite';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, EBGaramond_400Regular, EBGaramond_400Regular_Italic, EBGaramond_500Medium, EBGaramond_500Medium_Italic, EBGaramond_600SemiBold, EBGaramond_700Bold } from '@expo-google-fonts/eb-garamond';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator, Text, TextInput } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import { C } from '@/constants/tokens';
 import { BucketListProvider } from '@/components/bucket/BucketListContext';
 import { InnerToolsProvider } from '@/components/inner-tools/InnerToolsContext';
@@ -25,21 +25,6 @@ import { NativeRichTextKeyboardBoundary } from '@/components/shared/rich-text/na
 export const unstable_settings = {
   anchor: '(tabs)',
 };
-
-type ScalableNativeComponent = {
-  defaultProps?: Record<string, unknown>;
-};
-
-function lockNativeFontScaling(Component: ScalableNativeComponent) {
-  Component.defaultProps = {
-    ...Component.defaultProps,
-    allowFontScaling: false,
-    maxFontSizeMultiplier: 1,
-  };
-}
-
-lockNativeFontScaling(Text as unknown as ScalableNativeComponent);
-lockNativeFontScaling(TextInput as unknown as ScalableNativeComponent);
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -99,6 +84,7 @@ export default function RootLayout() {
                                   <Stack.Screen name="big-events"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="focus-zone"      options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="focus-intervention" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
+                                  <Stack.Screen name="focus-never-allowed" options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plans"       options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plan"        options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />
                                   <Stack.Screen name="day-plan-today"  options={{ headerShown: false, presentation: 'card', animation: 'slide_from_right' }} />

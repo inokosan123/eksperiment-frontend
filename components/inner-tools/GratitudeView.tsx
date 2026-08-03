@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -40,6 +39,7 @@ import { buildInstanceId, getLocalDateKey } from '@/components/tasks/taskSchedul
 import type { TaskDraft } from '@/components/tasks/taskTypes';
 import { GratitudeEntry, GratitudeKind, useInnerTools } from './InnerToolsContext';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import { ReadableText, ReadableTextInput } from '@/components/shared/typographyScale';
 
 
 const ROSE = '#F43F5E';
@@ -317,7 +317,7 @@ export default function GratitudeView() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={s.scripture}>
-          <Text style={s.scriptureText}>{'"In everything give thanks, for this is the will of God in Christ Jesus for you."'}</Text>
+          <ReadableText style={s.scriptureText}>{'"In everything give thanks, for this is the will of God in Christ Jesus for you."'}</ReadableText>
           <Text style={s.scriptureRef}>1 THESSALONIANS 5:18</Text>
         </View>
 
@@ -656,7 +656,7 @@ function GratitudeForm({
             contentContainerStyle={s.gratFormScrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            <TextInput
+            <ReadableTextInput
               value={title}
               onChangeText={value => onTitle(value.replace(/\r?\n/g, ' '))}
               placeholder={placeholder}
@@ -789,7 +789,7 @@ function GratitudeCard({
               </Text>
             )}
             {hasTitle && (
-              <Text style={s.gTitle} numberOfLines={isExpanded ? 0 : 2}>{entry.title}</Text>
+              <ReadableText style={s.gTitle} numberOfLines={isExpanded ? 0 : 2}>{entry.title}</ReadableText>
             )}
           </View>
           {collapsible && (
@@ -873,11 +873,11 @@ function TaskToggleCard({
 function WisdomCard({ quote, compact = false }: { quote: { text: string; author: string }; compact?: boolean }) {
   return (
     <View style={[s.wisdom, compact && s.wisdomCompact]}>
-      <Text style={s.wisdomText}>
-        <Text style={s.wisdomQuote}>{'"'}</Text>
+      <ReadableText style={s.wisdomText}>
+        <ReadableText style={s.wisdomQuote}>{'"'}</ReadableText>
         {quote.text}
-        <Text style={s.wisdomQuote}>{'"'}</Text>
-      </Text>
+        <ReadableText style={s.wisdomQuote}>{'"'}</ReadableText>
+      </ReadableText>
       <Text style={s.wisdomAuthor}>— {quote.author.toUpperCase()}</Text>
     </View>
   );

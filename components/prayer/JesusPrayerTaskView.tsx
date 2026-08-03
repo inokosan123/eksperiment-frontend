@@ -39,8 +39,9 @@ type Props = {
   durationMinutes?: number;
   targetCount?: number;
   isTask?: boolean;
+  showFinishLoader?: boolean;
   onBack: () => void;
-  onComplete?: () => void | Promise<void>;
+  onComplete?: () => boolean | void | Promise<boolean | void>;
 };
 
 const GOLD = '#C5A059';
@@ -86,6 +87,7 @@ export default function JesusPrayerTaskView({
   durationMinutes = 15,
   targetCount = 100,
   isTask = false,
+  showFinishLoader = false,
   onBack,
   onComplete,
 }: Props) {
@@ -215,7 +217,11 @@ export default function JesusPrayerTaskView({
     if (finishLockRef.current) return;
     finishLockRef.current = true;
     setRunning(false);
-    await onComplete?.();
+    const completedSuccessfully = await onComplete?.();
+    if (completedSuccessfully === false) {
+      finishLockRef.current = false;
+      return;
+    }
     onBack();
   }, [onBack, onComplete]);
 
@@ -395,6 +401,7 @@ export default function JesusPrayerTaskView({
         cancelLabel="CANCEL"
         confirmLabel="FINISH"
         confirmColor={GOLD}
+        confirmLoading={showFinishLoader}
         onCancel={() => setShowFinishEarly(false)}
         onConfirm={() => {
           setShowFinishEarly(false);

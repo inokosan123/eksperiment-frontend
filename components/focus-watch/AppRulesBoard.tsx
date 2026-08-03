@@ -18,8 +18,9 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 import { C, F } from '@/constants/tokens';
 import Bloom from './Bloom';
 import ProtectionRegisterCard, { REGISTER_TONES } from './ProtectionRegister';
-import GroupSeal, { groupTint, withAlpha } from './GroupSeal';
-import { CATEGORY_TINTS } from './focusContent';
+import GroupSeal, { withAlpha } from './GroupSeal';
+import { Door } from './FocusStrengthSwitch';
+import { groupRailColor, RULE_TONES } from './focusContent';
 import { useNativeActivitySelectionSummary } from './nativeSelectionSummaryStore';
 import { formatMinutesShort, type GroupRule } from './dayPlanStore';
 
@@ -33,12 +34,11 @@ const CARD_LAYOUT = LinearTransition.duration(260).easing(Easing.bezier(0.22, 1,
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const BLOCKED_COLOR = '#A24351';
-const BLOCKED_TINT = '#FBE9EC';
 
-export type RuleMode = 'noLimit' | 'limit' | 'blocked';
+export type RuleMode = 'limit' | 'blocked';
 
 export function ruleModeOf(rule: GroupRule): RuleMode {
-  return (rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit')) as RuleMode;
+  return rule.mode === 'blocked' ? 'blocked' : 'limit';
 }
 
 // The faint diagonal weave every lit focus card wears.
@@ -86,6 +86,7 @@ function GroupMeta({
 function GroupRuleCard({
   rule,
   name,
+  icon,
   index,
   goalMinutes,
   custom,
@@ -99,6 +100,7 @@ function GroupRuleCard({
   name: string;
   index: number;
   goalMinutes: number | null;
+  icon?: string;
   custom: boolean;
   nativeAvailable: boolean;
   selectionId: string;
@@ -107,8 +109,16 @@ function GroupRuleCard({
   onRemove: () => void;
 }) {
   const mode = ruleModeOf(rule);
-  const accent = mode === 'blocked' ? BLOCKED_COLOR : groupTint(rule.groupId).color;
-  const lit = mode !== 'noLimit';
+  // ⚠️ The card's colour says WHAT THE RULE IS, not which group this is. See
+  // the note on `RULE_TONES`: a group whose own tint was red made a limit look
+  // exactly like a block. Identity lives on the rail above and in the name and
+  // face here; state lives in the colour.
+  const accent = mode === 'blocked' ? RULE_TONES.blocked.color : RULE_TONES.limit.color;
+  const groupBoundaryActive = mode === 'blocked' || rule.dailyMinutes != null;
+  const appBoundaryActive = (rule.appRules ?? []).some(
+    appRule => appRule.mode === 'blocked' || appRule.minutes != null
+  );
+  const lit = groupBoundaryActive || appBoundaryActive;
   const share = mode === 'limit' && goalMinutes != null && rule.dailyMinutes != null
     ? rule.dailyMinutes / goalMinutes
     : 0;
@@ -145,22 +155,22 @@ function GroupRuleCard({
         </>
       )}
 
-      {mode === 'blocked' && <View style={s.closedEdge} />}
-
       <TouchableOpacity style={s.cardRow} onPress={onPress} activeOpacity={0.74} haptic="selection">
         <GroupSeal
           groupId={rule.groupId}
           name={name}
+          icon={icon}
           size={42}
           share={mode === 'limit' && goalMinutes != null ? share : 0}
           blocked={mode === 'blocked'}
           dim={!lit}
+          tone={RULE_TONES.limit}
         />
 
         <View style={s.cardBody}>
           <View style={s.cardTitleRow}>
             <Text style={s.cardName} numberOfLines={1}>{name}</Text>
-            {lit && (
+            {groupBoundaryActive && (
               <Animated.View entering={FadeIn.duration(200)} style={s.strengthMark}>
                 <View style={[s.strengthDot, { backgroundColor: rule.strength === 'strict' ? BLOCKED_COLOR : '#B98A2E' }]} />
                 <Text style={[s.strengthText, { color: rule.strength === 'strict' ? BLOCKED_COLOR : '#95681F' }]}>
@@ -187,16 +197,24 @@ function GroupRuleCard({
         </View>
 
         <View style={s.cardTail}>
+          {/* The chip carries both facts the rule holds: how long, and what
+              happens when that is spent. The door is the same object the
+              Loose/Strict switch is struck from, and the same one an app's own
+              chip wears inside the sheet — one mark, learned once. It joins the
+              STRICT/LOOSE tag beside the name rather than replacing it: the tag
+              names the answer, the door shows it. */}
           <View style={[
             s.valueChip,
-            mode === 'blocked' && { backgroundColor: BLOCKED_TINT, borderColor: '#E7C4CB' },
-            mode === 'limit' && { backgroundColor: withAlpha(accent, 0.1), borderColor: withAlpha(accent, 0.3) },
+            groupBoundaryActive && {
+              backgroundColor: withAlpha(accent, 0.1),
+              borderColor: withAlpha(accent, 0.3),
+            },
           ]}>
+            {groupBoundaryActive && <Door shut={rule.strength === 'strict'} size={14} />}
             <Text
               style={[
                 s.valueChipText,
-                mode === 'blocked' && { color: BLOCKED_COLOR },
-                mode === 'limit' && { color: accent },
+                groupBoundaryActive && { color: accent },
               ]}
               numberOfLines={1}
             >
@@ -337,10 +355,12 @@ function CapacityMeter({
   goalMinutes,
   lockAtMinutes,
   plannedByGroup,
+  resolveGroupName,
 }: {
   goalMinutes: number | null;
   lockAtMinutes: number | null;
   plannedByGroup: Record<string, number>;
+  resolveGroupName: (groupId: string) => string;
 }) {
   const [railWidth, setRailWidth] = useState(0);
   const groups = Object.entries(plannedByGroup).filter(([, minutes]) => minutes > 0);
@@ -352,6 +372,8 @@ function CapacityMeter({
   const recommended = goalMinutes == null ? null : Math.round(goalMinutes * 0.8);
   const free = goalMinutes == null ? null : Math.max(0, goalMinutes - planned);
   const pastBuffer = recommended != null && planned > recommended;
+  const overBy = goalMinutes == null ? 0 : Math.max(0, planned - goalMinutes);
+  const over = overBy > 0;
   const full = goalMinutes != null && planned >= goalMinutes;
 
   const segments = useMemo(() => {
@@ -374,6 +396,12 @@ function CapacityMeter({
         style={StyleSheet.absoluteFill}
       />
       <RuleWeave color="#8A6A2F" />
+      {/* Colour as light, not paint: a pool gathered under the seal so the card
+          reads lit instead of tinted — the construction the rule cards and the
+          protection register already share. */}
+      <View pointerEvents="none" style={s.meterSealBloom}>
+        <Bloom color={full ? BLOCKED_COLOR : '#B08A2E'} opacity={0.2} />
+      </View>
 
       {/* The head reads like a group row: a seal on the left carrying the % of
           the goal spoken for, the copy beside it. */}
@@ -384,6 +412,8 @@ function CapacityMeter({
           <Text style={s.meterTitle}>
             {goalMinutes == null
               ? 'Set a Goal first.'
+              : over
+                ? `${formatMinutesShort(overBy)} over the Goal`
               : free != null && free > 0
                 ? `${formatMinutesShort(free)} still free`
                 : 'Every minute is planned'}
@@ -399,6 +429,12 @@ function CapacityMeter({
           Tolerance shaded past it. The 80%/GOAL chips and the 0…locked axis are
           gone — the almanac below names every number, so the rail only has to
           show the shape. */}
+      {/* The measuring apparatus, gathered into one recessed face. The bar used
+          to float between two blocks of prose with nothing holding it, and the
+          legend would have stacked under it as a third loose thing. Sunk into a
+          well together they read as one instrument: the scale, what its colours
+          mean, and what its marks mean. */}
+      <View style={s.gauge}>
       <View style={s.rail} onLayout={event => setRailWidth(event.nativeEvent.layout.width)}>
         {/* The recommended buffer (last fifth of the Goal) is shaded warm gold,
             the overflow past the Goal grey — you can see the fifth to leave free
@@ -417,7 +453,7 @@ function CapacityMeter({
             key={segment.groupId}
             left={segment.left * railWidth}
             width={segment.width * railWidth}
-            color={(CATEGORY_TINTS[segment.groupId] ?? { color: C.goldDark }).color}
+            color={groupRailColor(segment.groupId)}
           />
         ))}
         {/* A glass sheen across the whole bar for a little depth. */}
@@ -435,12 +471,52 @@ function CapacityMeter({
         )}
       </View>
 
+      {/* The legend. A stacked bar is only honest if you can name the spans —
+          without it the colours are a puzzle, and with enough custom groups
+          they must eventually repeat. Built from the same array as the
+          segments, so order and colour cannot drift apart. */}
+      {groups.length > 0 && (
+        <View style={s.legend}>
+          {groups.map(([groupId, minutes]) => (
+            <View key={groupId} style={s.legendEntry}>
+              <View style={[s.legendSwatch, { backgroundColor: groupRailColor(groupId) }]} />
+              <Text style={s.legendName} numberOfLines={1}>{resolveGroupName(groupId)}</Text>
+              <Text style={s.legendValue}>{formatMinutesShort(minutes)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* And what the rail's own marks mean. The shaded bands were unexplained
+          before — a wash and a tick you had to already know to read. */}
+      {goalMinutes != null && (
+        <View style={s.railKey}>
+          <View style={s.railKeyItem}>
+            <View style={s.railKeyBuffer} />
+            <Text style={s.railKeyText}>Last fifth</Text>
+          </View>
+          {lockAtMinutes != null && lockAtMinutes > goalMinutes && (
+            <View style={s.railKeyItem}>
+              <View style={s.railKeyTolerance} />
+              <Text style={s.railKeyText}>Tolerance</Text>
+            </View>
+          )}
+          <View style={s.railKeyItem}>
+            <View style={s.railKeyGoal} />
+            <Text style={s.railKeyText}>Goal</Text>
+          </View>
+        </View>
+      )}
+      </View>
+
       {pastBuffer && (
         <Animated.View entering={FadeIn.duration(240)} style={[s.warning, full && s.warningStrong]}>
           <AlertTriangle s={14} c={full ? BLOCKED_COLOR : '#A36F2B'} w={2.2} />
           <Text style={[s.warningText, full && s.warningTextStrong]}>
             {full
-              ? 'Every minute is planned. Leave a little free, or a long day breaks the streak.'
+              ? over
+                ? 'These group limits cannot be saved together. Reduce one until the plan fits the Daily Target.'
+                : 'Every minute is planned. Leave a little free, or a long day breaks the streak.'
               : 'You’re into the last fifth. Leaving it free makes the Goal easier to keep.'}
           </Text>
         </Animated.View>
@@ -504,6 +580,7 @@ export default function AppRulesBoard({
   alwaysBlockedAppCount,
   alwaysBlockedAppNames,
   resolveGroupName,
+  resolveGroupIcon,
   nativeAvailable,
   selectionIdForGroup,
   onOpenRule,
@@ -520,6 +597,7 @@ export default function AppRulesBoard({
   alwaysBlockedAppCount: number;
   alwaysBlockedAppNames: string[];
   resolveGroupName: (groupId: string) => string;
+  resolveGroupIcon: (groupId: string) => string | undefined;
   nativeAvailable: boolean;
   selectionIdForGroup: (groupId: string) => string;
   onOpenRule: (groupId: string) => void;
@@ -544,7 +622,12 @@ export default function AppRulesBoard({
         <Text style={s.headerBody}>Plan app usage</Text>
       </View>
 
-      <CapacityMeter goalMinutes={goalMinutes} lockAtMinutes={lockAtMinutes} plannedByGroup={plannedByGroup} />
+      <CapacityMeter
+        goalMinutes={goalMinutes}
+        lockAtMinutes={lockAtMinutes}
+        plannedByGroup={plannedByGroup}
+        resolveGroupName={resolveGroupName}
+      />
 
       <View style={s.cardStack}>
         {groupIds.map((groupId, index) => {
@@ -555,6 +638,7 @@ export default function AppRulesBoard({
               key={groupId}
               rule={rule}
               name={resolveGroupName(groupId)}
+              icon={resolveGroupIcon(groupId)}
               index={index}
               goalMinutes={goalMinutes}
               custom={customGroupIds.includes(groupId)}
@@ -616,6 +700,39 @@ const s = StyleSheet.create({
   railSheen: { position: 'absolute', left: 0, right: 0, top: 0, height: 11 },
   // The recommended buffer (80% → Goal) reads warm gold; the overflow past the
   // Goal reads grey, the same grey the Your Day legend gives Tolerance.
+  meterSealBloom: { position: 'absolute', left: -34, top: -50, width: 168, height: 176 },
+  // Engraved, like the strength switch's well: the instrument sits IN the card
+  // rather than on it, which is what separates the reading from the prose.
+  gauge: {
+    borderRadius: 17,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E8DCBE',
+    backgroundColor: 'rgba(250,244,229,0.72)',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 11,
+    gap: 11,
+    boxShadow: 'inset 0 1px 2px rgba(63,52,30,0.06)',
+  },
+  // One entry per line. Two-up was tried first and packs more in, but a name
+  // like "Evening scroll" then truncates in half a column — and a legend whose
+  // job is naming things must not shorten the names. Stacked, every figure
+  // lands in the same right-hand column and the block reads as a small table.
+  legend: { rowGap: 8 },
+  legendEntry: { flexDirection: 'row', alignItems: 'center', gap: 9, minWidth: 0 },
+  // Cut like a segment of the rail, so the eye pairs them without being told.
+  legendSwatch: { width: 12, height: 12, borderRadius: 4, borderCurve: 'continuous' },
+  legendName: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 14.5, color: '#4A443B' },
+  legendValue: { fontFamily: F.serifSemiBold, fontSize: 14.5, color: '#2D2923', fontVariant: ['tabular-nums'] },
+
+  railKey: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', rowGap: 5, columnGap: 14 },
+  railKeyItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  railKeyBuffer: { width: 14, height: 9, borderRadius: 3, backgroundColor: 'rgba(201,162,39,0.28)' },
+  railKeyTolerance: { width: 14, height: 9, borderRadius: 3, backgroundColor: 'rgba(158,164,171,0.34)' },
+  railKeyGoal: { width: 2.5, height: 11, borderRadius: 1.5, backgroundColor: '#2D2923' },
+  railKeyText: { fontFamily: F.sansMedium, fontSize: 11.5, color: '#8F8672' },
+
   bufferZone: { position: 'absolute', top: 0, bottom: 0, backgroundColor: 'rgba(201,162,39,0.12)' },
   toleranceZone: { position: 'absolute', top: 0, bottom: 0, right: 0, backgroundColor: 'rgba(158,164,171,0.18)' },
   goalMarker: { position: 'absolute', top: 1.5, bottom: 1.5, width: 2.5, borderRadius: 1.5, backgroundColor: '#2D2923', boxShadow: '0 0 0 1.5px rgba(255,255,255,0.55)' },
@@ -662,9 +779,6 @@ const s = StyleSheet.create({
     paddingVertical: 7,
     boxShadow: '0 6px 16px rgba(35, 40, 37, 0.055)',
   },
-  // A closed group carries a rose edge down its left side — the same bar the
-  // Essentials surface wears.
-  closedEdge: { position: 'absolute', left: 0, top: 14, bottom: 14, width: 3.5, borderTopRightRadius: 3, borderBottomRightRadius: 3, backgroundColor: BLOCKED_COLOR, opacity: 0.85 },
   // Two blooms so the colour never hits a seam: a wide, faint wash spanning the
   // whole card that fades to nothing before the right edge, and a tighter,
   // brighter pool centred on the seal.
@@ -684,6 +798,9 @@ const s = StyleSheet.create({
   cardTail: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
   valueChip: {
     minWidth: 56,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
     borderRadius: 12,
     borderCurve: 'continuous',
     borderWidth: 1,

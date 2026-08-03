@@ -1,3 +1,5 @@
+import { clampReadableFontScale } from '@/components/shared/typographyScalePolicy';
+
 /* ─────────────────────────────────────────────────────────────
  * RIBBON — where things stand on the plate.
  *
@@ -124,10 +126,9 @@ export const RIBBON_STARS: RibbonStarSpec[] = [
 ];
 
 /* ── The stack's rhythm ───────────────────────────────────────
- * Every card mounts in the same frame and starts its clocks at zero, so a
- * screen of them keeps perfect time: the big star beside the title arrives on
- * all five at once, and five cards behaving as one is the opposite of what
- * this design is for.
+ * Every main card reads the same continuous tabs clock, so its own phase and
+ * tempo must keep the stack from moving in formation: the big star beside the
+ * title should never arrive on all five at once.
  *
  * Offsetting the phase alone is not enough. Cards on the SAME period and
  * different phases hold a fixed formation — a wave rolling down the list,
@@ -252,4 +253,40 @@ export function ribbonEmblem(w: number, h: number): { size: number; right: numbe
     right: -Math.round(RIBBON.emblemBleedX * size),
     bottom: -Math.round(RIBBON.emblemBleedY * size),
   };
+}
+
+/**
+ * A first-frame height for a card whose native layout has not reported yet.
+ *
+ * The real plate still replaces this estimate through `onLayout`. Keeping a
+ * close estimate available synchronously means the emblem and constellation
+ * can be present in the first committed frame instead of popping in one frame
+ * later. The fixed 90pt is the measured label/title/padding block; each
+ * description line contributes the stylesheet's 23pt line height.
+ */
+export function estimateRibbonHeight(w: number, description = '', readableScale?: number): number {
+  const textWidth = Math.max(120, RIBBON.textWidth * w - RIBBON.pad * 2);
+  const hasReadableCopy = readableScale !== undefined;
+  const safeScale = hasReadableCopy
+    ? clampReadableFontScale(readableScale)
+    : 1;
+  const averageGlyphWidth = 7.2 * safeScale;
+  const spaceWidth = 4 * safeScale;
+  const words = description.trim().split(/\s+/).filter(Boolean);
+  let lines = 1;
+  let lineWidth = 0;
+
+  words.forEach(word => {
+    const wordWidth = word.length * averageGlyphWidth;
+    const nextWidth = lineWidth === 0 ? wordWidth : lineWidth + spaceWidth + wordWidth;
+    if (lineWidth > 0 && nextWidth > textWidth) {
+      lines += 1;
+      lineWidth = wordWidth;
+    } else {
+      lineWidth = nextWidth;
+    }
+  });
+
+  const titleGrowth = 0;
+  return 90 + titleGrowth + Math.min(5, Math.max(2, lines)) * RIBBON.descLine * safeScale;
 }

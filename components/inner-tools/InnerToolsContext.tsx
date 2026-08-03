@@ -92,6 +92,7 @@ type InnerToolsContextValue = {
   deleteNote: (id: string) => Promise<void>;
   gratitudeEntries: GratitudeEntry[];
   upsertGratitudeEntry: (entry: GratitudeEntry) => void;
+  saveGratitudeEntries: (entries: GratitudeEntry[]) => Promise<void>;
   deleteGratitudeEntry: (id: string) => void;
   gratitudeTaskEnabled: boolean;
   setGratitudeTaskEnabled: (enabled: boolean) => void;
@@ -555,6 +556,39 @@ export function InnerToolsProvider({ children }: { children: React.ReactNode }) 
     await refreshInnerTools(db);
   }, [getReadyDb, refreshInnerTools]);
 
+  const saveGratitudeEntries = useCallback(async (entries: GratitudeEntry[]) => {
+    if (entries.length === 0) return;
+    const db = await getReadyDb();
+    const updatedAt = Date.now();
+    await db.withExclusiveTransactionAsync(async transaction => {
+      for (const entry of entries) {
+        await transaction.runAsync(
+          `INSERT INTO gratitude_entries (
+            id, kind, title, content, entry_date, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            kind = excluded.kind,
+            title = excluded.title,
+            content = excluded.content,
+            entry_date = excluded.entry_date,
+            updated_at = excluded.updated_at`,
+          entry.id,
+          normalizeGratitudeKind(entry.kind),
+          entry.title || null,
+          entry.content ?? '',
+          entry.date,
+          entry.createdAt || updatedAt,
+          updatedAt,
+        );
+      }
+    });
+    setGratitudeEntries(current => {
+      const byId = new Map(current.map(entry => [entry.id, entry]));
+      for (const entry of entries) byId.set(entry.id, entry);
+      return [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
+    });
+  }, [getReadyDb]);
+
   const persistDeleteGratitudeEntry = useCallback(async (id: string) => {
     const db = await getReadyDb();
     await db.runAsync('DELETE FROM gratitude_entries WHERE id = ?', id);
@@ -634,6 +668,7 @@ export function InnerToolsProvider({ children }: { children: React.ReactNode }) 
     upsertNote,
     deleteNote,
     gratitudeEntries,
+    saveGratitudeEntries,
     upsertGratitudeEntry: (entry) => {
       setGratitudeEntries(prev => {
         const exists = prev.some(item => item.id === entry.id);
@@ -707,6 +742,7 @@ export function InnerToolsProvider({ children }: { children: React.ReactNode }) 
     persistGratitudeEntry,
     persistGratitudeTask,
     persistIdealSelf,
+    saveGratitudeEntries,
     upsertNote,
   ]);
 

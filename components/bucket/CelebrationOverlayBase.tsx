@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import LottieView from 'lottie-react-native';
 import Reanimated, {
@@ -6,16 +6,24 @@ import Reanimated, {
   Easing,
   runOnJS,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import Svg, { Circle, Path } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { X } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { CHALLENGE_TROPHY_SOURCE } from '@/components/challenges/ChallengeTrophy';
+import FallingConfetti, {
+  GloryRays,
+  ParticleGlyph,
+  VeilBloom,
+  type ParticleShape,
+} from './CelebrationConfetti';
 
 const GOLD = '#C5A059';
 const DEEP_GOLD = '#A9782C';
@@ -29,8 +37,6 @@ const TROPHY_ARRIVAL_END_FRAME = 99;
 const TROPHY_EXIT_START_FRAME = 100;
 const TROPHY_EXIT_END_FRAME = 119;
 const TROPHY_EXIT_DURATION_MS = 760;
-
-type ParticleShape = 'diamond' | 'leaf' | 'dot' | 'ray' | 'ribbon';
 
 type ParticleConfig = {
   angle: number;
@@ -80,54 +86,17 @@ const LIGHT_PARTICLES = PARTICLES.filter((_, index) => (
   [0, 2, 4, 7, 9, 12, 15, 18, 21, 23].includes(index)
 ));
 
+// The burst's job is the pop at zero. Now that paper falls across the whole
+// screen for the whole visit, the duration is carried there — so the ring keeps
+// its silhouette on fourteen pieces instead of twenty-four, and the two systems
+// together cost less than the old one did alone.
+const BURST_PARTICLES = PARTICLES.filter((_, index) => (
+  [0, 2, 3, 5, 6, 8, 10, 12, 14, 16, 18, 20, 21, 23].includes(index)
+));
+
 function clamp01(value: number) {
   'worklet';
   return Math.max(0, Math.min(1, value));
-}
-
-function ParticleGlyph({ shape, color }: { shape: ParticleShape; color: string }) {
-  if (shape === 'ray') {
-    return (
-      <Svg width="100%" height="100%" viewBox="0 0 12 34">
-        <Path d="M6 1.5 C8.4 9.8 8.2 23.9 6 32.5 C3.8 23.9 3.6 9.8 6 1.5 Z" fill={color} />
-        <Path d="M6 5.5 C6.8 12.2 6.8 22 6 28.4" stroke="#FFFDF2" strokeWidth={1.2} strokeLinecap="round" opacity={0.62} />
-      </Svg>
-    );
-  }
-
-  if (shape === 'leaf') {
-    return (
-      <Svg width="100%" height="100%" viewBox="0 0 18 24">
-        <Path d="M9 2 C15 6.8 15.2 16.3 9 22 C2.8 16.3 3 6.8 9 2 Z" fill={color} />
-        <Path d="M9 5.7 C10 10.1 9.9 15.3 9 19" stroke="#FFF9E6" strokeWidth={1.1} strokeLinecap="round" opacity={0.58} />
-      </Svg>
-    );
-  }
-
-  if (shape === 'ribbon') {
-    return (
-      <Svg width="100%" height="100%" viewBox="0 0 34 14">
-        <Path d="M2 8 C9 0 17 16 32 5" fill="none" stroke={color} strokeWidth={4.2} strokeLinecap="round" />
-        <Path d="M4 7.5 C10 2.8 17 12.6 29 5.5" fill="none" stroke="#FFF8E2" strokeWidth={1.3} strokeLinecap="round" opacity={0.72} />
-      </Svg>
-    );
-  }
-
-  if (shape === 'diamond') {
-    return (
-      <Svg width="100%" height="100%" viewBox="0 0 18 18">
-        <Path d="M9 1.5 L16.5 9 L9 16.5 L1.5 9 Z" fill={color} />
-        <Path d="M9 4.3 L13.7 9 L9 13.7 L4.3 9 Z" fill="#FFF9E9" opacity={0.62} />
-      </Svg>
-    );
-  }
-
-  return (
-    <Svg width="100%" height="100%" viewBox="0 0 14 14">
-      <Circle cx={7} cy={7} r={5.2} fill={color} />
-      <Circle cx={5.1} cy={4.7} r={1.35} fill="#FFFDF2" opacity={0.8} />
-    </Svg>
-  );
 }
 
 function ConfettiParticle({
@@ -185,6 +154,76 @@ function ConfettiParticle({
     >
       <ParticleGlyph shape={config.shape} color={config.color} />
     </Reanimated.View>
+  );
+}
+
+// The card's ground is parchment, not paper: the same faint diagonal weave the
+// lit cards across the app wear, so the celebration is cut from the app's own
+// material instead of arriving as a white box.
+function CardWeave() {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <Pattern id="celebration-weave" width={30} height={30} patternUnits="userSpaceOnUse">
+            <Path d="M 0 30 L 30 0" stroke={DEEP_GOLD} strokeOpacity={0.05} strokeWidth={1} />
+          </Pattern>
+        </Defs>
+        <Rect width="100%" height="100%" fill="url(#celebration-weave)" />
+      </Svg>
+    </View>
+  );
+}
+
+// A band of light crossing the card once, the moment it lands. It is what makes
+// a struck surface read as struck rather than printed.
+function CardSheen({ phase }: { phase: SharedValue<number> }) {
+  const style = useAnimatedStyle(() => {
+    const t = phase.value;
+    return {
+      opacity: t < 0.08 ? 0 : t < 0.3 ? (t - 0.08) / 0.22 : Math.max(0, 1 - (t - 0.3) / 0.5),
+      transform: [
+        { rotate: '-18deg' },
+        { translateX: -240 + t * 620 },
+      ],
+    };
+  });
+
+  return (
+    <Reanimated.View pointerEvents="none" style={[s.sheen, style]}>
+      <LinearGradient
+        colors={['rgba(255,255,255,0)', 'rgba(255,252,238,0.86)', 'rgba(255,255,255,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </Reanimated.View>
+  );
+}
+
+// The divider under the title. A solid gold bar was the one blunt thing on the
+// card; this is the app's own rule — two lines fading outward from a struck
+// diamond, the way an engraved page separates a title from its text.
+function TitleRule() {
+  return (
+    <View style={s.rule} pointerEvents="none">
+      <LinearGradient
+        colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.85)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={s.ruleLine}
+      />
+      <Svg width={13} height={13} viewBox="0 0 13 13">
+        <Path d="M6.5 0.6 L12.4 6.5 L6.5 12.4 L0.6 6.5 Z" fill={GOLD} />
+        <Path d="M6.5 3.1 L9.9 6.5 L6.5 9.9 L3.1 6.5 Z" fill="#FFF6DC" />
+      </Svg>
+      <LinearGradient
+        colors={['rgba(197,160,89,0.85)', 'rgba(197,160,89,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={s.ruleLine}
+      />
+    </View>
   );
 }
 
@@ -280,7 +319,11 @@ export default function CelebrationOverlayBase({
   motionProfile?: 'full' | 'light';
 }) {
   const { width, height } = useWindowDimensions();
+  const reduceMotion = useReducedMotion();
   const lottieRef = useRef<LottieView>(null);
+  // The one render this overlay does after mounting: it tells the falling
+  // field to fade out rather than blink off with the card.
+  const [dismissing, setDismissing] = useState(false);
   const closingRef = useRef(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const veil = useSharedValue(0);
@@ -290,7 +333,7 @@ export default function CelebrationOverlayBase({
   const burst = useSharedValue(0);
   const iconPhase = useSharedValue(0);
   const lightMotion = motionProfile === 'light';
-  const particles = lightMotion ? LIGHT_PARTICLES : PARTICLES;
+  const particles = lightMotion ? LIGHT_PARTICLES : BURST_PARTICLES;
 
   useEffect(() => {
     closingRef.current = false;
@@ -365,6 +408,7 @@ export default function CelebrationOverlayBase({
   const handleDismiss = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
+    setDismissing(true);
 
     if (lightMotion) {
       cancelAnimation(burst);
@@ -451,7 +495,12 @@ export default function CelebrationOverlayBase({
 
   return (
     <View pointerEvents="box-none" style={s.wrap}>
-      <Reanimated.View pointerEvents="none" style={[s.veil, veilStyle]} />
+      {/* The veil is a lit room, not a wash: a flat warm base, then a pool of
+          light gathered exactly where the trophy stands. */}
+      <Reanimated.View pointerEvents="none" style={[s.veilLayer, veilStyle]}>
+        <View style={s.veil} />
+        <VeilBloom width={width} height={height} centerY={burstCenterY} />
+      </Reanimated.View>
 
       <View pointerEvents="none" style={s.stage}>
         <View
@@ -473,10 +522,23 @@ export default function CelebrationOverlayBase({
         </View>
 
         <Reanimated.View style={[s.card, cardStyle]}>
+          <LinearGradient
+            colors={['#FFFDF6', '#FFFFFF', '#FFFBF0']}
+            locations={[0, 0.52, 1]}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <CardWeave />
+          <CardSheen phase={burst} />
+
           <View style={s.closeHint}>
             <X s={13} c="#A8A29E" w={2.5} />
           </View>
+
           <Reanimated.View style={[s.trophyStage, iconStyle]}>
+            {/* Light radiating from behind what was earned. */}
+            {!lightMotion && <GloryRays size={150} phase={iconPhase} reduceMotion={reduceMotion} />}
             <View style={s.trophyAura} />
             <View style={s.trophyCircle}>
               {visual ?? (
@@ -493,14 +555,27 @@ export default function CelebrationOverlayBase({
               )}
             </View>
           </Reanimated.View>
+
           <Text style={s.title}>{title}</Text>
-          <View style={s.titleUnderline} />
+          <TitleRule />
           <Text style={s.subtitle}>
             {subtitleStrong ? <Text style={s.subtitleStrong}>{subtitleStrong} </Text> : null}
             {subtitle}
           </Text>
         </Reanimated.View>
       </View>
+
+      {/* Paper falling across the whole screen for as long as you look. It sits
+          above the card, because confetti that stops at the card's edge is a
+          decoration rather than weather. */}
+      {!lightMotion && (
+        <FallingConfetti
+          width={width}
+          height={height}
+          active={!dismissing}
+          reduceMotion={reduceMotion}
+        />
+      )}
 
       <Pressable
         accessibilityRole="button"
@@ -518,9 +593,13 @@ const s = StyleSheet.create({
     zIndex: 5000,
     elevation: 5000,
   },
+  veilLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
   veil: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,252,246,0.62)',
+    backgroundColor: 'rgba(253,248,238,0.72)',
   },
   dismissHit: {
     ...StyleSheet.absoluteFillObject,
@@ -581,17 +660,28 @@ const s = StyleSheet.create({
     width: '82%',
     maxWidth: 322,
     borderRadius: 30,
-    backgroundColor: '#FFFFFF',
+    borderCurve: 'continuous',
+    // The ground is drawn, not filled — see the gradient inside. The colour
+    // here only backs it while the gradient rasterises.
+    backgroundColor: '#FFFDF7',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.24)',
+    borderColor: 'rgba(197,160,89,0.3)',
+    overflow: 'hidden',
     paddingHorizontal: 24,
     paddingTop: 24,
     paddingBottom: 25,
     alignItems: 'center',
     shadowColor: '#8B7354',
     shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.18,
-    shadowRadius: 34,
+    shadowOpacity: 0.2,
+    shadowRadius: 36,
+  },
+  sheen: {
+    position: 'absolute',
+    top: -90,
+    bottom: -90,
+    left: 0,
+    width: 96,
   },
   closeHint: {
     position: 'absolute',
@@ -615,10 +705,10 @@ const s = StyleSheet.create({
   },
   trophyAura: {
     position: 'absolute',
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: 'rgba(197,160,89,0.13)',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,247,222,0.9)',
   },
   trophyCircle: {
     width: 86,
@@ -642,13 +732,13 @@ const s = StyleSheet.create({
     color: '#17130E',
     textAlign: 'center',
   },
-  titleUnderline: {
-    width: 118,
-    height: 3,
-    borderRadius: 999,
-    backgroundColor: GOLD,
-    marginTop: 6,
+  rule: {
+    marginTop: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
+  ruleLine: { width: 56, height: 1 },
   subtitle: {
     marginTop: 13,
     fontFamily: F.serif,

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   Easing,
   interpolateColor,
@@ -33,17 +33,27 @@ import {
 export const IGNITION_MS = 760;
 export const RESTING_MS = 380;
 
-export function useIgnition(running: boolean): SharedValue<number> {
+export function useIgnition(running: boolean): {
+  ignition: SharedValue<number>;
+  animateIgnition: (nextRunning: boolean) => void;
+} {
   const ignition = useSharedValue(running ? 1 : 0);
+  const visualIntentRef = useRef(running);
+
+  const animateIgnition = useCallback((nextRunning: boolean) => {
+    visualIntentRef.current = nextRunning;
+    ignition.value = withTiming(nextRunning ? 1 : 0, {
+      duration: nextRunning ? IGNITION_MS : RESTING_MS,
+      easing: nextRunning ? Easing.out(Easing.cubic) : Easing.inOut(Easing.quad),
+    });
+  }, [ignition]);
 
   useEffect(() => {
-    ignition.value = withTiming(running ? 1 : 0, {
-      duration: running ? IGNITION_MS : RESTING_MS,
-      easing: running ? Easing.out(Easing.cubic) : Easing.inOut(Easing.quad),
-    });
-  }, [ignition, running]);
+    if (visualIntentRef.current === running) return;
+    animateIgnition(running);
+  }, [animateIgnition, running]);
 
-  return ignition;
+  return { ignition, animateIgnition };
 }
 
 /**

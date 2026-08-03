@@ -1,22 +1,21 @@
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
-import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
+import Animated, {
+  FadeIn,
+  LinearTransition,
+  useReducedMotion,
+} from 'react-native-reanimated';
 import {
   Activity,
-  AlertTriangle,
-  CheckSmall,
   ChevronDown,
   ChevronRight,
   Lock,
 } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { C, F } from '@/constants/tokens';
-import { CATEGORY_TINTS, ESSENTIAL_APP_OPTIONS, PREVIEW_APPS } from './focusContent';
+import { ESSENTIAL_APP_OPTIONS, PREVIEW_APPS } from './focusContent';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
-import { FocusMeter } from './FocusMeter';
 import {
   ALWAYS_BLOCKED_GROUP_ID,
   formatMinutesShort,
@@ -28,25 +27,36 @@ import {
   type RuleMode,
 } from './dayPlanStore';
 import {
+  focusBoundaryAppearance,
+  focusInheritedBoundaryLabel,
+  focusRailFraction,
+  focusRemainingMinutes,
+  focusSecondarySignal,
+  focusSecondarySignalLabel,
+  focusShowsProgressRail,
+  focusStatusLabel,
   sortUsageRows,
   usageActivityState,
-  usageBoundaryState,
+  type FocusBoundaryAppearance,
   type UsageActivityState,
-  type UsageBoundaryState,
+  type UsageBoundaryMode,
 } from './todayUsageModel';
+import GroupSeal from './GroupSeal';
+import {
+  boundaryTone,
+  BoundaryChip,
+  BoundaryRail,
+  BoundarySignalChip,
+  CardWeave,
+  type BoundaryMarker,
+} from './focusBoundaryShell';
 
 const APP_NAMES: Record<string, string> = Object.fromEntries([
   ...PREVIEW_APPS.map(app => [app.id, app.name]),
   ...ESSENTIAL_APP_OPTIONS.map(app => [app.id, app.name]),
 ]);
 
-const OVER = '#A54555';
-const OVER_BG = '#FFF2F3';
-const WITHIN = '#317766';
-const WITHIN_BG = '#EDF7F3';
 const INK_SOFT = '#5E574C';
-const BLOCKED_COLOR = '#A24351';
-const BLOCKED_TINT = '#FBE9EC';
 
 const GROUP_EMOJI: Record<string, string> = {
   social: 'mobile-phone',
@@ -56,29 +66,6 @@ const GROUP_EMOJI: Record<string, string> = {
   shopping: 'money-bag',
   dating: 'red-heart',
 };
-
-function withAlpha(hex: string, alpha: number) {
-  const normalized = hex.replace('#', '');
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(169,134,63,${alpha})`;
-  const value = Number.parseInt(normalized, 16);
-  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
-}
-
-function GroupWeave({ color }: { color: string }) {
-  const patternId = `today-group-weave-${color.replace(/[^a-z0-9]/gi, '')}`;
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
-        <Defs>
-          <Pattern id={patternId} width={30} height={30} patternUnits="userSpaceOnUse">
-            <Path d="M 0 30 L 30 0" stroke={color} strokeOpacity={0.05} strokeWidth={1} />
-          </Pattern>
-        </Defs>
-        <Rect width="100%" height="100%" fill={`url(#${patternId})`} />
-      </Svg>
-    </View>
-  );
-}
 
 type AppAnalyticsRow = {
   appId: string;
@@ -102,54 +89,189 @@ function modeFor(rule: { mode?: RuleMode; dailyMinutes?: number | null; minutes?
   return minutes == null ? 'noLimit' : 'limit';
 }
 
-function compactStatusLabel(state: UsageBoundaryState) {
-  if (state === 'over') return 'OVER';
-  if (state === 'within') return 'OK';
-  if (state === 'blocked') return 'BLOCKED';
-  if (state === 'planned') return 'LIMIT SET';
-  return 'OPEN';
+// ---------------------------------------------------------------------------
+// View models
+//
+// Everything the cards need is resolved once, here, so a usage refresh cannot
+// re-derive state inside render and so the group's colour, its chip, its rail
+// and its accessibility label can never disagree with one another.
+// ---------------------------------------------------------------------------
+
+const OTHER_ACTIVITY_ID = '__other';
+
+type AppViewModel = {
+  id: string;
+  name: string;
+  appearance: FocusBoundaryAppearance;
+  statusLabel: string;
+  boundaryLabel: string;
+  usedLabel: string;
+  usedMinutes: number | null;
+  limitMinutes: number | null;
+  showRail: boolean;
+  railFraction: number;
+  marker: BoundaryMarker;
+  accessibilityLabel: string;
+};
+
+type GroupViewModel = {
+  id: string;
+  name: string;
+  emoji?: string;
+  appearance: FocusBoundaryAppearance;
+  statusLabel: string;
+  detail: string;
+  usedLabel: string;
+  usedMinutes: number | null;
+  limitMinutes: number | null;
+  strengthLabel: string | null;
+  showRail: boolean;
+  railFraction: number;
+  marker: BoundaryMarker;
+  sealMarker: 'none' | 'lock' | 'warning';
+  signalLabel: string | null;
+  apps: AppViewModel[];
+  activityState: UsageActivityState;
+  isAlwaysBlocked: boolean;
+};
+
+const shortMinutes = (value: number) => formatMinutesShort(value);
+
+function markerFor(appearance: FocusBoundaryAppearance): BoundaryMarker {
+  if (appearance === 'blocked') return 'lock';
+  if (appearance === 'overLimit') return 'warning';
+  if (appearance === 'limitActive') return 'check';
+  return 'none';
 }
 
-function boundaryDetail(
-  state: UsageBoundaryState,
+function sealMarkerFor(appearance: FocusBoundaryAppearance): 'none' | 'lock' | 'warning' {
+  if (appearance === 'blocked') return 'lock';
+  if (appearance === 'overLimit') return 'warning';
+  return 'none';
+}
+
+function groupDetailFor(
+  appearance: FocusBoundaryAppearance,
   limit: number | null,
   used: number | null,
-  fallback: string
-) {
-  if (state === 'over' && limit != null && used != null) {
-    return `${formatMinutesShort(Math.max(0, used - limit))} over · ${formatMinutesShort(limit)} limit`;
+  appCount: number
+): string {
+  switch (appearance) {
+    case 'pending':
+      return 'Waiting for private iPhone activity';
+    case 'blocked':
+      return 'Closed for this plan';
+    case 'noLimit':
+      return `Open use · ${appCount} ${appCount === 1 ? 'app' : 'apps'}`;
+    case 'limitActive':
+      return used === 0
+        ? `${formatMinutesShort(limit ?? 0)} daily limit`
+        : `${formatMinutesShort(focusRemainingMinutes(limit, used))} left · ${formatMinutesShort(limit ?? 0)} limit`;
+    case 'atLimit':
+      return `Limit reached · ${formatMinutesShort(limit ?? 0)} limit`;
+    case 'overLimit':
+      return `${formatMinutesShort(limit ?? 0)} limit · recorded today`;
   }
-  if (state === 'within' && limit != null && used != null) {
-    return `${formatMinutesShort(Math.max(0, limit - used))} left · ${formatMinutesShort(limit)} limit`;
-  }
-  if (state === 'planned' && limit != null) return `${formatMinutesShort(limit)} daily limit`;
-  if (state === 'blocked') return 'Closed for this period';
-  return fallback;
 }
 
-function StatusMark({ state }: { state: UsageBoundaryState }) {
-  const over = state === 'over';
-  const within = state === 'within';
-  const blocked = state === 'blocked';
-  return (
-    <View style={[
-      s.statusMark,
-      over && s.statusMarkOver,
-      within && s.statusMarkWithin,
-      blocked && s.statusMarkBlocked,
-    ]}>
-      {within && <CheckSmall s={9} c={WITHIN} w={3} />}
-      {over && <AlertTriangle s={9} c={OVER} w={2.3} />}
-      {blocked && <Lock s={8.5} c={INK_SOFT} w={2.2} />}
-      <Text style={[
-        s.statusMarkText,
-        over && s.statusMarkTextOver,
-        within && s.statusMarkTextWithin,
-      ]}>
-        {compactStatusLabel(state)}
-      </Text>
-    </View>
+function buildAppViewModel(
+  app: AppAnalyticsRow,
+  groupAppearance: FocusBoundaryAppearance,
+  groupMode: UsageBoundaryMode
+): AppViewModel {
+  const ownMode = app.rule ? modeFor(app.rule) : null;
+  const ownLimit = app.rule?.minutes ?? null;
+  // An app inside a blocked group is closed by the group; its own dormant rule
+  // must not be shown as if it were doing the work.
+  const inheritsGroupBlock = groupMode === 'blocked' || groupAppearance === 'blocked';
+  const effectiveMode: UsageBoundaryMode = inheritsGroupBlock
+    ? 'blocked'
+    : ownMode ?? 'noLimit';
+  const effectiveLimit = inheritsGroupBlock ? null : ownLimit;
+
+  const appearance = focusBoundaryAppearance({
+    mode: effectiveMode,
+    limitMinutes: effectiveLimit,
+    usedMinutes: app.usedMinutes,
+  });
+
+  const boundaryLabel = ownMode && !inheritsGroupBlock
+    ? ownMode === 'blocked'
+      ? 'BLOCKED'
+      : ownLimit == null
+        ? focusInheritedBoundaryLabel(groupAppearance, groupMode)
+        : `${formatMinutesShort(ownLimit)} APP LIMIT`
+    : focusInheritedBoundaryLabel(groupAppearance, groupMode);
+
+  const usedLabel = app.usedMinutes == null ? '—' : formatMinutesShort(app.usedMinutes);
+  const statusLabel = focusStatusLabel(
+    appearance,
+    { limitMinutes: effectiveLimit, usedMinutes: app.usedMinutes },
+    shortMinutes
   );
+
+  return {
+    id: app.appId,
+    name: app.name,
+    appearance,
+    statusLabel,
+    boundaryLabel,
+    usedLabel,
+    usedMinutes: app.usedMinutes,
+    limitMinutes: effectiveLimit,
+    showRail: focusShowsProgressRail(appearance, effectiveLimit),
+    railFraction: focusRailFraction(effectiveLimit, app.usedMinutes),
+    marker: markerFor(appearance),
+    accessibilityLabel: `${app.name}, ${statusLabel}, ${usedLabel}${
+      effectiveLimit != null ? ` of ${formatMinutesShort(effectiveLimit)}` : ''
+    }, ${boundaryLabel.toLowerCase()}`,
+  };
+}
+
+function buildGroupViewModel(row: GroupAnalyticsRow): GroupViewModel {
+  const mode = modeFor(row.rule) as UsageBoundaryMode;
+  const limit = row.rule.dailyMinutes ?? null;
+  const appearance = focusBoundaryAppearance({
+    mode,
+    limitMinutes: limit,
+    usedMinutes: row.usedMinutes,
+  });
+  const apps = row.apps.map(app => buildAppViewModel(app, appearance, mode));
+  const signal = focusSecondarySignal({
+    appearance,
+    usedMinutes: row.usedMinutes,
+    childAppearances: apps.map(app => app.appearance),
+  });
+  const statusLabel = focusStatusLabel(
+    appearance,
+    { limitMinutes: limit, usedMinutes: row.usedMinutes },
+    shortMinutes
+  );
+  const usedLabel = row.usedMinutes == null ? '—' : formatMinutesShort(row.usedMinutes);
+  const isAlwaysBlocked = row.groupId === ALWAYS_BLOCKED_GROUP_ID;
+
+  return {
+    id: row.groupId,
+    name: row.name,
+    emoji: GROUP_EMOJI[row.groupId],
+    appearance,
+    statusLabel,
+    detail: groupDetailFor(appearance, limit, row.usedMinutes, row.apps.length),
+    usedLabel,
+    usedMinutes: row.usedMinutes,
+    limitMinutes: limit,
+    strengthLabel: mode === 'noLimit'
+      ? null
+      : row.rule.strength === 'strict' ? 'STRICT' : 'LOOSE',
+    showRail: focusShowsProgressRail(appearance, limit),
+    railFraction: focusRailFraction(limit, row.usedMinutes),
+    marker: markerFor(appearance),
+    sealMarker: sealMarkerFor(appearance),
+    signalLabel: focusSecondarySignalLabel(signal, shortMinutes),
+    apps,
+    activityState: row.activityState,
+    isAlwaysBlocked,
+  };
 }
 
 function buildRows({
@@ -175,7 +297,8 @@ function buildRows({
     ...Object.keys(plan.groupCatalog),
     ...rules.map(rule => rule.groupId),
     ...Object.keys(groupMinutes),
-  ]));
+  // Apple's own bucket is not a plan group and must never be treated as one.
+  ])).filter(groupId => groupId !== OTHER_ACTIVITY_ID);
 
   const regularRows = sortUsageRows(groupIds.map(groupId => {
     const rule = rulesByGroup.get(groupId) ?? {
@@ -248,172 +371,116 @@ function buildRows({
   }];
 }
 
-function UsageShareRail({ rows }: { rows: GroupAnalyticsRow[] }) {
+function UsageShareRail({ rows }: { rows: GroupViewModel[] }) {
   const total = rows.reduce((sum, row) => sum + (row.usedMinutes ?? 0), 0);
   return (
     <View style={s.shareRail}>
-      {total > 0 ? rows.map(row => {
-        const tint = CATEGORY_TINTS[row.groupId] ?? { bg: C.goldLight, color: C.goldDark };
-        return (
-          <View
-            key={row.groupId}
-            style={[s.shareSegment, { backgroundColor: tint.color, flexGrow: row.usedMinutes ?? 0 }]}
-          />
-        );
-      }) : <View style={s.shareRailEmpty} />}
+      {total > 0 ? rows.map(row => (
+        <View
+          key={row.id}
+          style={[
+            s.shareSegment,
+            { backgroundColor: boundaryTone(row.appearance).accent, flexGrow: row.usedMinutes ?? 0 },
+          ]}
+        />
+      )) : <View style={s.shareRailEmpty} />}
     </View>
   );
 }
 
-function AppRow({
-  app,
-  groupRule,
-  tint,
-}: {
-  app: AppAnalyticsRow;
-  groupRule: GroupRule;
-  tint: { bg: string; color: string };
-}) {
-  const appMode = app.rule ? modeFor(app.rule) : null;
-  const appLimit = app.rule?.minutes ?? null;
-  const appState = appMode ? usageBoundaryState(appMode, appLimit, app.usedMinutes) : null;
-  const inheritedMode = modeFor(groupRule);
-  const inheritedLabel = inheritedMode === 'blocked'
-    ? 'Group is blocked'
-    : inheritedMode === 'limit'
-      ? 'Uses group boundary'
-      : 'No individual limit';
-  const rightDetail = appState === 'over' && appLimit != null && app.usedMinutes != null
-    ? `${formatMinutesShort(Math.max(0, app.usedMinutes - appLimit))} over`
-    : appState === 'within' && appLimit != null && app.usedMinutes != null
-      ? `${formatMinutesShort(Math.max(0, appLimit - app.usedMinutes))} left`
-      : appState
-        ? compactStatusLabel(appState)
-        : inheritedLabel;
+// One application inside an expanded group, struck from the same ribbon the
+// group sheet's app cards use.
+const AppRow = memo(function AppRow({ app }: { app: AppViewModel }) {
+  const tone = boundaryTone(app.appearance);
+  const lit = app.appearance !== 'pending' && app.appearance !== 'noLimit';
 
   return (
-    <View style={s.appRow}>
-      <View style={[s.appAvatar, { backgroundColor: tint.bg }]}>
-        <Text style={[s.appAvatarText, { color: tint.color }]}>{app.name.slice(0, 1).toUpperCase()}</Text>
+    <View
+      style={[s.appRow, lit && { backgroundColor: tone.ground, borderColor: tone.edge }]}
+      accessible
+      accessibilityLabel={app.accessibilityLabel}
+    >
+      <View style={[s.appAvatar, { backgroundColor: tone.badge, borderColor: tone.edge }]}>
+        <Text style={[s.appAvatarText, { color: tone.accent }]}>
+          {app.name.slice(0, 1).toUpperCase()}
+        </Text>
       </View>
       <View style={s.appMain}>
         <View style={s.appTopRow}>
-          <Text style={s.appName} numberOfLines={1}>{app.name}</Text>
-          <Text style={[s.appValue, appState === 'over' && s.appValueOver]} numberOfLines={1}>
-            {app.usedMinutes == null ? '—' : formatMinutesShort(app.usedMinutes)}
-          </Text>
+          <Text style={[s.appName, { color: tone.ink }]} numberOfLines={1}>{app.name}</Text>
+          <Text style={[s.appValue, { color: tone.ink }]} numberOfLines={1}>{app.usedLabel}</Text>
         </View>
         <View style={s.appMetaRow}>
-          <Text style={s.appBoundary} numberOfLines={1}>
-            {app.rule
-              ? appMode === 'blocked'
-                ? 'Blocked'
-                : appLimit == null
-                  ? 'No limit'
-                  : `${formatMinutesShort(appLimit)} app limit`
-              : inheritedLabel}
+          <Text style={[s.appBoundary, { color: tone.body }]} numberOfLines={1}>
+            {app.boundaryLabel}
           </Text>
-          {appState && appState !== 'open' && (
-            <Text
-              style={[
-                s.appState,
-                appState === 'over' && s.appStateOver,
-                appState === 'blocked' && s.appStateBlocked,
-              ]}
-              numberOfLines={1}
-            >
-              {rightDetail.toUpperCase()}
-            </Text>
-          )}
-        </View>
-        {appMode === 'limit' && appLimit != null && (
-          <FocusMeter
-            fraction={app.usedMinutes == null ? 0 : app.usedMinutes / appLimit}
-            fill={appState === 'over' ? OVER : tint.color}
-            track="#ECE8DF"
-            height={3}
-            style={s.appMeter}
+          <BoundaryChip
+            appearance={app.appearance}
+            label={app.statusLabel}
+            marker={app.marker}
           />
+        </View>
+        {app.showRail && (
+          <BoundaryRail fraction={app.railFraction} tone={tone} height={3} style={s.appMeter} />
         )}
       </View>
     </View>
   );
-}
+});
 
-function AppsPanel({ row }: { row: GroupAnalyticsRow }) {
-  const tint = CATEGORY_TINTS[row.groupId] ?? { bg: C.goldLight, color: C.goldDark };
+const AppsPanel = memo(function AppsPanel({ group }: { group: GroupViewModel }) {
+  const reduceMotion = useReducedMotion();
+  const tone = boundaryTone(group.appearance);
   return (
-    <Animated.View entering={FadeIn.duration(170)} style={s.appsPanel}>
+    <Animated.View
+      entering={reduceMotion ? undefined : FadeIn.duration(200)}
+      style={s.appsPanel}
+    >
       <View style={s.appsHeader}>
-        <View style={[s.appsHeaderIcon, { backgroundColor: tint.bg }]}>
-          <Activity s={14} c={tint.color} w={2} />
+        <View style={[s.appsHeaderIcon, { backgroundColor: tone.badge }]}>
+          <Activity s={14} c={tone.accent} w={2} />
         </View>
         <View style={s.appsHeaderCopy}>
           <Text style={s.appsHeaderTitle}>Apps in this group</Text>
           <Text style={s.appsHeaderText}>RANKED BY USE</Text>
         </View>
         <View style={s.appsHeaderCountBubble}>
-          <Text style={s.appsHeaderCount}>{row.apps.length}</Text>
+          <Text style={s.appsHeaderCount}>{group.apps.length}</Text>
         </View>
       </View>
-      {row.apps.length === 0 ? (
+      {group.apps.length === 0 ? (
         <Text style={s.appsEmpty}>No private app selections are stored for this group.</Text>
-      ) : row.apps.map((app, appIndex) => (
-        <View key={app.appId}>
-          {appIndex > 0 && <View style={s.appSeparator} />}
-          <AppRow app={app} groupRule={row.rule} tint={tint} />
+      ) : (
+        <View style={s.appsStack}>
+          {group.apps.map(app => <AppRow key={app.id} app={app} />)}
         </View>
-      ))}
+      )}
     </Animated.View>
   );
-}
+});
 
-function GroupCard({
+// One card for every state. There used to be two — a lit one for groups with
+// time on them and a quiet one for the rest — which meant the same group
+// changed shape during the day rather than changing state.
+const PlanGroupCard = memo(function PlanGroupCard({
   expanded,
+  group,
   onToggle,
-  row,
 }: {
   expanded: boolean;
+  group: GroupViewModel;
   onToggle: () => void;
-  row: GroupAnalyticsRow;
 }) {
-  const tint = CATEGORY_TINTS[row.groupId] ?? { bg: C.goldLight, color: C.goldDark };
-  const mode = modeFor(row.rule);
-  const emoji = GROUP_EMOJI[row.groupId];
-  const limit = row.rule.dailyMinutes;
-  const state = usageBoundaryState(mode, limit, row.usedMinutes);
-  const caption = boundaryDetail(
-    state,
-    limit,
-    row.usedMinutes,
-    `${row.apps.length} ${row.apps.length === 1 ? 'app' : 'apps'} in this group`
-  );
-  const over = state === 'over';
-  const lit = mode !== 'noLimit';
-  const accent = mode === 'blocked' ? BLOCKED_COLOR : tint.color;
+  const reduceMotion = useReducedMotion();
+  const tone = boundaryTone(group.appearance);
+  const textured = group.appearance !== 'pending' && group.appearance !== 'noLimit';
 
   return (
     <Animated.View
-      layout={LinearTransition.duration(190)}
-      style={[
-        s.groupCard,
-        lit && { borderColor: withAlpha(accent, 0.34) },
-      ]}
+      layout={reduceMotion ? undefined : LinearTransition.duration(200)}
+      style={[s.groupCard, { backgroundColor: tone.ground, borderColor: tone.edge }]}
     >
-      {lit && (
-        <>
-          <LinearGradient
-            pointerEvents="none"
-            colors={mode === 'blocked'
-              ? [BLOCKED_TINT, '#FFFAFB', '#FFFDFD']
-              : [withAlpha(accent, 0.13), '#FFFDFA', '#FFFEFC']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <GroupWeave color={accent} />
-        </>
-      )}
+      {textured && <CardWeave color={tone.accent} />}
       <TouchableOpacity
         style={s.groupPressable}
         activeOpacity={0.76}
@@ -421,58 +488,56 @@ function GroupCard({
         haptic="selection"
         accessibilityRole="button"
         accessibilityState={{ expanded }}
-        accessibilityLabel={`${row.name}, ${row.usedMinutes == null ? 'usage pending' : formatMinutesShort(row.usedMinutes)}, ${compactStatusLabel(state)}`}
+        accessibilityLabel={`${group.name}, ${group.statusLabel}, ${group.usedLabel}${
+          group.limitMinutes != null ? ` of ${formatMinutesShort(group.limitMinutes)}` : ''
+        }${group.signalLabel ? `, ${group.signalLabel}` : ''}, ${
+          expanded ? 'expanded' : 'collapsed'
+        }, ${group.apps.length} ${group.apps.length === 1 ? 'app' : 'apps'}`}
       >
         <View style={s.groupHeader}>
-          <View style={[s.groupAvatar, { backgroundColor: tint.bg, borderColor: withAlpha(tint.color, 0.24) }]}>
-            {mode === 'blocked'
-              ? <Lock s={19} c={BLOCKED_COLOR} w={2.2} />
-              : emoji
-                ? <NotoEmoji name={emoji} size={26} />
-                : <Text style={[s.groupAvatarText, { color: tint.color }]}>{row.name.slice(0, 1).toUpperCase()}</Text>}
-          </View>
+          <GroupSeal
+            groupId={group.id}
+            name={group.name}
+            icon={group.emoji}
+            size={40}
+            tone={{ color: tone.accent, bg: tone.badge }}
+            marker={group.sealMarker}
+          />
           <View style={s.groupTitleWrap}>
             <View style={s.groupTitleRow}>
-              <Text style={s.groupName} numberOfLines={1}>{row.name}</Text>
-              {mode !== 'noLimit' && (
-                <View style={[
-                  s.strengthChip,
-                  row.rule.strength === 'strict' ? s.strengthChipStrict : s.strengthChipLoose,
-                ]}>
-                  <Text style={[
-                    s.strengthChipText,
-                    row.rule.strength === 'strict' ? s.strengthChipTextStrict : s.strengthChipTextLoose,
-                  ]}>
-                    {row.rule.strength === 'strict' ? 'STRICT' : 'LOOSE'}
-                  </Text>
+              <Text style={[s.groupName, { color: tone.ink }]} numberOfLines={1}>{group.name}</Text>
+              {group.strengthLabel && (
+                <View style={s.strengthChip}>
+                  <Text style={s.strengthChipText}>{group.strengthLabel}</Text>
                 </View>
               )}
             </View>
-            <Text style={[s.groupCaption, over && s.groupCaptionOver]} numberOfLines={1}>{caption}</Text>
+            <Text style={[s.groupCaption, { color: tone.body }]} numberOfLines={1}>
+              {group.detail}
+            </Text>
           </View>
           <View style={s.groupValueWrap}>
-            <Text style={[s.groupValue, over && s.groupValueOver]} numberOfLines={1}>
-              {row.usedMinutes == null ? '—' : formatMinutesShort(row.usedMinutes)}
+            <Text style={[s.groupValue, { color: tone.ink }]} numberOfLines={1}>
+              {group.usedLabel}
             </Text>
-            <StatusMark state={state} />
+            <BoundaryChip
+              appearance={group.appearance}
+              label={group.statusLabel}
+              marker={group.marker}
+            />
           </View>
         </View>
 
-        {mode === 'limit' && limit != null && (
-          <FocusMeter
-            fraction={row.usedMinutes == null ? 0 : row.usedMinutes / limit}
-            fill={over ? OVER : accent}
-            track="rgba(40,33,24,0.08)"
-            height={6}
-            live={row.activityState === 'active' && !over}
-            style={s.groupMeter}
-          />
+        {group.showRail && (
+          <BoundaryRail fraction={group.railFraction} tone={tone} height={6} style={s.groupMeter} />
         )}
 
         <View style={s.groupFooter}>
-          <View style={[s.groupMiniDot, { backgroundColor: over ? OVER : accent }]} />
+          {group.signalLabel
+            ? <BoundarySignalChip label={group.signalLabel} tone={tone} />
+            : <View style={[s.groupMiniDot, { backgroundColor: tone.accent }]} />}
           <Text style={s.groupFooterText} numberOfLines={1}>
-            {expanded ? 'Hide app detail' : `View ${row.apps.length} ${row.apps.length === 1 ? 'app' : 'apps'}`}
+            {expanded ? 'Hide app detail' : `View ${group.apps.length} ${group.apps.length === 1 ? 'app' : 'apps'}`}
           </Text>
           <View style={[s.chevronButton, expanded && s.chevronButtonOpen]}>
             {expanded
@@ -482,111 +547,57 @@ function GroupCard({
         </View>
       </TouchableOpacity>
 
-      {expanded && <AppsPanel row={row} />}
+      {expanded && <AppsPanel group={group} />}
     </Animated.View>
+  );
+});
+
+// Apple's own bucket. Not a plan group: no rule, no state, no child counting.
+function OtherActivityRow({ minutes }: { minutes: number | null }) {
+  const tone = boundaryTone('noLimit');
+  return (
+    <View
+      style={[s.otherRow, { borderColor: tone.edge }]}
+      accessible
+      accessibilityLabel={`Other activity, ${
+        minutes == null ? 'usage pending' : formatMinutesShort(minutes)
+      }, outside your plan groups`}
+    >
+      <View style={[s.otherSeat, { backgroundColor: tone.badge }]}>
+        <Activity s={15} c={tone.accent} w={2} />
+      </View>
+      <View style={s.otherCopy}>
+        <Text style={s.otherName} numberOfLines={1}>Other activity</Text>
+        <Text style={s.otherMeta} numberOfLines={1}>Outside your plan groups</Text>
+      </View>
+      <Text style={s.otherValue} numberOfLines={1}>
+        {minutes == null ? '—' : formatMinutesShort(minutes)}
+      </Text>
+    </View>
   );
 }
 
-function InactiveGroupCard({
-  expanded,
-  onToggle,
-  row,
-}: {
-  expanded: boolean;
-  onToggle: () => void;
-  row: GroupAnalyticsRow;
-}) {
-  const tint = CATEGORY_TINTS[row.groupId] ?? { bg: C.goldLight, color: C.goldDark };
-  const mode = modeFor(row.rule);
-  const emoji = GROUP_EMOJI[row.groupId];
-  const limit = row.rule.dailyMinutes;
-  const pending = row.activityState === 'pending';
-  const protectedGroup = mode === 'blocked';
-  const lit = mode !== 'noLimit';
-  const boundary = mode === 'blocked'
-      ? 'Blocked'
-    : mode === 'limit' && limit != null
-      ? `${formatMinutesShort(limit)} limit`
-      : 'No limit';
-  const stateLabel = pending ? 'PENDING' : protectedGroup ? 'PROTECTED' : 'INACTIVE';
-  const accent = protectedGroup ? BLOCKED_COLOR : tint.color;
+// An Essentials-only plan has no group boundaries to report on, so the group
+// list is replaced by the one fact that is true: everything else is closed.
+function EssentialsOnlyCard() {
+  const tone = boundaryTone('blocked');
   return (
-    <Animated.View
-      layout={LinearTransition.duration(190)}
-      style={[
-        s.inactiveCard,
-        lit && { borderColor: withAlpha(accent, 0.34) },
-      ]}
+    <View
+      style={[s.essentialsCard, { backgroundColor: tone.ground, borderColor: tone.edge }]}
+      accessible
+      accessibilityLabel="Essentials only. Only essential apps are available during this plan."
     >
-      {lit && (
-        <>
-          <LinearGradient
-            pointerEvents="none"
-            colors={protectedGroup
-              ? [BLOCKED_TINT, '#FFFAFB', '#FFFDFD']
-              : [withAlpha(accent, 0.13), '#FFFDFA', '#FFFEFC']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <GroupWeave color={accent} />
-        </>
-      )}
-      <TouchableOpacity
-        style={s.inactiveRow}
-        activeOpacity={0.78}
-        onPress={onToggle}
-        haptic="selection"
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        accessibilityLabel={`${row.name}, ${pending ? 'usage pending' : protectedGroup ? 'protected with no use today' : 'not used today'}, ${boundary}`}
-      >
-        <View style={[s.inactiveAvatar, { backgroundColor: tint.bg, borderColor: withAlpha(tint.color, 0.2) }]}>
-          {mode === 'blocked'
-            ? <Lock s={18} c={BLOCKED_COLOR} w={2.1} />
-            : emoji
-              ? <NotoEmoji name={emoji} size={25} />
-              : <Text style={[s.inactiveAvatarText, { color: tint.color }]}>{row.name.slice(0, 1).toUpperCase()}</Text>}
-        </View>
-        <View style={s.inactiveCopy}>
-          <View style={s.inactiveTitleRow}>
-            <Text style={s.inactiveName} numberOfLines={1}>{row.name}</Text>
-            {lit && (
-              <View style={[
-                s.strengthChip,
-                row.rule.strength === 'strict' ? s.strengthChipStrict : s.strengthChipLoose,
-              ]}>
-                <Text style={[
-                  s.strengthChipText,
-                  row.rule.strength === 'strict' ? s.strengthChipTextStrict : s.strengthChipTextLoose,
-                ]}>
-                  {row.rule.strength === 'strict' ? 'STRICT' : 'LOOSE'}
-                </Text>
-              </View>
-            )}
-          </View>
-          <View style={s.inactiveMetaRow}>
-            <Text style={s.inactiveBoundary} numberOfLines={1}>{boundary}</Text>
-            <View style={s.inactiveMetaDot} />
-            <Text style={s.inactiveAppCount} numberOfLines={1}>
-              {row.apps.length} {row.apps.length === 1 ? 'app' : 'apps'}
-            </Text>
-          </View>
-        </View>
-        <View style={s.inactiveValueWrap}>
-          <Text style={s.inactiveValue}>{row.usedMinutes == null ? '—' : formatMinutesShort(row.usedMinutes)}</Text>
-          <View style={[s.inactiveStatePill, protectedGroup && s.inactiveStatePillProtected]}>
-            <Text style={[s.inactiveState, protectedGroup && s.inactiveStateProtected]}>{stateLabel}</Text>
-          </View>
-        </View>
-        <View style={[s.inactiveChevron, expanded && s.inactiveChevronOpen]}>
-          {expanded
-            ? <ChevronDown s={13} c={INK_SOFT} w={2.2} />
-            : <ChevronRight s={13} c={INK_SOFT} w={2.2} />}
-        </View>
-      </TouchableOpacity>
-      {expanded && <AppsPanel row={row} />}
-    </Animated.View>
+      <CardWeave color={tone.accent} />
+      <View style={[s.essentialsSeal, { backgroundColor: tone.accent }]}>
+        <Lock s={19} c="#FFFFFF" w={2.4} />
+      </View>
+      <View style={s.essentialsCopy}>
+        <Text style={[s.essentialsTitle, { color: tone.ink }]}>ESSENTIALS ONLY</Text>
+        <Text style={[s.essentialsBody, { color: tone.body }]}>
+          Only essential apps are available during this plan.
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -595,41 +606,42 @@ function TodayAlwaysBlockedCard({
   row,
 }: {
   onPress: () => void;
-  row: GroupAnalyticsRow;
+  row: GroupViewModel;
 }) {
+  const tone = boundaryTone(row.appearance);
   const appLabel = `${row.apps.length} ${row.apps.length === 1 ? 'app' : 'apps'}`;
-  const usageLabel = row.usedMinutes == null ? 'usage pending' : `${formatMinutesShort(row.usedMinutes)} today`;
+  // Protected, never "over": the report counts the whole day, including any
+  // minutes spent before this plan took hold.
+  const statusLabel = row.appearance === 'pending'
+    ? 'PENDING'
+    : row.signalLabel ?? 'PROTECTED';
 
   return (
     <TouchableOpacity
-      style={s.alwaysBlockedCard}
+      style={[s.alwaysBlockedCard, { backgroundColor: tone.ground, borderColor: tone.edge }]}
       onPress={onPress}
       activeOpacity={0.8}
       haptic="selection"
       accessibilityRole="button"
-      accessibilityLabel={`Always Blocked, ${appLabel}, ${usageLabel}. Open Always Blocked settings.`}
+      accessibilityLabel={`Always Blocked, ${appLabel}, ${statusLabel}. Open Always Blocked settings.`}
     >
-      <LinearGradient
-        colors={['#FBEDF0', '#FEF8F9', '#FFFDFD']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <GroupWeave color={BLOCKED_COLOR} />
-      <View style={s.alwaysBlockedSeal}>
-        <NotoEmoji name="shield" size={26} />
+      {row.appearance !== 'pending' && <CardWeave color={tone.accent} />}
+      <View style={[s.alwaysBlockedSeal, { borderColor: tone.edge, backgroundColor: tone.badge }]}>
+        <Lock s={19} c={tone.accent} w={2.3} />
       </View>
       <View style={s.alwaysBlockedCopy}>
         <View style={s.alwaysBlockedTitleRow}>
           <Text style={s.alwaysBlockedTitle} numberOfLines={1}>Always Blocked</Text>
-          <View style={s.alwaysBlockedSystemBadge}>
-            <Text style={s.alwaysBlockedSystemText}>SYSTEM</Text>
+          <View style={[s.alwaysBlockedSystemBadge, { backgroundColor: tone.badge, borderColor: tone.edge }]}>
+            <Text style={[s.alwaysBlockedSystemText, { color: tone.accent }]} numberOfLines={1}>
+              {statusLabel}
+            </Text>
           </View>
         </View>
-        <Text style={s.alwaysBlockedMeta} numberOfLines={1}>{appLabel} · {usageLabel} · managed globally</Text>
+        <Text style={s.alwaysBlockedMeta} numberOfLines={1}>{appLabel} · managed globally</Text>
       </View>
-      <View style={s.alwaysBlockedArrow}>
-        <ChevronRight s={17} c="#A65A69" w={2.2} />
+      <View style={[s.alwaysBlockedArrow, { borderColor: tone.edge }]}>
+        <ChevronRight s={17} c={tone.accent} w={2.2} />
       </View>
     </TouchableOpacity>
   );
@@ -676,7 +688,10 @@ export default function TodayUsageBreakdown({
   scopeLabel: string;
   state: DayPlanState;
 }) {
-  const rows = useMemo(() => buildRows({
+  // ONE pass. The refresh runs every half minute, so state is resolved here and
+  // the cards only read what it produced — nothing is re-derived per render and
+  // no decorative tree is rebuilt because a minute count moved.
+  const groups = useMemo(() => buildRows({
     appMinutes,
     appUsageAvailable,
     groupMinutes,
@@ -684,27 +699,35 @@ export default function TodayUsageBreakdown({
     plan,
     rules,
     state,
-  }), [appMinutes, appUsageAvailable, groupMinutes, groupUsageAvailable, plan, rules, state]);
-  const alwaysBlockedRow = rows.find(row => row.groupId === ALWAYS_BLOCKED_GROUP_ID) ?? null;
-  const regularRows = rows.filter(row => row.groupId !== ALWAYS_BLOCKED_GROUP_ID);
-  const activeRows = regularRows.filter(row => row.activityState === 'active');
-  const quietRows = regularRows.filter(row => row.activityState === 'quiet');
-  const pendingRows = regularRows.filter(row => row.activityState === 'pending');
+  }).map(buildGroupViewModel),
+  [appMinutes, appUsageAvailable, groupMinutes, groupUsageAvailable, plan, rules, state]);
+
+  const essentialsOnly = !!plan.essentialsOnly;
+  const alwaysBlockedRow = groups.find(group => group.isAlwaysBlocked) ?? null;
+  const regularRows = groups.filter(group => !group.isAlwaysBlocked);
+  const activeRows = regularRows.filter(group => group.activityState === 'active');
+  const quietRows = regularRows.filter(group => group.activityState === 'quiet');
+  const pendingRows = regularRows.filter(group => group.activityState === 'pending');
   const overviewRows = alwaysBlockedRow?.activityState === 'active'
     ? [...activeRows, alwaysBlockedRow]
     : activeRows;
+  // Apple's own bucket rides at the very end and joins no count.
+  const otherMinutes = groupUsageAvailable
+    ? groupMinutes[OTHER_ACTIVITY_ID] ?? null
+    : null;
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
+  // Only one group stands open at a time.
+  const toggleGroup = useCallback((groupId: string) => {
+    setExpandedId(current => (current === groupId ? null : groupId));
+  }, []);
 
   const totalTracked = overviewRows.reduce((sum, row) => sum + (row.usedMinutes ?? 0), 0);
-  const overCount = activeRows.filter(row => {
-    const mode = modeFor(row.rule);
-    return usageBoundaryState(mode, row.rule.dailyMinutes, row.usedMinutes) === 'over';
-  }).length;
-  const onTrackCount = activeRows.filter(row => {
-    const mode = modeFor(row.rule);
-    return usageBoundaryState(mode, row.rule.dailyMinutes, row.usedMinutes) === 'within';
-  }).length;
+  const onTrackCount = overviewRows.filter(row => row.appearance === 'limitActive').length;
+  const atLimitCount = overviewRows.filter(row => row.appearance === 'atLimit').length;
+  const overCount = overviewRows.filter(row => row.appearance === 'overLimit').length;
+  const openCount = overviewRows.filter(row => row.appearance === 'noLimit').length;
 
   return (
     <>
@@ -722,8 +745,8 @@ export default function TodayUsageBreakdown({
             <Activity s={17} c={C.goldDark} w={2} />
           </View>
           <View style={s.overviewCopy}>
-            <Text style={s.overviewKicker}>{scopeLabel.toUpperCase()} · USAGE MAP</Text>
-            <Text style={s.overviewTitle}>Where your time went</Text>
+            <Text style={s.overviewKicker}>{scopeLabel.toUpperCase()} · GROUP STATUS</Text>
+            <Text style={s.overviewTitle}>How your groups stand</Text>
           </View>
           <View style={s.overviewCount}>
             <Text style={s.overviewCountValue}>{groupUsageAvailable ? overviewRows.length : '—'}</Text>
@@ -733,23 +756,32 @@ export default function TodayUsageBreakdown({
         <UsageShareRail rows={overviewRows} />
         <View style={s.overviewFooter}>
           <Text style={s.overviewTracked}>
-            {groupUsageAvailable ? `${formatMinutesShort(totalTracked)} tracked` : `${rows.length} plan groups`}
+            {groupUsageAvailable ? `${formatMinutesShort(totalTracked)} tracked` : `${groups.length} plan groups`}
           </Text>
           {groupUsageAvailable ? (
             <View style={s.overviewSignals}>
               {onTrackCount > 0 && (
                 <View style={s.signalItem}>
-                  <View style={[s.signalDot, { backgroundColor: WITHIN }]} />
+                  <View style={[s.signalDot, { backgroundColor: boundaryTone('limitActive').accent }]} />
                   <Text style={s.signalText}>{onTrackCount} on track</Text>
+                </View>
+              )}
+              {atLimitCount > 0 && (
+                <View style={s.signalItem}>
+                  <View style={[s.signalDot, { backgroundColor: boundaryTone('atLimit').accent }]} />
+                  <Text style={[s.signalText, { color: boundaryTone('atLimit').accent }]}>{atLimitCount} at limit</Text>
                 </View>
               )}
               {overCount > 0 && (
                 <View style={s.signalItem}>
-                  <View style={[s.signalDot, { backgroundColor: OVER }]} />
-                  <Text style={[s.signalText, { color: OVER }]}>{overCount} over</Text>
+                  <View style={[s.signalDot, { backgroundColor: boundaryTone('overLimit').accent }]} />
+                  <Text style={[s.signalText, { color: boundaryTone('overLimit').accent }]}>{overCount} over</Text>
                 </View>
               )}
-              {onTrackCount === 0 && overCount === 0 && (
+              {openCount > 0 && onTrackCount === 0 && atLimitCount === 0 && overCount === 0 && (
+                <Text style={s.signalText}>{openCount} open</Text>
+              )}
+              {openCount === 0 && onTrackCount === 0 && atLimitCount === 0 && overCount === 0 && (
                 <Text style={s.signalText}>Tap a group for apps</Text>
               )}
             </View>
@@ -757,64 +789,77 @@ export default function TodayUsageBreakdown({
         </View>
       </View>
 
-      {activeRows.length > 0 && (
-        <View style={s.section}>
-          <UsageSectionHeading
-            title="Active today"
-            hint="Ranked by screen time"
-            count={activeRows.length}
-          />
-          <View style={s.activeList}>
-            {activeRows.map(row => (
-              <GroupCard
-                key={row.groupId}
-                row={row}
-                expanded={expandedId === row.groupId}
-                onToggle={() => setExpandedId(expandedId === row.groupId ? null : row.groupId)}
-              />
-            ))}
-          </View>
-        </View>
-      )}
-
-      {quietRows.length > 0 && (
-        <View style={s.section}>
-          <UsageSectionHeading
-            title={activeRows.length > 0 ? 'Inactive today' : 'Plan groups'}
-            hint={activeRows.length > 0 ? 'No screen time recorded' : 'No group activity yet'}
-            count={quietRows.length}
-          />
-          <View style={s.inactiveList}>
-            {quietRows.map(row => (
-              <InactiveGroupCard
-                key={row.groupId}
-                row={row}
-                expanded={expandedId === row.groupId}
-                onToggle={() => setExpandedId(expandedId === row.groupId ? null : row.groupId)}
-              />
-            ))}
-          </View>
-        </View>
-      )}
-
-      {pendingRows.length > 0 && (
+      {essentialsOnly ? (
         <View style={s.section}>
           <UsageSectionHeading
             title="Plan groups"
-            hint="Waiting for private iPhone activity"
-            count={pendingRows.length}
+            hint="Replaced while Essentials-only holds"
+            count={0}
           />
-          <View style={s.inactiveList}>
-            {pendingRows.map(row => (
-              <InactiveGroupCard
-                key={row.groupId}
-                row={row}
-                expanded={expandedId === row.groupId}
-                onToggle={() => setExpandedId(expandedId === row.groupId ? null : row.groupId)}
-              />
-            ))}
-          </View>
+          <EssentialsOnlyCard />
         </View>
+      ) : (
+        <>
+          {activeRows.length > 0 && (
+            <View style={s.section}>
+              <UsageSectionHeading
+                title="Active today"
+                hint="Ranked by screen time"
+                count={activeRows.length}
+              />
+              <View style={s.activeList}>
+                {activeRows.map(group => (
+                  <PlanGroupCard
+                    key={group.id}
+                    group={group}
+                    expanded={expandedId === group.id}
+                    onToggle={() => toggleGroup(group.id)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {quietRows.length > 0 && (
+            <View style={s.section}>
+              <UsageSectionHeading
+                title={activeRows.length > 0 ? 'Inactive today' : 'Plan groups'}
+                hint={activeRows.length > 0 ? 'No screen time recorded' : 'No group activity yet'}
+                count={quietRows.length}
+              />
+              <View style={s.activeList}>
+                {quietRows.map(group => (
+                  <PlanGroupCard
+                    key={group.id}
+                    group={group}
+                    expanded={expandedId === group.id}
+                    onToggle={() => toggleGroup(group.id)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {pendingRows.length > 0 && (
+            <View style={s.section}>
+              <UsageSectionHeading
+                title="Plan groups"
+                hint="Waiting for private iPhone activity"
+                count={pendingRows.length}
+              />
+              <View style={s.activeList}>
+                {pendingRows.map(group => (
+                  <PlanGroupCard
+                    key={group.id}
+                    group={group}
+                    expanded={expandedId === group.id}
+                    onToggle={() => toggleGroup(group.id)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+        </>
       )}
 
       {alwaysBlockedRow && (
@@ -832,6 +877,16 @@ export default function TodayUsageBreakdown({
           </View>
         </View>
       )}
+      {otherMinutes != null && otherMinutes > 0 && (
+        <View style={s.section}>
+          <UsageSectionHeading
+            title="Other activity"
+            hint="Outside your plan groups"
+            count={1}
+          />
+          <OtherActivityRow minutes={otherMinutes} />
+        </View>
+      )}
     </View>
     <AlwaysBlockedSheet
       visible={alwaysBlockedOpen}
@@ -843,6 +898,64 @@ export default function TodayUsageBreakdown({
 
 const s = StyleSheet.create({
   wrap: { gap: 21 },
+  appsStack: { gap: 7 },
+  otherRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    minHeight: 56,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    backgroundColor: '#FFFDF9',
+    paddingHorizontal: 13,
+  },
+  otherSeat: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otherCopy: { flex: 1, minWidth: 0 },
+  otherName: { fontFamily: F.serifSemiBold, fontSize: 16, color: '#3D372F' },
+  otherMeta: { marginTop: 1.5, fontFamily: F.sans, fontSize: 12, color: '#8A8378' },
+  otherValue: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 16,
+    color: '#3D372F',
+    fontVariant: ['tabular-nums'],
+  },
+  essentialsCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    borderRadius: 21,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    paddingHorizontal: 15,
+    paddingVertical: 15,
+  },
+  essentialsSeal: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  essentialsCopy: { flex: 1, minWidth: 0 },
+  essentialsTitle: { fontFamily: F.sansBold, fontSize: 11, letterSpacing: 1.7 },
+  essentialsBody: {
+    marginTop: 4,
+    fontFamily: F.serif,
+    fontSize: 14,
+    lineHeight: 18.5,
+  },
+
   overview: {
     position: 'relative',
     overflow: 'hidden',
@@ -909,32 +1022,21 @@ const s = StyleSheet.create({
   sectionCountBubble: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#E3DAC7', backgroundColor: '#F4EFE5', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 9px rgba(73, 59, 34, 0.06)' },
   sectionCount: { fontFamily: F.serifSemiBold, fontSize: 13, lineHeight: 15, color: INK_SOFT, fontVariant: ['tabular-nums'], textAlign: 'center' },
   activeList: { gap: 8 },
-  groupCard: { position: 'relative', overflow: 'hidden', borderRadius: 21, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.055)' },
+  groupCard: { position: 'relative', overflow: 'hidden', borderRadius: 21, borderCurve: 'continuous', backgroundColor: C.surface, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.055)' },
   groupPressable: { paddingHorizontal: 12, paddingTop: 11, paddingBottom: 10 },
   groupHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  groupAvatar: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  groupAvatarText: { fontFamily: F.serifSemiBold, fontSize: 20 },
+  groupAvatar: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DDD8CF', backgroundColor: '#F3F1EC', alignItems: 'center', justifyContent: 'center' },
+  groupAvatarText: { fontFamily: F.serifSemiBold, fontSize: 20, color: INK_SOFT },
   groupTitleWrap: { flex: 1, minWidth: 0 },
   groupTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   groupName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text },
-  strengthChip: { flexShrink: 0, borderRadius: 999, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2.5 },
-  strengthChipStrict: { backgroundColor: '#F8E7EA', borderColor: '#E7C4CB' },
-  strengthChipLoose: { backgroundColor: '#FFF6DF', borderColor: '#EAD7A8' },
-  strengthChipText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.8 },
-  strengthChipTextStrict: { color: BLOCKED_COLOR },
-  strengthChipTextLoose: { color: '#95681F' },
+  strengthChip: { flexShrink: 0, borderRadius: 999, borderWidth: 1, borderColor: '#D9D5CD', backgroundColor: 'rgba(255,255,255,0.5)', paddingHorizontal: 7, paddingVertical: 2.5 },
+  strengthChipText: { fontFamily: F.sansBold, fontSize: 8, letterSpacing: 0.8, color: INK_SOFT },
   groupCaption: { marginTop: 3.5, fontFamily: F.sans, fontSize: 12, lineHeight: 16, color: C.textSecondary },
-  groupCaptionOver: { color: OVER },
   groupValueWrap: { alignItems: 'flex-end', gap: 4 },
   groupValue: { fontFamily: F.serifSemiBold, fontSize: 17.5, lineHeight: 21, color: C.text, fontVariant: ['tabular-nums'] },
-  groupValueOver: { color: OVER },
   statusMark: { minHeight: 19, flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 10, backgroundColor: 'rgba(84,77,66,0.08)', paddingHorizontal: 6.5, paddingVertical: 3.5 },
-  statusMarkOver: { backgroundColor: OVER_BG },
-  statusMarkWithin: { backgroundColor: WITHIN_BG },
-  statusMarkBlocked: { backgroundColor: '#F0EEEA' },
   statusMarkText: { fontFamily: F.sansBold, fontSize: 6.8, letterSpacing: 0.7, color: INK_SOFT },
-  statusMarkTextOver: { color: OVER },
-  statusMarkTextWithin: { color: WITHIN },
   groupMeter: { marginTop: 10 },
   groupFooter: { marginTop: 8, minHeight: 25, flexDirection: 'row', alignItems: 'center' },
   groupMiniDot: { width: 5, height: 5, borderRadius: 3, opacity: 0.65 },
@@ -950,26 +1052,24 @@ const s = StyleSheet.create({
   appsHeaderCountBubble: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#EEE9DF', alignItems: 'center', justifyContent: 'center' },
   appsHeaderCount: { fontFamily: F.sansBold, fontSize: 9, lineHeight: 11, color: C.textSecondary, fontVariant: ['tabular-nums'], textAlign: 'center' },
   appRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
-  appAvatar: { width: 38, height: 38, borderRadius: 12, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
-  appAvatarText: { fontFamily: F.serifSemiBold, fontSize: 16 },
+  appAvatar: { width: 38, height: 38, borderRadius: 12, borderCurve: 'continuous', borderWidth: 1, borderColor: '#E0DCD4', backgroundColor: '#F3F1EC', alignItems: 'center', justifyContent: 'center' },
+  appAvatarText: { fontFamily: F.serifSemiBold, fontSize: 16, color: INK_SOFT },
   appMain: { flex: 1, minWidth: 0 },
   appTopRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   appName: { flex: 1, minWidth: 0, fontFamily: F.sansSemiBold, fontSize: 12.3, color: C.text },
   appValue: { fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.textSecondary, fontVariant: ['tabular-nums'] },
-  appValueOver: { color: OVER },
+  appValueOver: { color: boundaryTone('overLimit').accent },
   appMetaRow: { marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 7 },
   appBoundary: { flex: 1, minWidth: 0, fontFamily: F.sansMedium, fontSize: 9, color: C.textMuted },
-  appState: { fontFamily: F.sansBold, fontSize: 6.7, letterSpacing: 0.5, color: WITHIN },
-  appStateOver: { color: OVER },
-  appStateBlocked: { color: INK_SOFT },
+  appState: { fontFamily: F.sansBold, fontSize: 6.7, letterSpacing: 0.5, color: INK_SOFT },
   appMeter: { marginTop: 7 },
   appSeparator: { height: StyleSheet.hairlineWidth, marginLeft: 49, backgroundColor: '#E7E3DA' },
   appsEmpty: { paddingHorizontal: 1, paddingTop: 3, paddingBottom: 11, fontFamily: F.sansMedium, fontSize: 10, lineHeight: 15, color: C.textMuted },
   inactiveList: { gap: 6 },
-  inactiveCard: { position: 'relative', overflow: 'hidden', borderRadius: 21, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, boxShadow: '0 4px 13px rgba(35, 40, 37, 0.045)' },
+  inactiveCard: { position: 'relative', overflow: 'hidden', borderRadius: 21, borderCurve: 'continuous', backgroundColor: C.surface, boxShadow: '0 4px 13px rgba(35, 40, 37, 0.045)' },
   inactiveRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 12, paddingVertical: 11 },
-  inactiveAvatar: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  inactiveAvatarText: { fontFamily: F.serifSemiBold, fontSize: 16.5 },
+  inactiveAvatar: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#DDD8CF', backgroundColor: '#F3F1EC', alignItems: 'center', justifyContent: 'center' },
+  inactiveAvatarText: { fontFamily: F.serifSemiBold, fontSize: 16.5, color: INK_SOFT },
   inactiveCopy: { flex: 1, minWidth: 0 },
   inactiveTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   inactiveName: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text },
@@ -980,18 +1080,16 @@ const s = StyleSheet.create({
   inactiveValueWrap: { alignItems: 'flex-end', gap: 3 },
   inactiveValue: { fontFamily: F.sansSemiBold, fontSize: 11.5, color: C.textSecondary, fontVariant: ['tabular-nums'] },
   inactiveStatePill: { minHeight: 15, borderRadius: 8, backgroundColor: 'rgba(84,77,66,0.065)', paddingHorizontal: 5.5, alignItems: 'center', justifyContent: 'center' },
-  inactiveStatePillProtected: { backgroundColor: WITHIN_BG },
   inactiveState: { fontFamily: F.sansBold, fontSize: 5.8, letterSpacing: 0.62, color: C.textMuted },
-  inactiveStateProtected: { color: WITHIN },
   inactiveChevron: { width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.64)', borderWidth: 1, borderColor: 'rgba(79,70,56,0.045)', alignItems: 'center', justifyContent: 'center' },
   inactiveChevronOpen: { backgroundColor: 'rgba(84,77,66,0.085)' },
-  alwaysBlockedCard: { position: 'relative', overflow: 'hidden', minHeight: 78, borderRadius: 21, borderCurve: 'continuous', borderWidth: 1, borderColor: '#F0D3D9', paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 11, boxShadow: '0 6px 16px rgba(104, 40, 55, 0.065)' },
-  alwaysBlockedSeal: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: '#F0D3D9', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  alwaysBlockedCard: { position: 'relative', overflow: 'hidden', minHeight: 78, borderRadius: 21, borderCurve: 'continuous', paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 11, boxShadow: '0 6px 16px rgba(35, 40, 37, 0.055)' },
+  alwaysBlockedSeal: { flexShrink: 0, width: 48, height: 48, borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   alwaysBlockedCopy: { flex: 1, minWidth: 0 },
   alwaysBlockedTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  alwaysBlockedTitle: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: '#6A2637' },
-  alwaysBlockedSystemBadge: { flexShrink: 0, borderRadius: 999, borderWidth: 1, borderColor: '#E7C4CB', backgroundColor: '#FFF7F8', paddingHorizontal: 7, paddingVertical: 3 },
-  alwaysBlockedSystemText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.05, color: BLOCKED_COLOR },
-  alwaysBlockedMeta: { marginTop: 4, fontFamily: F.sans, fontSize: 12, lineHeight: 16, color: '#8E5863', fontVariant: ['tabular-nums'] },
-  alwaysBlockedArrow: { flexShrink: 0, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.74)', borderWidth: 1, borderColor: '#F0D3D9', alignItems: 'center', justifyContent: 'center' },
+  alwaysBlockedTitle: { flexShrink: 1, fontFamily: F.serifSemiBold, fontSize: 18, lineHeight: 22, color: C.text },
+  alwaysBlockedSystemBadge: { flexShrink: 0, borderRadius: 999, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 3 },
+  alwaysBlockedSystemText: { fontFamily: F.sansBold, fontSize: 7.5, letterSpacing: 1.05, color: INK_SOFT },
+  alwaysBlockedMeta: { marginTop: 4, fontFamily: F.sans, fontSize: 12, lineHeight: 16, color: C.textSecondary, fontVariant: ['tabular-nums'] },
+  alwaysBlockedArrow: { flexShrink: 0, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.74)', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 });

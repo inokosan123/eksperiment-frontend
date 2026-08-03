@@ -13,6 +13,7 @@ import type {
   OnChangeStateEvent,
 } from 'react-native-enriched-html';
 import { C, F } from '@/constants/tokens';
+import { useReadableFontScale } from '@/components/shared/typographyScale';
 import {
   canonicalizeRichTextHtml,
   normalizeNativeRichTextPlainText,
@@ -88,6 +89,7 @@ export const NativeRichTextEditor = forwardRef<
   onFocus,
   onBlur,
 }, forwardedRef) {
+  const readableScale = useReadableFontScale();
   if (!isNativeRichTextEditorEnabled()) {
     throw new Error('NativeRichTextEditor was rendered without a native development build');
   }
@@ -191,11 +193,11 @@ export const NativeRichTextEditor = forwardRef<
     backgroundColor,
     color,
     fontFamily: F.serif,
-    fontSize: 17,
-    lineHeight: 28,
+    fontSize: 17 * readableScale,
+    lineHeight: 28 * readableScale,
     paddingHorizontal: 13,
     paddingVertical: 13,
-  }), [backgroundColor, color, minHeight]);
+  }), [backgroundColor, color, minHeight, readableScale]);
 
   return (
     <View style={[{ minHeight, backgroundColor }, style]}>
@@ -211,13 +213,13 @@ export const NativeRichTextEditor = forwardRef<
         autoFocus={false}
         submitBehavior="newline"
         scrollEnabled={!autoHeight}
-        allowFontScaling
+        allowFontScaling={false}
         linkRegex={null}
         useHtmlNormalizer={false}
         style={editorStyle}
         htmlStyle={{
-          ul: { bulletColor: color, bulletSize: 5, marginLeft: 20, gapWidth: 8 },
-          ol: { markerColor: color, marginLeft: 20, gapWidth: 8 },
+          ul: { bulletColor: color, bulletSize: 5 * readableScale, marginLeft: 20 * readableScale, gapWidth: 8 * readableScale },
+          ol: { markerColor: color, marginLeft: 20 * readableScale, gapWidth: 8 * readableScale },
         }}
         onChangeText={event => {
           const plainText = event.nativeEvent.value;

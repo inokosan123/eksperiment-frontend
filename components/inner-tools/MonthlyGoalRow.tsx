@@ -196,6 +196,7 @@ export function AnimatedStrikeText({
   // we keep the active colour stable and animate opacity instead, so the
   // colour transition feels smooth alongside the strike sweep.
   const flatStyle = StyleSheet.flatten(textStyle) || {};
+  const baseFontSize = (flatStyle as TextStyle).fontSize;
   const lineHeight = (flatStyle as TextStyle).lineHeight ?? 20;
   const stableColor = done ? doneColor : (flatStyle as TextStyle).color ?? '#1A1714';
 
@@ -205,18 +206,22 @@ export function AnimatedStrikeText({
       style={{ flex: 1, minWidth: 0, position: 'relative' }}
     >
       <Text
+        allowFontScaling={false}
+        maxFontSizeMultiplier={1}
         onLayout={handleNatural}
         style={{
           position: 'absolute',
           opacity: 0,
           ...((flatStyle as TextStyle).fontFamily ? { fontFamily: (flatStyle as TextStyle).fontFamily } : {}),
-          ...((flatStyle as TextStyle).fontSize ? { fontSize: (flatStyle as TextStyle).fontSize } : {}),
-          ...((flatStyle as TextStyle).lineHeight ? { lineHeight: (flatStyle as TextStyle).lineHeight } : {}),
+          ...(baseFontSize ? { fontSize: baseFontSize } : {}),
+          lineHeight,
         }}
       >
         {text}
       </Text>
       <Reanimated.Text
+        allowFontScaling={false}
+        maxFontSizeMultiplier={1}
         numberOfLines={numberOfLines}
         ellipsizeMode="tail"
         style={[

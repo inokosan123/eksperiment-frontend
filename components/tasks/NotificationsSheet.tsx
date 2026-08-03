@@ -4,12 +4,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import Reanimated, {
+  interpolateColor,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { Bell, BellOff, BellRing, Clock, X } from '@/components/icons/Icons';
+import { Clock, X } from '@/components/icons/Icons';
+import { BellDouble, BellNone, BellSingle } from '@/components/icons/NotificationBells';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { resolveTaskVariant } from '@/components/tasks/taskAdapters';
@@ -23,10 +25,13 @@ type Props = {
   selectedDate: string;
 };
 
-const MODES: { mode: NotificationMode; label: string; Icon: typeof Bell }[] = [
-  { mode: 'none', label: 'Off', Icon: BellOff },
-  { mode: 'single', label: 'Single', Icon: Bell },
-  { mode: 'double', label: 'Double', Icon: BellRing },
+// The same three marks the shared `NotificationSettings` row wears — one bell,
+// and the number of arcs off it is the setting. This sheet is the other place
+// the choice is made, and it would be odd for it to speak differently.
+const MODES: { mode: NotificationMode; label: string; Icon: typeof BellNone }[] = [
+  { mode: 'none', label: 'Off', Icon: BellNone },
+  { mode: 'single', label: 'Single', Icon: BellSingle },
+  { mode: 'double', label: 'Double', Icon: BellDouble },
 ];
 
 const REMINDER_OPTIONS = [5, 10, 15, 30, 60];
@@ -250,7 +255,7 @@ function AnimatedModeButton({
   accent: string;
   mode: NotificationMode;
   label: string;
-  Icon: typeof Bell;
+  Icon: typeof BellNone;
   onPress: () => void;
 }) {
   const progress = useSharedValue(active ? 1 : 0);
@@ -263,26 +268,41 @@ function AnimatedModeButton({
     });
   }, [active, progress]);
 
-  const activeColor = mode === 'none' ? '#8A8177' : accent;
-  const activeBackground = mode === 'none' ? hexToRgba(activeColor, 0.12) : activeColor;
-  const activeBorder = mode === 'none' ? hexToRgba(activeColor, 0.30) : activeColor;
-  const animatedStyle = useAnimatedStyle(() => ({
+  // The same ladder the shared `NotificationSettings` row climbs: none is a
+  // refusal and takes the one colour that is not the accent, single is the
+  // accent lightly, double is the accent whole.
+  const lit = mode === 'none'
+    ? { plate: '#FFFFFF', edge: C.red, ink: C.red }
+    : mode === 'single'
+      ? { plate: hexToRgba(accent, 0.12), edge: accent, ink: accent }
+      : { plate: accent, edge: accent, ink: '#FFFFFF' };
+
+  // ⚠ Everything rides `progress`. This button used to animate its SCALE only
+  // and swap plate, icon and label through `active && {...}` — so it grew
+  // smoothly while its colours changed in one frame.
+  const plateStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['rgba(255,255,255,0.72)', lit.plate]),
+    borderColor: interpolateColor(progress.value, [0, 1], ['#EFEDE6', lit.edge]),
     transform: [{ scale: 1 + progress.value * 0.015 }],
-  }));
+  }), [lit.plate, lit.edge]);
+  const litIcon = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const restIcon = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
+  const textStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], ['#A8A29E', lit.ink]),
+  }), [lit.ink]);
 
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress} style={s.modeTouch}>
-      <Reanimated.View
-        style={[
-          s.modeBtn,
-          active && { backgroundColor: activeBackground, borderColor: activeBorder },
-          animatedStyle,
-        ]}
-      >
-        <Icon s={15} c={active ? (mode === 'none' ? '#7C756D' : '#FFFFFF') : '#A8A29E'} w={2.05} />
-        <Text style={[s.modeBtnText, active && { color: mode === 'none' ? '#7C756D' : '#FFFFFF' }]}>
-          {label}
-        </Text>
+      <Reanimated.View style={[s.modeBtn, plateStyle]}>
+        <View style={s.modeBtnIcon}>
+          <Reanimated.View style={restIcon}>
+            <Icon s={21} c="#A8A29E" w={2.05} />
+          </Reanimated.View>
+          <Reanimated.View style={[s.modeBtnIconLit, litIcon]}>
+            <Icon s={21} c={lit.ink} w={2.05} />
+          </Reanimated.View>
+        </View>
+        <Reanimated.Text style={[s.modeBtnText, textStyle]}>{label}</Reanimated.Text>
       </Reanimated.View>
     </TouchableOpacity>
   );
@@ -309,20 +329,18 @@ function ReminderButton({
     });
   }, [active, progress]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
+  const pillStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#F5F3EF', accent]),
     transform: [{ scale: 1 + progress.value * 0.025 }],
+  }), [accent]);
+  const textStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], [C.textSecondary, '#FFFFFF']),
   }));
 
   return (
     <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={s.reminderTouch}>
-      <Reanimated.View
-        style={[
-          s.reminderPill,
-          active && { backgroundColor: accent },
-          animatedStyle,
-        ]}
-      >
-        <Text style={[s.reminderPillText, active && s.reminderPillTextActive]}>{minutes}m</Text>
+      <Reanimated.View style={[s.reminderPill, pillStyle]}>
+        <Reanimated.Text style={[s.reminderPillText, textStyle]}>{minutes}m</Reanimated.Text>
       </Reanimated.View>
     </TouchableOpacity>
   );
@@ -343,7 +361,7 @@ function NotificationTaskRow({
 }) {
   const muted = mode === 'none';
   const tone = notificationToneForTask(task, muted);
-  const SummaryIcon = mode === 'none' ? BellOff : mode === 'double' ? BellRing : Bell;
+  const SummaryIcon = mode === 'none' ? BellNone : mode === 'double' ? BellDouble : BellSingle;
 
   return (
     <View>
@@ -527,7 +545,7 @@ export default function NotificationsSheet({ visible, onClose, selectedDate }: P
       >
         <View pointerEvents="none" style={s.headerHalo} />
         <View style={s.headerIcon}>
-          <BellRing s={21} c="#FFFFFF" w={2.25} />
+          <BellDouble s={24} c="#FFFFFF" w={2.15} />
         </View>
         <View style={s.headerCopy}>
           <Text style={s.eyebrowText}>Notifications</Text>
@@ -563,7 +581,7 @@ export default function NotificationsSheet({ visible, onClose, selectedDate }: P
         {dayTasks.length === 0 ? (
           <View style={s.emptyWrap}>
             <View style={s.emptyIcon}>
-              <BellOff s={24} c="#D6D3D1" w={2} />
+              <BellNone s={27} c="#D6D3D1" w={2} />
             </View>
             <Text style={s.emptyText}>No active tasks for this day</Text>
           </View>
@@ -880,11 +898,12 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 5,
   },
+  modeBtnIcon: { width: 21, height: 21, alignItems: 'center', justifyContent: 'center' },
+  modeBtnIconLit: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   modeBtnText: {
     fontFamily: F.sansBold,
     fontSize: 9.5,
     letterSpacing: 1.1,
-    color: '#A8A29E',
     textTransform: 'uppercase',
   },
   reminderWrap: {
@@ -920,8 +939,5 @@ const s = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 0.35,
     color: C.textSecondary,
-  },
-  reminderPillTextActive: {
-    color: '#FFFFFF',
   },
 });

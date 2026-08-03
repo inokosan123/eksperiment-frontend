@@ -23,10 +23,28 @@ export function halfSinePulse(progress: number): number {
   return (16 * product) / (5 - 4 * product);
 }
 
+export function windowedHalfSinePulse(
+  elapsedMs: number,
+  durationMs: number,
+  offset: number,
+  window: number,
+): number {
+  'worklet';
+  const phase = continuousPhase(elapsedMs, durationMs, offset);
+  return phase < window ? halfSinePulse(phase / window) : 0;
+}
+
 /** Matches withRepeat(withTiming(0→1, legDuration), -1, true). */
 export function pingPongPhase(elapsedMs: number, legDurationMs: number, offsetMs = 0): number {
   'worklet';
   const cycle = legDurationMs * 2;
   const phase = continuousPhase(elapsedMs - offsetMs, cycle);
   return 0.5 - 0.5 * Math.cos(phase * Math.PI * 2);
+}
+
+/** Linear 0→1→0 phase for callers that must preserve a specific easing. */
+export function trianglePhase(elapsedMs: number, legDurationMs: number, offsetMs = 0): number {
+  'worklet';
+  const phase = continuousPhase(elapsedMs - offsetMs, legDurationMs * 2);
+  return phase <= 0.5 ? phase * 2 : (1 - phase) * 2;
 }

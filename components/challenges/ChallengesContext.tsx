@@ -1,5 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { deleteChallengeRecord, listChallengeRecords, saveChallengeRecord } from '@/components/challenges/challengeDb';
+import {
+  deleteChallengeRecord,
+  listChallengeRecords,
+  markChurchWeeksPractice,
+  repairChurchChallengeState,
+  saveChallengeRecord,
+} from '@/components/challenges/challengeDb';
 import {
   endChallengeTask,
   pauseChallengeTask,
@@ -68,6 +74,15 @@ type ChallengesContextValue = {
   endChallenge: (id: string) => Promise<void>;
 };
 
+function churchRequirementKey(config?: ChallengeChurchConfig) {
+  if (!config) return '';
+  return JSON.stringify({
+    frequency: config.frequency,
+    selectedDays: [...(config.selectedDays ?? [])].sort((left, right) => left - right),
+    monthlyDays: [...(config.monthlyDays ?? [])].sort((left, right) => left - right),
+  });
+}
+
 const ChallengesContext = createContext<ChallengesContextValue | null>(null);
 
 function newChallengeId(entryId: string) {
@@ -107,7 +122,7 @@ function buildScriptureChallengeFromSetup(
     icon: entry.icon,
     status: 'active',
     progressCurrent: overrides.progressCurrent ?? 0,
-    progressTotal: overrides.progressTotal ?? (entry.id === 'lectionary_daily' ? 0 : plannedTotal),
+    progressTotal: overrides.progressTotal ?? (entry.id === 'lectionary_daily' ? totalDays : plannedTotal),
     progressUnit: overrides.progressUnit ?? progressUnit,
     headline: overrides.headline ?? (entry.id === 'lectionary_daily' ? 'Day 1' : `0/${plannedTotal} ${progressLabel}`),
     subline: overrides.subline ?? (entry.id === 'lectionary_daily' ? 'Church-calendar daily readings' : (planUnits[0] ? `Next: ${planUnits[0].ref}` : `0/${plannedTotal} ${progressLabel} completed`)),
@@ -288,6 +303,7 @@ export function ChallengesProvider({ children }: { children: React.ReactNode }) 
   const startingTemplateIdsRef = useRef(new Set<string>());
 
   const refreshChallenges = useCallback(async () => {
+    await repairChurchChallengeState();
     const records = await listChallengeRecords();
     setChallenges(records);
     setReady(true);
@@ -347,9 +363,11 @@ export function ChallengesProvider({ children }: { children: React.ReactNode }) 
             return persistedExisting;
           }
 
-          const next = await saveChallengeRecord(buildNewChallenge(entry, pace, overrides));
-          await upsertChallengeTask(next);
-          setChallenges(current => [next, ...current.filter(item => item.id !== next.id)]);
+          const saved = await saveChallengeRecord(buildNewChallenge(entry, pace, overrides));
+          await upsertChallengeTask(saved);
+          const refreshed = await listChallengeRecords();
+          const next = refreshed.find(item => item.id === saved.id) ?? saved;
+          setChallenges(refreshed);
           return next;
         } finally {
           startingTemplateIdsRef.current.delete(entry.templateId);
@@ -358,31 +376,46 @@ export function ChallengesProvider({ children }: { children: React.ReactNode }) 
       updateChallenge: async (id, updates) => {
         const current = challenges.find(item => item.id === id);
         if (!current) return;
-        const next = await saveChallengeRecord({ ...current, ...updates });
-        await upsertChallengeTask(next);
-        setChallenges(items => items.map(item => item.id === id ? next : item));
+        const churchScheduleChanged = current.category === 'church'
+          && !!updates.churchConfig
+          && churchRequirementKey(updates.churchConfig) !== churchRequirementKey(current.churchConfig);
+        if (churchScheduleChanged) {
+          await markChurchWeeksPractice(current, getTodayDateKey());
+        }
+        const saved = await saveChallengeRecord({ ...current, ...updates });
+        await upsertChallengeTask(saved);
+        const refreshed = await listChallengeRecords();
+        setChallenges(refreshed);
       },
       pauseChallenge: async id => {
         const current = challenges.find(item => item.id === id);
         if (!current) return;
-        const next = await saveChallengeRecord({
+        if (current.category === 'church') {
+          await markChurchWeeksPractice(current, getTodayDateKey());
+        }
+        await saveChallengeRecord({
           ...current,
           status: 'paused',
           pausedAt: getTodayDateKey(),
         });
         await pauseChallengeTask(id);
-        setChallenges(items => items.map(item => item.id === id ? next : item));
+        const refreshed = await listChallengeRecords();
+        setChallenges(refreshed);
       },
       resumeChallenge: async id => {
         const current = challenges.find(item => item.id === id);
         if (!current) return;
-        const next = await saveChallengeRecord({
+        if (current.category === 'church' && current.pausedAt) {
+          await markChurchWeeksPractice(current, current.pausedAt, getTodayDateKey());
+        }
+        await saveChallengeRecord({
           ...current,
           status: 'active',
           pausedAt: undefined,
         });
         await resumeChallengeTask(id);
-        setChallenges(items => items.map(item => item.id === id ? next : item));
+        const refreshed = await listChallengeRecords();
+        setChallenges(refreshed);
       },
       endChallenge: async id => {
         const current = challenges.find(item => item.id === id);

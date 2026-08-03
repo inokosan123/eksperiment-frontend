@@ -5,6 +5,7 @@ import {
   ensureTaskInstancesForDate,
   archiveTaskImmediately,
   listTaskInstancesForDate,
+  listTaskLaunchConfigs,
   listTasks,
   markDueTaskInstancesMissed,
   pauseTask,
@@ -16,15 +17,29 @@ import {
 } from '@/components/tasks/taskDb';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
 import { taskInstanceToListItem } from '@/components/tasks/taskAdapters';
-import { syncChallengeProgressForTaskInstance } from '@/components/challenges/challengeDb';
+import { resolveTaskLaunchDescriptor } from '@/components/tasks/task-launch-descriptor';
+import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  repairLegacyChallengeTaskProgress,
+  syncChallengeProgressForTaskInstance,
+  type ChallengeSyncResult,
+} from '@/components/challenges/challengeDb';
 import {
   cancelNotificationsForInstance,
   cancelNotificationsForTask,
 } from '@/components/notifications/notificationService';
-import type { TaskDefinition, TaskDraft, TaskInstance, TaskListItem } from '@/components/tasks/taskTypes';
+import type {
+  TaskDefinition,
+  TaskDraft,
+  TaskInstance,
+  TaskLaunchConfigBundle,
+  TaskListItem,
+} from '@/components/tasks/taskTypes';
+import { openUserContentDb } from '@/data/userContentDb';
 
 type TaskContextValue = {
   ready: boolean;
+  challengeCompletionRevision: number;
   selectedDate: string;
   taskDataDate: string;
   isDateLoading: boolean;
@@ -40,9 +55,24 @@ type TaskContextValue = {
   remove: (taskId: string) => Promise<void>;
   removeTasks: (taskIds: string[], refreshDate?: string) => Promise<void>;
   archiveTasksImmediately: (taskIds: string[], refreshDate?: string) => Promise<void>;
-  completeInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
+  commitInstanceCompletion: (
+    instanceId: string,
+    refreshDate?: string,
+  ) => Promise<TaskCompletionCommitResult>;
+  reconcileCommittedCompletion: (
+    instanceId: string,
+    refreshDate?: string,
+    updated?: boolean,
+  ) => Promise<void>;
+  completeInstance: (instanceId: string, refreshDate?: string) => Promise<ChallengeSyncResult | null>;
   skipInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
+  skipInstances: (instanceIds: string[], refreshDate?: string) => Promise<void>;
   resetInstance: (instanceId: string, refreshDate?: string) => Promise<void>;
+};
+
+export type TaskCompletionCommitResult = {
+  updated: boolean;
+  challengeResult: ChallengeSyncResult | null;
 };
 
 const TaskContext = createContext<TaskContextValue | null>(null);
@@ -61,6 +91,7 @@ function cleanupLegacyDemoHabitTasksOnce() {
 
 export function TaskProvider({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
+  const [challengeCompletionRevision, setChallengeCompletionRevision] = useState(0);
   const initialDate = useMemo(() => getLocalDateKey(), []);
   const selectedDateRef = useRef(initialDate);
   const taskDataDateRef = useRef(initialDate);
@@ -70,6 +101,7 @@ export function TaskProvider({ children }: PropsWithChildren) {
   const [isDateLoading, setIsDateLoading] = useState(false);
   const [tasks, setTasks] = useState<TaskDefinition[]>([]);
   const [instances, setInstances] = useState<TaskInstance[]>([]);
+  const [launchConfigs, setLaunchConfigs] = useState<Record<string, TaskLaunchConfigBundle>>({});
 
   const refresh = useCallback(async (date?: string) => {
     const targetDate = date ?? selectedDateRef.current;
@@ -82,14 +114,16 @@ export function TaskProvider({ children }: PropsWithChildren) {
     await cleanupLegacyDemoHabitTasksOnce();
     await ensureTaskInstancesForDate(targetDate);
     await markDueTaskInstancesMissed();
-    const [nextTasks, nextInstances] = await Promise.all([
+    const [nextTasks, nextInstances, nextLaunchConfigs] = await Promise.all([
       listTasks(),
       listTaskInstancesForDate(targetDate),
+      listTaskLaunchConfigs(),
     ]);
     if (refreshSeq !== refreshSeqRef.current) return;
     taskDataDateRef.current = targetDate;
     setTasks(nextTasks);
     setInstances(nextInstances);
+    setLaunchConfigs(nextLaunchConfigs);
     setTaskDataDate(targetDate);
     setIsDateLoading(false);
     setReady(true);
@@ -98,6 +132,7 @@ export function TaskProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const boot = async () => {
       await syncTaskInstancesWindow();
+      await repairLegacyChallengeTaskProgress();
       await refresh(getLocalDateKey());
     };
 
@@ -176,29 +211,133 @@ export function TaskProvider({ children }: PropsWithChildren) {
     await refresh(refreshDate);
   }, [refresh]);
 
-  const completeInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
-    if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
-    const updated = await setTaskInstanceStatus(instanceId, 'completed');
-    if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'completed');
-    if (updated) await cancelNotificationsForInstance(instanceId);
-    await refresh(refreshDate);
+  const commitInstanceCompletion = useCallback(async (
+    instanceId: string,
+    _refreshDate?: string,
+  ): Promise<TaskCompletionCommitResult> => {
+    const db = await openUserContentDb();
+    let updated = false;
+    // Keep the transaction output in a holder: TypeScript does not model
+    // assignments made inside SQLite's async callback when it narrows the
+    // value after the callback returns.
+    const transactionResult: { challenge: ChallengeSyncResult | null } = { challenge: null };
+    await db.withTransactionAsync(async () => {
+      updated = await setTaskInstanceStatus(instanceId, 'completed');
+      transactionResult.challenge = updated
+        ? await syncChallengeProgressForTaskInstance(instanceId, 'completed')
+        : null;
+    });
+    return {
+      updated,
+      challengeResult: transactionResult.challenge,
+    };
+  }, []);
+
+  const reconcileCommittedCompletion = useCallback(async (
+    instanceId: string,
+    refreshDate?: string,
+    updated = true,
+  ) => {
+    if (updated) {
+      await cancelNotificationsForInstance(instanceId).catch(error => {
+        console.warn('Completed task notification cleanup failed:', error);
+      });
+    }
+    await refresh(refreshDate).catch(error => {
+      // The SQL transaction is already committed. Keep the optimistic state
+      // and let the next focus refresh rather than reporting a false failure.
+      console.warn('Completed task refresh failed:', error);
+    });
   }, [refresh]);
+
+  const completeInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
+    const { updated, challengeResult } = await commitInstanceCompletion(instanceId, refreshDate);
+    if (challengeResult) {
+      // Home observes this even when the current tap merely repairs a legacy
+      // Church row. That lets its durable SQL outbox surface a reward while the
+      // Home tab stays focused (no navigation focus event required).
+      setChallengeCompletionRevision(value => value + 1);
+      const celebration = challengeResult.celebration;
+      if (celebration) {
+        queueTaskCompletionReturnAnimation(instanceId, undefined, {
+          source: 'external',
+          celebration: {
+            type: 'challengeComplete',
+            title: celebration.title,
+            variant: celebration.variant,
+            trophyCount: celebration.trophyCount,
+            currentStreak: celebration.currentStreak,
+            eventId: celebration.eventId,
+            challengeId: celebration.challengeId,
+            weekStart: celebration.weekStart,
+          },
+        });
+      }
+    }
+    await reconcileCommittedCompletion(instanceId, refreshDate, updated);
+    return challengeResult;
+  }, [commitInstanceCompletion, reconcileCommittedCompletion]);
 
   const skipInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
     if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
-    const updated = await setTaskInstanceStatus(instanceId, 'skipped');
-    if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'skipped');
-    if (updated) await cancelNotificationsForInstance(instanceId);
-    await refresh(refreshDate);
+    const db = await openUserContentDb();
+    let updated = false;
+    await db.withTransactionAsync(async () => {
+      updated = await setTaskInstanceStatus(instanceId, 'skipped');
+      if (updated) await syncChallengeProgressForTaskInstance(instanceId, 'skipped');
+    });
+    if (updated) {
+      await cancelNotificationsForInstance(instanceId).catch(error => {
+        console.warn('Skipped task notification cleanup failed:', error);
+      });
+    }
+    await refresh(refreshDate).catch(error => {
+      console.warn('Skipped task refresh failed:', error);
+    });
+  }, [refresh]);
+
+  const skipInstances = useCallback(async (instanceIds: string[], refreshDate?: string) => {
+    const uniqueInstanceIds = [...new Set(instanceIds.filter(Boolean))];
+    if (uniqueInstanceIds.length === 0) return;
+    if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
+
+    const db = await openUserContentDb();
+    const updatedInstanceIds: string[] = [];
+    // Skip the whole day as one unit. Running skipInstance in parallel used to
+    // create competing transactions/refreshes on the shared SQLite connection,
+    // which could roll optimistic cards back to pending on real phones.
+    await db.withTransactionAsync(async () => {
+      for (const instanceId of uniqueInstanceIds) {
+        const updated = await setTaskInstanceStatus(instanceId, 'skipped');
+        if (!updated) continue;
+        updatedInstanceIds.push(instanceId);
+        await syncChallengeProgressForTaskInstance(instanceId, 'skipped');
+      }
+    });
+
+    await Promise.all(updatedInstanceIds.map(instanceId => (
+      cancelNotificationsForInstance(instanceId).catch(error => {
+        console.warn('Skipped task notification cleanup failed:', { instanceId, error });
+      })
+    )));
+    await refresh(refreshDate).catch(error => {
+      console.warn('Skipped tasks refresh failed:', error);
+    });
   }, [refresh]);
 
   const resetInstance = useCallback(async (instanceId: string, refreshDate?: string) => {
     if (refreshDate) await ensureTaskInstancesForDate(refreshDate);
-    const updated = await setTaskInstanceStatus(instanceId, 'pending');
-    if (updated) {
-      await syncChallengeProgressForTaskInstance(instanceId, 'pending');
-    }
-    await refresh(refreshDate);
+    const db = await openUserContentDb();
+    let updated = false;
+    await db.withTransactionAsync(async () => {
+      updated = await setTaskInstanceStatus(instanceId, 'pending');
+      if (updated) {
+        await syncChallengeProgressForTaskInstance(instanceId, 'pending');
+      }
+    });
+    await refresh(refreshDate).catch(error => {
+      console.warn('Reset task refresh failed:', error);
+    });
   }, [refresh]);
 
   useEffect(() => {
@@ -221,10 +360,14 @@ export function TaskProvider({ children }: PropsWithChildren) {
     };
   }, [refresh]);
 
-  const listItems = useMemo(() => instances.map(taskInstanceToListItem), [instances]);
+  const listItems = useMemo(() => instances.map(instance => taskInstanceToListItem(
+    instance,
+    resolveTaskLaunchDescriptor(instance, launchConfigs[instance.taskId]),
+  )), [instances, launchConfigs]);
 
   const value = useMemo<TaskContextValue>(() => ({
     ready,
+    challengeCompletionRevision,
     selectedDate,
     taskDataDate,
     isDateLoading,
@@ -240,11 +383,15 @@ export function TaskProvider({ children }: PropsWithChildren) {
     remove,
     removeTasks,
     archiveTasksImmediately,
+    commitInstanceCompletion,
+    reconcileCommittedCompletion,
     completeInstance,
     skipInstance,
+    skipInstances,
     resetInstance,
   }), [
     ready,
+    challengeCompletionRevision,
     selectedDate,
     taskDataDate,
     isDateLoading,
@@ -260,8 +407,11 @@ export function TaskProvider({ children }: PropsWithChildren) {
     remove,
     removeTasks,
     archiveTasksImmediately,
+    commitInstanceCompletion,
+    reconcileCommittedCompletion,
     completeInstance,
     skipInstance,
+    skipInstances,
     resetInstance,
   ]);
 

@@ -1,42 +1,14 @@
-import { ScrollView, View, Text, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
-import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
-import RibbonSectionCard from '@/components/shared/RibbonSectionCard';
+import MainSectionCardsScreen from '@/components/shared/main-section-cards-screen';
 import { INNER_SECTION_CARDS } from '@/components/shared/sectionCardData';
-import { C, F } from '@/constants/tokens';
 
 export default function InnerLifeView() {
-  const router = useRouter();
-
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 120 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <ScreenTitleBar title="INNER LIFE" />
-        <View style={s.quoteWrap}>
-          <Text style={s.quote}>{'"The Kingdom of God is within you."'}</Text>
-          <Text style={s.ref}>LUKE 17:21</Text>
-        </View>
-
-        <View style={{ paddingHorizontal: 16, paddingTop: 4 }}>
-          {INNER_SECTION_CARDS.map((card, i) => (
-            <RibbonSectionCard
-              key={card.id}
-              {...card}
-              index={i}
-              onPress={() => router.push(card.route as any)}
-            />
-          ))}
-        </View>
-      </ScrollView>
-    </View>
+    <MainSectionCardsScreen
+      title="INNER LIFE"
+      quote={'"The Kingdom of God is within you."'}
+      quoteReference="LUKE 17:21"
+      cards={INNER_SECTION_CARDS}
+      cardsPaddingTop={4}
+    />
   );
 }
-
-const s = StyleSheet.create({
-  quoteWrap: { paddingHorizontal: 26, paddingTop: 8, paddingBottom: 6, alignItems: 'center' },
-  quote: { fontFamily: F.serifMediumItalic, fontSize: 17, color: C.textSecondary, lineHeight: 21.5, textAlign: 'center' },
-  ref: { marginTop: 10, fontFamily: F.sansBold, fontSize: 10, letterSpacing: 2.4, color: C.gold },
-});

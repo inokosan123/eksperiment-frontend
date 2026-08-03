@@ -1,4 +1,4 @@
-import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -16,8 +16,6 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import {
   BarChart3,
-  Clock,
-  Globe,
   Lock,
   Shield,
 } from '@/components/icons/Icons';
@@ -29,7 +27,10 @@ import { FOCUS_TINTS, FocusStatusChip } from './FocusCard';
 import RibbonSectionCard, { type RibbonCardProps } from '@/components/shared/RibbonSectionCard';
 import { PulseDot } from './FocusMeter';
 import { gaugeStanding, gaugeStateColor, GAUGE_ESSENTIALS_COLOR } from './DayGauge';
+import ShieldedGlobe from '@/components/icons/ShieldedGlobe';
+import ShieldedPhone from '@/components/icons/ShieldedPhone';
 import { ScreenTimeProtectionCard, WebProtectionCard } from './ProtectionPillarCards';
+
 import MedalStreakCard, { type MedalStreakWeekCell } from './MedalStreakCard';
 import GoldButton from './GoldButton';
 import AlwaysBlockedSheet from './AlwaysBlockedSheet';
@@ -52,24 +53,57 @@ import {
   getWebProtectionSummary,
   planHasProtectionNow,
   tickDayPlanStore,
-  useDayPlan,
-  type DayPlanState,
+  useDayPlanSelector,
   type DayRecord,
 } from './dayPlanStore';
+import {
+  focusMainSnapshotEqual,
+  selectFocusMainSnapshot,
+  selectFocusUsageForDate,
+  type FocusMainSnapshot,
+} from './focus-main-snapshot';
 import {
   FocusMainMotionProvider,
   FocusViewportMotionBoundary,
   useFocusMainMotion,
   type FocusViewportMotionHandle,
 } from './focus-main-motion';
+import { useViewportMotionBudget } from '@/components/shared/use-viewport-motion-budget';
+
+/* ─────────────────────────────────────────────────────────────
+ * WHERE THE TWO GUARD EMBLEMS STAND.
+ *
+ * Solved the way Library's and Inner's were — sample the mark's outer
+ * boundary, rotate it by the card's -8°, and test every point against the
+ * arrow orb's opaque disc, the plate's 26pt corner radius and all four
+ * clipped edges, at every card width from 300 to 430. Both land 79pt of ink
+ * tall, their right edge 14pt in from the plate, and 6pt of real air beneath.
+ *
+ * ⚠ 79 IS BORROWED FROM LIBRARY, NOT SOLVED HERE. These two drawings leave
+ * their top-right corner empty — phone upper-left, shield lower-right — so
+ * the solver will happily tuck a 105pt emblem in past the orb. That is 77%
+ * of a 136pt plate where every other screen runs 58%, on the same card
+ * component one screen down. The family scale wins.
+ *
+ * ⚠ None of these numbers is the size you see; see the note in
+ * `components/shared/sectionCardData` on why they look arbitrary.
+ * ───────────────────────────────────────────────────────────── */
+const GUARD_PLACEMENT = {
+  phone: { size: 86, right: 9.8, bottom: 1.1, rest: 0.3 },
+  globe: { size: 90, right: 10.8, bottom: 0.6, rest: 0.3 },
+} as const;
 
 const WEEK_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 const enter = (delay: number) => FadeInDown.duration(420).delay(delay);
 
-function buildWeek(state: DayPlanState, now: Date): MedalStreakWeekCell[] {
-  const today = dateKey(now);
-  const live = getLiveDayStatus(state, now);
+function buildWeek(
+  days: FocusMainSnapshot['days'],
+  today: string,
+  live: ReturnType<typeof getLiveDayStatus>,
+): MedalStreakWeekCell[] {
+  const [year, month, date] = today.split('-').map(Number);
+  const now = new Date(year, month - 1, date, 12, 0, 0, 0);
   return Array.from({ length: 7 }).map((_, index) => {
     const day = new Date(now);
     day.setDate(now.getDate() - (6 - index));
@@ -81,7 +115,7 @@ function buildWeek(state: DayPlanState, now: Date): MedalStreakWeekCell[] {
         status: live === 'broken' ? 'broken' : 'today',
       };
     }
-    const record: DayRecord | undefined = state.days[key];
+    const record: DayRecord | undefined = days[key];
     return {
       key,
       letter: WEEK_LETTERS[day.getDay()],
@@ -90,10 +124,10 @@ function buildWeek(state: DayPlanState, now: Date): MedalStreakWeekCell[] {
   });
 }
 
-function FocusMainRibbonCard(props: RibbonCardProps) {
+const FocusMainRibbonCard = memo(function FocusMainRibbonCard(props: RibbonCardProps) {
   const motionEnabled = useFocusMainMotion();
   return <RibbonSectionCard {...props} active={motionEnabled} />;
-}
+});
 
 
 function QuietHourRemaining({ endsAt }: { endsAt: number }) {
@@ -165,7 +199,14 @@ export default function FocusWatchView({
   const routeParams = useLocalSearchParams<{ sheet?: string }>();
   const insets = useSafeAreaInsets();
   const { height: guideScreenHeight, width: screenWidth } = useWindowDimensions();
-  const state = useDayPlan();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const now = useMemo(() => new Date(nowMs), [nowMs]);
+  const todayDateKey = dateKey(now);
+  const state = useDayPlanSelector(selectFocusMainSnapshot, focusMainSnapshotEqual);
+  const todayUsage = useDayPlanSelector(
+    useCallback(snapshot => selectFocusUsageForDate(snapshot, todayDateKey), [todayDateKey]),
+    Object.is,
+  );
   const { session, patchSession, setPresentation } = useGuidedSetup();
   const isGuided = guided && session?.active === true && session.activeStep === 'focusOverview';
   const guidePhase = isGuided ? session.phase : '';
@@ -184,19 +225,23 @@ export default function FocusWatchView({
   const designatedCoreSummary = useNativeActivitySelectionSummary('core.designated');
   const strictAlwaysSummary = useNativeActivitySelectionSummary('always.strict');
   const looseAlwaysSummary = useNativeActivitySelectionSummary('always.loose');
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const [quietOpen, setQuietOpen] = useState(false);
   const [alwaysBlockedOpen, setAlwaysBlockedOpen] = useState(false);
   const [trophiesOpen, setTrophiesOpen] = useState(false);
   const handledQuietRouteRef = useRef(false);
+  const quietEndsAt = state.quiet?.endsAt ?? null;
 
-  const handleFocusScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const scrollY = event.nativeEvent.contentOffset.y;
+  const scheduleFocusViewportUpdate = useViewportMotionBudget(scrollY => {
     focusHeroMotionRef.current?.updateViewport(scrollY);
     focusFooterMotionRef.current?.updateViewport(scrollY);
     focusToolsMotionRef.current?.updateViewport(scrollY);
+  });
+
+  const handleFocusScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const scrollY = event.nativeEvent.contentOffset.y;
+    scheduleFocusViewportUpdate(scrollY);
     if (isGuided) guideScrollY.current = scrollY;
-  }, [isGuided]);
+  }, [isGuided, scheduleFocusViewportUpdate]);
 
   useEffect(() => {
     if (
@@ -216,20 +261,26 @@ export default function FocusWatchView({
       tickDayPlanStore(next);
       setNowMs(next);
     };
-    const timer = setInterval(tick, 30_000);
-    const quietEndDelay = state.quiet
-      ? Math.max(0, state.quiet.endsAt - Date.now() + 50)
+    tick();
+    let minuteTimer: ReturnType<typeof setInterval> | null = null;
+    const minuteBoundaryDelay = 60_000 - (Date.now() % 60_000) + 20;
+    const minuteBoundary = setTimeout(() => {
+      tick();
+      minuteTimer = setInterval(tick, 60_000);
+    }, minuteBoundaryDelay);
+    const quietEndDelay = quietEndsAt != null
+      ? Math.max(0, quietEndsAt - Date.now() + 50)
       : null;
     const quietEndTimer = quietEndDelay != null && quietEndDelay <= 2_147_483_647
       ? setTimeout(tick, quietEndDelay)
       : null;
     return () => {
-      clearInterval(timer);
+      clearTimeout(minuteBoundary);
+      if (minuteTimer) clearInterval(minuteTimer);
       if (quietEndTimer) clearTimeout(quietEndTimer);
     };
-  }, [isFocused, state.quiet]);
+  }, [isFocused, quietEndsAt]);
 
-  const now = useMemo(() => new Date(nowMs), [nowMs]);
   const plan = getEffectivePlan(state, now);
   const webProtection = getWebProtectionSummary(state);
   const { packsOn, customSites, configured: webConfigured, state: webState } = webProtection;
@@ -254,10 +305,15 @@ export default function FocusWatchView({
   const displayProtected = isProtected || (previewMode && protectionConfigured);
   const needsPermission = !permissionGranted && !previewMode && protectionConfigured;
   const liveStatus = getLiveDayStatus(state, now);
-  const week = useMemo(() => buildWeek(state, now), [state, now]);
+  const week = useMemo(
+    () => buildWeek(state.days, todayDateKey, liveStatus),
+    [liveStatus, state.days, todayDateKey],
+  );
   const targetMinutes = plan?.budgetMinutes ?? null;
   const toleranceEndMinutes = plan ? plan.essentialOnlyMinutes ?? plan.tolerableMinutes : null;
-  const usedToday = getLiveUsageSnapshot(dateKey(now))?.totalMinutes ?? null;
+  const usedToday = getLiveUsageSnapshot(todayDateKey)?.totalMinutes
+    ?? todayUsage?.totalMinutes
+    ?? null;
   const todayStanding = targetMinutes != null
     ? gaugeStanding(targetMinutes, toleranceEndMinutes, usedToday)
     : 'unknown';
@@ -362,6 +418,7 @@ export default function FocusWatchView({
   ), [hardWallActive, isProtected, plan?.essentialsOnly, planProtects]);
   const openDayPlans = useCallback(() => router.push('/day-plans' as never), [router]);
   const openCleanSight = useCallback(() => router.push('/clean-sight' as never), [router]);
+  const openTodayDetail = useCallback(() => router.push('/day-plan-today' as never), [router]);
 
   const clearGuideTimers = useCallback(() => {
     guideTimersRef.current.forEach(clearTimeout);
@@ -547,7 +604,7 @@ export default function FocusWatchView({
     isGuided ? <View {...quietTarget}>{content}</View> : content
   );
 
-  const focusNavigationCards = (
+  const focusNavigationCards = useMemo(() => (
     <>
       <View style={s.contentSection}>
         <FocusMainRibbonCard
@@ -555,8 +612,12 @@ export default function FocusWatchView({
           title="Screen Time"
           titleColor={FOCUS_TINTS.gold.title}
           arrowBg={FOCUS_TINTS.gold.arrowBg}
-          Decor={Clock}
+          // The phone under guard, drawn for emblem size — see
+          // `components/icons/ShieldedPhone`. `Clock` said the card was about
+          // time and nothing about what the time is spent on.
+          Decor={ShieldedPhone}
           decorColor={FOCUS_TINTS.gold.label}
+          decorPlacement={GUARD_PLACEMENT.phone}
           chip={screenTimeChip}
           description="Plan how much of the day the phone may have — goals, limits, and app rules."
           onPress={openDayPlans}
@@ -572,8 +633,11 @@ export default function FocusWatchView({
           title="Web Protection"
           titleColor={FOCUS_TINTS.green.title}
           arrowBg={FOCUS_TINTS.green.arrowBg}
-          Decor={Globe}
+          // The same globe the live Clean Sight pillar above wears, so the two
+          // halves of this screen are plainly about the same thing.
+          Decor={ShieldedGlobe}
           decorColor={FOCUS_TINTS.green.label}
+          decorPlacement={GUARD_PLACEMENT.globe}
           description="Block gambling, adult content, and other harmful sites in browsers."
           onPress={openCleanSight}
           index={1}
@@ -582,7 +646,7 @@ export default function FocusWatchView({
         />
       </View>
     </>
-  );
+  ), [openCleanSight, openDayPlans, screenTimeChip, screenWidth]);
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <FocusMainMotionProvider>
@@ -680,7 +744,7 @@ export default function FocusWatchView({
               valueCaption={screenTimeCaption}
               valueColor={screenTimeValueColor}
               live
-              onPress={() => router.push('/day-plan-today' as never)}
+              onPress={openTodayDetail}
               accessibilityLabel={`${plan.name} is active today. Open today's detail.`}
             />
           )}
@@ -695,7 +759,7 @@ export default function FocusWatchView({
                 : state.purity.locks.enabled
                   ? 'HARD LOCK'
                   : 'SYSTEM-WIDE'}
-              onPress={() => router.push('/clean-sight' as never)}
+              onPress={openCleanSight}
             />
           )}
 
@@ -807,9 +871,19 @@ const s = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 18,
   },
+  /**
+   * The Web Protection card, directly under Screen Time.
+   *
+   * ⚠ marginTop 0, and that is not a missing value. `RibbonSectionCard`
+   * already carries its own `marginBottom: 10` for exactly this — stacking —
+   * and React Native does not collapse margins, so the 10 that used to sit
+   * here made the gap 20 where Library's identical pair sits at 10. Library
+   * gets 10 by simply letting the cards be siblings; this wrapper only exists
+   * for the horizontal inset, so it must not add to the vertical.
+   */
   contentSectionTight: {
     marginHorizontal: 16,
-    marginTop: 10,
+    marginTop: 0,
   },
   navCard: {
     minHeight: 128,

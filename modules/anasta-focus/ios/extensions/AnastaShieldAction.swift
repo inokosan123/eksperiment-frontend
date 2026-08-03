@@ -49,12 +49,14 @@ final class AnastaShieldAction: ShieldActionDelegate {
   ) {
     let strength = context["strength"] as? String ?? "strict"
     let kind = context["kind"] as? String ?? "limit"
-    let canOpenAnasta = strength == "loose" || kind == "checkin"
+    let isNeverAllowedWeb = kind == "web-never"
+    let canOpenAnasta = strength == "loose" || kind == "checkin" || isNeverAllowedWeb
 
     switch action {
     case .primaryButtonPressed where canOpenAnasta:
       var pending = context
-      pending["accessSelectionId"] = saveAccessSelection()
+      // A Never Allowed reminder must never create a temporary access token.
+      pending["accessSelectionId"] = isNeverAllowedWeb ? "" : saveAccessSelection()
       pending["createdAt"] = Date().timeIntervalSince1970 * 1000
       AnastaFocusShared.defaults.set(pending, forKey: AnastaFocusShared.pendingInterventionKey)
       if #available(iOS 26.0, *) {

@@ -2,15 +2,14 @@ import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 import Reanimated, {
   useAnimatedStyle,
-  useReducedMotion,
 } from 'react-native-reanimated';
 import { C } from '@/constants/tokens';
 import { BANKED } from '@/components/shared/BankedEmber';
 import {
   continuousPhase,
   pingPongPhase,
-  useContinuousAnimationClock,
 } from '@/components/shared/use-continuous-animation-clock';
+import { useAmbientMotion } from '@/components/shared/ambient-motion';
 import { FocusMedallionMark } from './FocusMedallion';
 
 /**
@@ -62,9 +61,9 @@ export default function MedalDayInProgress({
   banked?: boolean;
   active?: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-  const running = active && !banked && !reduceMotion;
-  const clock = useContinuousAnimationClock(running);
+  const runtime = useAmbientMotion(active && !banked);
+  const running = runtime.enabled;
+  const clock = runtime.clock;
 
   const mark = Math.round(size * MARK_RATIO);
   // The warmth spills well past the seat: it is the light the day is being

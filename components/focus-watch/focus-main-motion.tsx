@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { AppState, type LayoutChangeEvent, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
+import { AmbientMotionProvider } from '@/components/shared/ambient-motion';
 
 const FocusMainMotionContext = createContext(true);
 
@@ -84,7 +85,9 @@ export const FocusViewportMotionBoundary = memo(forwardRef<FocusViewportMotionHa
 
     return (
       <FocusMainMotionContext.Provider value={parentMotionEnabled && nearViewport}>
-        <View onLayout={handleLayout}>{children}</View>
+        <AmbientMotionProvider active={parentMotionEnabled && nearViewport}>
+          <View onLayout={handleLayout}>{children}</View>
+        </AmbientMotionProvider>
       </FocusMainMotionContext.Provider>
     );
   },

@@ -1,10 +1,11 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState } from 'react';
-import { Modal,
+import { ActivityIndicator, Modal,
   View,
   Text,
   ScrollView,
@@ -13,8 +14,10 @@ import { Modal,
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
   Easing,
+  FadeIn,
   FadeInDown,
   interpolate,
   interpolateColor,
@@ -42,11 +45,18 @@ import SetAsTaskSheet from '@/components/shared/SetAsTaskSheet';
 import { useAppSettings } from '@/components/settings/SettingsContext';
 import { useTasks } from '@/components/tasks/TaskProvider';
 import { getLocalDateKey } from '@/components/tasks/taskScheduler';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
 import { useGuidedSetup, useGuideTarget } from '@/components/onboarding/guided/GuidedSetupContext';
 import { ReadableText } from '@/components/shared/typographyScale';
+import {
+  DEFAULT_ORTHODOX_CATEGORY,
+  getPrayerPreviewBlocks,
+} from '@/components/prayer/prayerPreviewModel';
 
 import {
   getPrayerOptions,
@@ -58,6 +68,8 @@ import {
   PrayerOption,
   PrayerSection,
 } from '@/data/prayers/prayerCatalog';
+
+const StableMyRulePage = memo(MyRulePage);
 
 type CatTheme = { accent: string; bg: string; border: string };
 type PrayerSlidePart = { type: 'instruction' | 'text' | 'title'; content: string; tone?: 'label' | 'repeat' | 'rubric' };
@@ -161,9 +173,15 @@ const PREVIEW_CATEGORY_TITLES: Record<PrayerLanguage, Partial<Record<PrayerCateg
 const BOOK_ENTER = FadeInDown
   .duration(260)
   .withInitialValues({ opacity: 0, transform: [{ translateY: 10 }] });
-
 const PAGE_WORD_LIMIT = 320;
 const LONG_TEXT_WORD_LIMIT = 190;
+// The card on this screen is a preview; the complete prayer belongs to the
+// paged reader opened by START PRAYER. Keeping this tree deliberately small is
+// what leaves Morning / Meals / Evening / Jesus responsive even when the full
+// Evening rule contains 148 separately typeset native blocks.
+const PREVIEW_ENTER = FadeIn
+  .duration(130)
+  .easing(Easing.out(Easing.cubic));
 
 function wordCount(value: string) {
   return value.trim().split(/\s+/).filter(Boolean).length;
@@ -593,6 +611,23 @@ function CategoryButton({
   const hop = useSharedValue(0);
   const press = useSharedValue(0);
 
+  const commitPress = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    onPress();
+  }, [onPress]);
+
+  const tapGesture = useMemo(() => Gesture.Tap()
+    .maxDistance(12)
+    .onBegin(() => {
+      press.value = withTiming(1, { duration: 90 });
+    })
+    .onEnd((_event, success) => {
+      if (success) runOnJS(commitPress)();
+    })
+    .onFinalize(() => {
+      press.value = withTiming(0, { duration: 190 });
+    }), [commitPress, press]);
+
   useEffect(() => {
     if (reduceMotion) {
       on.value = active ? 1 : 0;
@@ -628,45 +663,44 @@ function CategoryButton({
   }));
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.9}
-      onPressIn={() => {
-        press.value = withTiming(1, { duration: 90 });
-      }}
-      onPressOut={() => {
-        press.value = withTiming(0, { duration: 190 });
-      }}
-      style={s.catBtn}
-    >
+    <GestureDetector gesture={tapGesture}>
       <Reanimated.View
-        pointerEvents="none"
-        style={[
-          s.catSeat,
-          {
-            backgroundColor: theme.bg,
-            borderColor: theme.border,
-            shadowColor: theme.accent,
-          },
-          seatStyle,
-        ]}
-      />
+        accessible
+        accessibilityRole="button"
+        accessibilityState={{ selected: active }}
+        accessibilityLabel={cat.label}
+        onAccessibilityTap={commitPress}
+        style={s.catBtn}
+      >
+        <Reanimated.View
+          pointerEvents="none"
+          style={[
+            s.catSeat,
+            {
+              backgroundColor: theme.bg,
+              borderColor: theme.border,
+              shadowColor: theme.accent,
+            },
+            seatStyle,
+          ]}
+        />
 
-      <Reanimated.View style={liftStyle}>
-        <View style={s.catIcon}>
-          <Reanimated.View style={restIconStyle}>
-            <cat.Icon s={21} c="#C4BAA8" w={1.6} />
-          </Reanimated.View>
-          <Reanimated.View style={[s.catIconLit, litIconStyle]}>
-            <cat.Icon s={21} c={theme.accent} w={2} />
-          </Reanimated.View>
-        </View>
+        <Reanimated.View style={liftStyle}>
+          <View style={s.catIcon}>
+            <Reanimated.View style={restIconStyle}>
+              <cat.Icon s={21} c="#C4BAA8" w={1.6} />
+            </Reanimated.View>
+            <Reanimated.View style={[s.catIconLit, litIconStyle]}>
+              <cat.Icon s={21} c={theme.accent} w={2} />
+            </Reanimated.View>
+          </View>
+        </Reanimated.View>
+
+        <Reanimated.Text style={[s.catLabel, labelStyle]} numberOfLines={1}>
+          {cat.label}
+        </Reanimated.Text>
       </Reanimated.View>
-
-      <Reanimated.Text style={[s.catLabel, labelStyle]} numberOfLines={1}>
-        {cat.label}
-      </Reanimated.Text>
-    </TouchableOpacity>
+    </GestureDetector>
   );
 }
 
@@ -693,6 +727,23 @@ function RulePill({
   const on = useSharedValue(active ? 1 : 0);
   const press = useSharedValue(0);
 
+  const commitPress = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    onPress();
+  }, [onPress]);
+
+  const tapGesture = useMemo(() => Gesture.Tap()
+    .maxDistance(12)
+    .onBegin(() => {
+      press.value = withTiming(1, { duration: 90 });
+    })
+    .onEnd((_event, success) => {
+      if (success) runOnJS(commitPress)();
+    })
+    .onFinalize(() => {
+      press.value = withTiming(0, { duration: 190 });
+    }), [commitPress, press]);
+
   useEffect(() => {
     on.value = reduceMotion
       ? active ? 1 : 0
@@ -716,17 +767,15 @@ function RulePill({
   }));
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.9}
-      onPressIn={() => {
-        press.value = withTiming(1, { duration: 90 });
-      }}
-      onPressOut={() => {
-        press.value = withTiming(0, { duration: 190 });
-      }}
-    >
-      <Reanimated.View style={[s.rulePill, liftStyle]}>
+    <GestureDetector gesture={tapGesture}>
+      <Reanimated.View
+        accessible
+        accessibilityRole="button"
+        accessibilityState={{ selected: active }}
+        accessibilityLabel={label}
+        onAccessibilityTap={commitPress}
+        style={[s.rulePill, liftStyle]}
+      >
         <Reanimated.View
           pointerEvents="none"
           style={[
@@ -740,9 +789,231 @@ function RulePill({
           {label}
         </Reanimated.Text>
       </Reanimated.View>
-    </TouchableOpacity>
+    </GestureDetector>
   );
 }
+
+/**
+ * The category animation stays exactly as designed and its selection commits
+ * immediately inside this small render boundary. The parent replaces the
+ * complete preview with one neutral loading card; the themed prayer card then
+ * mounts separately after a short cancellable settle, so its native text tree
+ * cannot steal the selector's first frames.
+ */
+function PrayerCategoryStrip({
+  jesusTarget,
+  onChange,
+  value,
+}: {
+  jesusTarget: ReturnType<typeof useGuideTarget>;
+  onChange: (category: PrayerCategory) => void;
+  value: PrayerCategory;
+}) {
+  const [visualValue, setVisualValue] = useState(value);
+  const visualValueRef = useRef(value);
+
+  useEffect(() => {
+    if (visualValueRef.current === value) return;
+    visualValueRef.current = value;
+    setVisualValue(value);
+  }, [value]);
+
+  const select = useCallback((next: PrayerCategory) => {
+    if (next === visualValueRef.current) return;
+    visualValueRef.current = next;
+    setVisualValue(next);
+    // Only the small selector/loading-card commit happens now. The complete
+    // prayer preview mounts after these control frames finish.
+    onChange(next);
+  }, [onChange]);
+
+  return (
+    <View style={s.catGrid}>
+      {CATEGORIES.map(cat => {
+        const button = (
+          <CategoryButton
+            key={cat.id === 'jesus' ? undefined : cat.id}
+            cat={cat}
+            theme={CAT_THEMES[cat.id]}
+            active={visualValue === cat.id}
+            onPress={() => select(cat.id)}
+          />
+        );
+
+        if (cat.id === 'jesus') {
+          return (
+            <View
+              key={cat.id}
+              style={{ flex: 1 }}
+              collapsable={false}
+              ref={jesusTarget.ref}
+              onLayout={jesusTarget.onLayout}
+            >
+              {button}
+            </View>
+          );
+        }
+        return button;
+      })}
+    </View>
+  );
+}
+
+/** Same render boundary for the rules inside a selected prayer category. */
+function PrayerRuleStrip({
+  onChange,
+  options,
+  theme,
+  value,
+}: {
+  onChange: (optionId: string) => void;
+  options: PrayerOption[];
+  theme: CatTheme;
+  value: string;
+}) {
+  const [visualValue, setVisualValue] = useState(value);
+  const visualValueRef = useRef(value);
+
+  useEffect(() => {
+    if (visualValueRef.current === value) return;
+    visualValueRef.current = value;
+    setVisualValue(value);
+  }, [value, options]);
+
+  const select = useCallback((next: string) => {
+    if (next === visualValueRef.current) return;
+    visualValueRef.current = next;
+    setVisualValue(next);
+    onChange(next);
+  }, [onChange]);
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={s.ruleScroll}
+    >
+      {options.map(option => (
+        <RulePill
+          key={option.id}
+          label={option.label}
+          theme={theme}
+          active={option.id === visualValue}
+          onPress={() => select(option.id)}
+        />
+      ))}
+    </ScrollView>
+  );
+}
+
+const StablePrayerCategoryStrip = memo(PrayerCategoryStrip);
+const StablePrayerRuleStrip = memo(PrayerRuleStrip);
+
+type PrayerPreviewModel = {
+  blocks: PrayerBlock[];
+  category: PrayerCategory;
+  firstTextBlockIndex: number;
+  isOrthodoxRule: boolean;
+  key: string;
+  ruleSubtitle: string;
+  theme: CatTheme;
+  title: string;
+};
+
+/** A complete lightweight preview card; the reader still owns the full rule. */
+const PrayerPreviewCard = memo(function PrayerPreviewCard({
+  model,
+}: {
+  model: PrayerPreviewModel;
+}) {
+  const {
+    blocks,
+    category,
+    firstTextBlockIndex,
+    isOrthodoxRule,
+    ruleSubtitle,
+    theme,
+    title,
+  } = model;
+
+  return (
+    <View style={[s.prayerCard, { borderColor: theme.border, shadowColor: theme.accent }]}>
+      <LinearGradient
+        colors={['#FFFFFF', theme.bg]}
+        locations={[0, 0.42]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View pointerEvents="none" style={s.prayerCardLit} />
+
+      {isOrthodoxRule && (
+        <View style={s.orthodoxBadge} pointerEvents="none">
+          <OrthodoxCross s={12} c={theme.accent} w={1.35} />
+          <Text style={[s.orthodoxLabel, { color: theme.accent }]}>ORTH.</Text>
+        </View>
+      )}
+      <Text style={[s.prayerCat, { color: theme.accent }]}>
+        {category === 'jesus' ? 'JESUS PRAYER' : CATEGORIES.find(item => item.id === category)?.label}
+      </Text>
+      <ReadableText style={s.prayerTitle}>{title}</ReadableText>
+      {ruleSubtitle && (
+        <ReadableText style={[s.prayerRuleSubtitle, { color: theme.accent }]}>
+          {ruleSubtitle}
+        </ReadableText>
+      )}
+
+      <View style={s.ornamentRow}>
+        <View style={[s.ornamentLine, { backgroundColor: theme.accent }]} />
+        <View style={[s.ornamentDiamond, { backgroundColor: theme.accent }]} />
+        <View style={[s.ornamentLine, { backgroundColor: theme.accent }]} />
+      </View>
+
+      <View style={s.blockStack}>
+        {blocks.map((block, index) => (
+          <StablePrayerBlockView
+            key={`${block.type}-${index}`}
+            block={block}
+            theme={theme}
+            opening={index === firstTextBlockIndex}
+          />
+        ))}
+      </View>
+    </View>
+  );
+});
+
+/**
+ * The excerpt is now small enough to swap directly. A short UI-thread fade
+ * softens completed preview changes without introducing a synthetic loading
+ * state or delaying another selector press.
+ */
+const PrayerPreviewStage = memo(function PrayerPreviewStage({
+  guided,
+  target,
+}: {
+  guided: boolean;
+  target: PrayerPreviewModel;
+}) {
+  const reduceMotion = useReducedMotion();
+  const hasMountedRef = useRef(false);
+  const animateChange = hasMountedRef.current && !guided && !reduceMotion;
+
+  useEffect(() => {
+    hasMountedRef.current = true;
+  }, []);
+
+  return (
+    <Reanimated.View
+      key={target.key}
+      entering={animateChange ? PREVIEW_ENTER : undefined}
+      style={s.previewStage}
+    >
+      <PrayerPreviewCard model={target} />
+    </Reanimated.View>
+  );
+});
 
 export default function PrayerBookView({
   guided = false,
@@ -770,10 +1041,11 @@ export default function PrayerBookView({
   const taskInstanceId = firstParam(params.taskInstanceId);
   const taskDate = firstParam(params.taskDate) ?? getLocalDateKey();
   const isTaskLaunch = firstParam(params.isTask) === 'true' || !!taskInstanceId;
-  const { createOrUpdateTask, refresh: refreshTasks, completeInstance } = useTasks();
+  const { createOrUpdateTask, refresh: refreshTasks } = useTasks();
+  const completion = useRoutedTaskCompletion({ taskInstanceId, taskDate });
   const { settings, updateSettings } = useAppSettings();
   const prayerLanguage = normalizePrayerLanguage(settings.prayerLang);
-  const initialCategory = launchedCategory ?? 'morning';
+  const initialCategory = launchedCategory ?? DEFAULT_ORTHODOX_CATEGORY;
   // The Prayer Book holds two books. It opens on My Rule unless a launch is
   // carrying the reader somewhere in the Orthodox one.
   const [book, setBook] = useState<PrayerBookMode>(
@@ -810,7 +1082,13 @@ export default function PrayerBookView({
   const options = useMemo(() => getPrayerOptions(prayerLanguage, category), [category, prayerLanguage]);
   const selectedOption = options.find(option => option.id === optionId) ?? options[0];
   const section = selectedOption.section;
-  const slides = useMemo(() => buildPrayerSlides(section), [section]);
+  // Slide construction belongs to the reader. Keeping it out of preview
+  // selection commits leaves those commits with only the controls and stable
+  // double-buffered preview stage to reconcile.
+  const slides = useMemo(
+    () => isReaderActive ? buildPrayerSlides(section) : [],
+    [isReaderActive, section],
+  );
   const canChooseRule = options.length > 1;
   const previewTitle = PREVIEW_CATEGORY_TITLES[prayerLanguage][category] ?? stripParentheticalTitle(section.title);
   const previewRuleSubtitle = hasRulePreviewSubtitle(category) ? selectedOption.label : '';
@@ -827,9 +1105,33 @@ export default function PrayerBookView({
   // The colour the screen's furniture takes: the hour's, or My Rule's own.
   const bookAccent = isMyRule ? MINE_ACCENT : theme.accent;
   const actionLabels = PRAYER_ACTION_LABELS[prayerLanguage];
+  const previewKey = `${prayerLanguage}:${category}:${selectedOption.id}`;
+  const previewBlocks = useMemo(
+    () => getPrayerPreviewBlocks(section.blocks),
+    [section.blocks],
+  );
   // Only the first spoken block is illuminated — a versal on every paragraph
   // is a pattern, and a pattern is not an opening.
-  const firstTextBlockIndex = section.blocks.findIndex(block => block.type === 'text');
+  const firstTextBlockIndex = previewBlocks.findIndex(block => block.type === 'text');
+  const previewModel = useMemo<PrayerPreviewModel>(() => ({
+    blocks: previewBlocks,
+    category,
+    firstTextBlockIndex,
+    isOrthodoxRule,
+    key: previewKey,
+    ruleSubtitle: previewRuleSubtitle,
+    theme,
+    title: previewTitle,
+  }), [
+    category,
+    firstTextBlockIndex,
+    isOrthodoxRule,
+    previewBlocks,
+    previewKey,
+    previewRuleSubtitle,
+    theme,
+    previewTitle,
+  ]);
 
   useEffect(() => {
     if (!launchedAutoStart || !launchedCategory) return;
@@ -863,20 +1165,23 @@ export default function PrayerBookView({
 
   const finishReader = useCallback(async () => {
     if (taskInstanceId) {
-      await completeInstance(taskInstanceId, taskDate);
-      queueTaskCompletionReturnAnimation(taskInstanceId);
+      const result = await completion.completeBeforeReturn({});
+      if (!result.ok) return false;
     }
 
     if (isTaskLaunch) {
       router.back();
-      return;
+      return true;
     }
 
     setIsReaderActive(false);
-  }, [completeInstance, isTaskLaunch, router, taskDate, taskInstanceId]);
+    return true;
+  }, [completion, isTaskLaunch, router, taskInstanceId]);
 
-  const handleCategoryChange = (cat: PrayerCategory) => {
+  const handleCategoryChange = useCallback((cat: PrayerCategory) => {
     const nextOptions = getPrayerOptions(prayerLanguage, cat);
+    // Controls and the card head update now; the expensive body is explicitly
+    // invalidated and prepared after the selector animation.
     setCategory(cat);
     setOptionId(defaultOptionId(nextOptions));
     setIsReaderActive(false);
@@ -884,7 +1189,7 @@ export default function PrayerBookView({
     if (isGuided && guidePhase === 'prayerCategories' && cat === 'jesus') {
       patchSession({ phase: 'prayerJesus' });
     }
-  };
+  }, [guidePhase, isGuided, patchSession, prayerLanguage]);
 
   const handleLanguageChange = (lang: PrayerLanguage) => {
     Haptics.selectionAsync().catch(() => {});
@@ -937,13 +1242,27 @@ export default function PrayerBookView({
     } as any);
   }, [router]);
 
+  const handleStartMyRulePage = useCallback(() => {
+    if (isGuided) return;
+    openPersonalRule();
+  }, [isGuided, openPersonalRule]);
+
+  const handleOpenJesusPrayerPage = useCallback(() => {
+    if (isGuided) return;
+    openJesusPrayer();
+  }, [isGuided, openJesusPrayer]);
+
   const handleOptionChange = useCallback((id: string) => {
+    if (!options.some(option => option.id === id)) return;
     setOptionId(id);
-  }, []);
+  }, [options]);
 
   const handleBookChange = useCallback((next: PrayerBookMode) => {
     // During the tour the screen is a stage the guide dresses itself.
     if (isGuided) return;
+    // PrayerBookSwitch starts its native spring before this callback. The
+    // actual book state must then commit synchronously and unconditionally;
+    // deferring it again can leave the plaque changed while the old page stays.
     setBook(next);
     setIsReaderActive(false);
   }, [isGuided]);
@@ -1108,22 +1427,30 @@ export default function PrayerBookView({
 
   if (isReaderActive) {
     return (
-      <PrayerReader
-        section={section}
-        slides={slides}
-        options={options}
-        selectedOption={selectedOption}
-        theme={theme}
-        topInset={insets.top}
-        bottomInset={insets.bottom}
-        canChooseRule={canChooseRule}
-        deferFinishFeedback={isTaskLaunch}
-        continueLabel={actionLabels.continue}
-        finishLabel={actionLabels.finish}
-        onClose={closeReader}
-        onFinish={finishReader}
-        onOptionChange={handleOptionChange}
-      />
+      <>
+        <PrayerReader
+          section={section}
+          slides={slides}
+          options={options}
+          selectedOption={selectedOption}
+          theme={theme}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          canChooseRule={canChooseRule}
+          deferFinishFeedback={isTaskLaunch}
+          showFinishLoader={completion.showSlowIndicator}
+          continueLabel={actionLabels.continue}
+          finishLabel={actionLabels.finish}
+          onClose={closeReader}
+          onFinish={finishReader}
+          onOptionChange={handleOptionChange}
+        />
+        <RoutedTaskCompletionErrorModal
+          visible={completion.saveErrorVisible}
+          onKeepEditing={completion.keepEditing}
+          onRetry={completion.retry}
+        />
+      </>
     );
   }
 
@@ -1233,71 +1560,29 @@ export default function PrayerBookView({
             collapsable={false}
             onLayout={event => { guideCardYRef.current = event.nativeEvent.layout.y; }}
           >
-            <MyRulePage
+            <StableMyRulePage
               lang={prayerLanguage}
-              onStartMyRule={() => {
-                if (isGuided) return;
-                openPersonalRule();
-              }}
-              onOpenJesusPrayer={() => {
-                if (isGuided) return;
-                openJesusPrayer();
-              }}
+              onStartMyRule={handleStartMyRulePage}
+              onOpenJesusPrayer={handleOpenJesusPrayerPage}
               heroRef={cardTarget.ref}
               onHeroLayout={cardTarget.onLayout}
             />
           </View>
         ) : (
           <>
-          <View style={s.catGrid}>
-            {CATEGORIES.map(cat => {
-              const active = category === cat.id;
-              const t = CAT_THEMES[cat.id];
-
-              const button = (
-                <CategoryButton
-                  key={cat.id === 'jesus' ? undefined : cat.id}
-                  cat={cat}
-                  theme={t}
-                  active={active}
-                  onPress={() => handleCategoryChange(cat.id)}
-                />
-              );
-
-              // The JESUS tab is a spotlight anchor during the onboarding tour.
-              if (cat.id === 'jesus') {
-                return (
-                  <View
-                    key={cat.id}
-                    style={{ flex: 1 }}
-                    collapsable={false}
-                    ref={jesusTabTarget.ref}
-                    onLayout={jesusTabTarget.onLayout}
-                  >
-                    {button}
-                  </View>
-                );
-              }
-              return button;
-            })}
-          </View>
+          <StablePrayerCategoryStrip
+            jesusTarget={jesusTabTarget}
+            onChange={handleCategoryChange}
+            value={category}
+          />
 
           {canChooseRule && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={s.ruleScroll}
-            >
-              {options.map(option => (
-                <RulePill
-                  key={option.id}
-                  label={option.label}
-                  theme={theme}
-                  active={option.id === selectedOption.id}
-                  onPress={() => handleOptionChange(option.id)}
-                />
-              ))}
-            </ScrollView>
+            <StablePrayerRuleStrip
+              onChange={handleOptionChange}
+              options={options}
+              theme={theme}
+              value={selectedOption.id}
+            />
           )}
 
           <View
@@ -1309,57 +1594,7 @@ export default function PrayerBookView({
               cardTarget.onLayout(event);
             }}
           >
-            <View style={[s.prayerCard, { borderColor: theme.border, shadowColor: theme.accent }]}>
-              {/* The card's own light, in the register the app's finest cards
-                  use: the ground gathers light at the head, where the title
-                  stands, and settles into the hour's colour down the page. A
-                  white hairline catches the top edge. Flat tint alone made this
-                  the plainest surface in an app full of lit ones. */}
-              <LinearGradient
-                colors={['#FFFFFF', theme.bg]}
-                locations={[0, 0.42]}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
-              <View pointerEvents="none" style={s.prayerCardLit} />
-
-              {isOrthodoxRule && (
-                <View style={s.orthodoxBadge} pointerEvents="none">
-                  <OrthodoxCross s={12} c={theme.accent} w={1.35} />
-                  <Text style={[s.orthodoxLabel, { color: theme.accent }]}>ORTH.</Text>
-                </View>
-              )}
-              <Text style={[s.prayerCat, { color: theme.accent }]}>
-                {category === 'jesus' ? 'JESUS PRAYER' : CATEGORIES.find(c => c.id === category)?.label}
-              </Text>
-              <ReadableText style={s.prayerTitle}>{previewTitle}</ReadableText>
-              {previewRuleSubtitle && (
-                <ReadableText style={[s.prayerRuleSubtitle, { color: theme.accent }]}>
-                  {previewRuleSubtitle}
-                </ReadableText>
-              )}
-
-              {/* The one thing both books keep, so the two pages stay one book:
-                  a rule, a struck diamond at its waist, a rule. */}
-              <View style={s.ornamentRow}>
-                <View style={[s.ornamentLine, { backgroundColor: theme.accent }]} />
-                <View style={[s.ornamentDiamond, { backgroundColor: theme.accent }]} />
-                <View style={[s.ornamentLine, { backgroundColor: theme.accent }]} />
-              </View>
-
-              <View style={s.blockStack}>
-                {section.blocks.map((block, index) => (
-                  <PrayerBlockView
-                    key={`${block.type}-${index}`}
-                    block={block}
-                    theme={theme}
-                    opening={index === firstTextBlockIndex}
-                  />
-                ))}
-              </View>
-            </View>
+            <PrayerPreviewStage guided={isGuided} target={previewModel} />
           </View>
           </>
         )}
@@ -1462,6 +1697,8 @@ function PrayerBlockView({
   return <ReadableText style={s.prayerText}>{block.content}</ReadableText>;
 }
 
+const StablePrayerBlockView = memo(PrayerBlockView);
+
 /**
  * Split the opening letter off a prayer, if it can carry a versal.
  *
@@ -1540,6 +1777,7 @@ function PrayerReader({
   bottomInset,
   canChooseRule,
   deferFinishFeedback,
+  showFinishLoader,
   continueLabel,
   finishLabel,
   onClose,
@@ -1555,10 +1793,11 @@ function PrayerReader({
   bottomInset: number;
   canChooseRule: boolean;
   deferFinishFeedback: boolean;
+  showFinishLoader: boolean;
   continueLabel: string;
   finishLabel: string;
   onClose: () => void;
-  onFinish: () => void | Promise<void>;
+  onFinish: () => boolean | void | Promise<boolean | void>;
   onOptionChange: (id: string) => void;
 }) {
   const [slideIndex, setSlideIndex] = useState(0);
@@ -1574,6 +1813,7 @@ function PrayerReader({
   const progress = slides.length > 0 ? ((boundedIndex + 1) / slides.length) * 100 : 0;
   const progressMotion = useSharedValue(0);
   const progressGlowMotion = useSharedValue(0);
+  const progressTrackWidth = useSharedValue(0);
   const pageMotion = useSharedValue(1);
   const pageDirection = useSharedValue(1);
   const backPressMotion = useSharedValue(1);
@@ -1608,8 +1848,8 @@ function PrayerReader({
     });
   }, [boundedIndex, selectedOption.id, pageMotion]);
 
-  const progressFillStyle = useAnimatedStyle(() => ({
-    width: `${Math.max(0, Math.min(100, progressMotion.value))}%`,
+  const progressLineStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleX: Math.max(0, Math.min(100, progressMotion.value)) / 100 }],
   }));
 
   // The rubricator's mark at the head of the ink. It is always solid — the
@@ -1617,7 +1857,10 @@ function PrayerReader({
   // bar and wrong for a mark that says where the reading has reached. What
   // moves is a strike: it swells as the page turns and settles again.
   const progressMarkStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + progressGlowMotion.value * 0.34 }],
+    transform: [
+      { translateX: progressTrackWidth.value * Math.max(0, Math.min(100, progressMotion.value)) / 100 },
+      { scale: 1 + progressGlowMotion.value * 0.34 },
+    ],
   }));
 
   /**
@@ -1720,10 +1963,14 @@ function PrayerReader({
       if (finishLockRef.current) return;
       finishLockRef.current = true;
       if (!deferFinishFeedback) finishHaptic();
-      void Promise.resolve(onFinish()).catch(error => {
-        finishLockRef.current = false;
-        console.warn('Prayer task completion failed:', error);
-      });
+      void Promise.resolve(onFinish())
+        .then(completedSuccessfully => {
+          if (completedSuccessfully === false) finishLockRef.current = false;
+        })
+        .catch(error => {
+          finishLockRef.current = false;
+          console.warn('Prayer task completion failed:', error);
+        });
       return;
     }
 
@@ -1809,17 +2056,20 @@ function PrayerReader({
           </TouchableOpacity>
         </View>
 
-        <View style={s.readerRuleChannel}>
+        <View
+          style={s.readerRuleChannel}
+          onLayout={event => { progressTrackWidth.value = event.nativeEvent.layout.width; }}
+        >
           <View style={[s.readerRuleTrack, { backgroundColor: plaqueAlpha(theme.accent, 0.16) }]} />
-          <Reanimated.View style={[s.readerRuleInk, progressFillStyle]}>
-            <View style={[s.readerRuleInkLine, { backgroundColor: theme.accent }]} />
+          <View style={s.readerRuleInk}>
+            <Reanimated.View style={[s.readerRuleInkLine, { backgroundColor: theme.accent }, progressLineStyle]} />
             {/* The mark the rubricator leaves at the head of the ink. It rides
                 the fill rather than sliding on its own clock, so the page and
                 the mark can never disagree about where the reading is. */}
             <Reanimated.View style={[s.readerRuleMark, progressMarkStyle]}>
               <View style={[s.readerRuleMarkDiamond, { backgroundColor: theme.accent }]} />
             </Reanimated.View>
-          </Reanimated.View>
+          </View>
           <View style={s.readerRuleCatch} />
           {/* A ruled line in a manuscript is stopped at both ends by a short
               serif, not left to fade out. They also give the empty rule and
@@ -1929,11 +2179,18 @@ function PrayerReader({
             <OrthodoxPlaque
               accent={theme.accent}
               size="compact"
-              label={isLast ? finishLabel : continueLabel}
+              label={showFinishLoader && isLast ? '' : isLast ? finishLabel : continueLabel}
               onPress={goNext}
               onPressIn={() => { nextPressMotion.value = withTiming(0.975, { duration: 80 }); }}
               onPressOut={() => { nextPressMotion.value = withTiming(1, { duration: 120 }); }}
             />
+            {showFinishLoader && isLast && (
+              <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                  <ActivityIndicator size="small" color={plaqueInk(theme.accent, 30)} />
+                </View>
+              </View>
+            )}
           </Reanimated.View>
         </View>
 
@@ -2158,6 +2415,10 @@ const s = StyleSheet.create({
     opacity: 0.85,
     transform: [{ rotate: '45deg' }],
   },
+  previewStage: {
+    position: 'relative',
+    minHeight: 270,
+  },
   // 22, not 16: on a devotional page the air between voices is what makes it
   // read as a page rather than a stack of paragraphs.
   blockStack: { width: '100%', marginTop: 22, gap: 22 },
@@ -2249,12 +2510,12 @@ const s = StyleSheet.create({
   // diamond riding at the head of it.
   readerRuleChannel: { height: 9, marginTop: 10, marginHorizontal: 3, justifyContent: 'center' },
   readerRuleTrack: { position: 'absolute', left: 0, right: 0, height: 1.5, borderRadius: 1 },
-  readerRuleInk: { position: 'absolute', left: 0, height: 9, justifyContent: 'center' },
+  readerRuleInk: { position: 'absolute', left: 0, right: 0, height: 9, justifyContent: 'center' },
   // 2.25 against the track's 1.5. What has been read is a line the pen has
   // gone over; an unread rule is the ruling underneath it, and they should
   // not weigh the same.
-  readerRuleInkLine: { height: 2.25, borderRadius: 1.2 },
-  readerRuleMark: { position: 'absolute', right: -3.5, alignItems: 'center', justifyContent: 'center' },
+  readerRuleInkLine: { height: 2.25, borderRadius: 1.2, transformOrigin: 'left center' },
+  readerRuleMark: { position: 'absolute', left: -2, alignItems: 'center', justifyContent: 'center' },
   readerRuleMarkDiamond: { width: 5.5, height: 5.5, borderRadius: 1, transform: [{ rotate: '45deg' }] },
   readerRuleSerif: { position: 'absolute', width: 1.2, height: 7, borderRadius: 0.6 },
   readerRuleSerifStart: { left: 0 },

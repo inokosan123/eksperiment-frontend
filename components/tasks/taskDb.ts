@@ -13,6 +13,7 @@ import type {
   TaskFrequency,
   TaskInstance,
   TaskInstanceStatus,
+  TaskLaunchConfigBundle,
   TaskLifecycleStatus,
   TaskSchedule,
 } from '@/components/tasks/taskTypes';
@@ -101,6 +102,10 @@ type JournalConfigRow = {
   task_id: string;
   journal_type: JournalTaskConfig['journalType'];
   technique: string | null;
+};
+
+type TaskLaunchConfigRow = PrayerConfigRow & Partial<ScriptureConfigRow> & Partial<JournalConfigRow> & {
+  reading_book_id: string | null;
 };
 
 let initPromise: Promise<void> | null = null;
@@ -520,6 +525,10 @@ export async function initTaskDb(db?: SQLite.SQLiteDatabase) {
 
       await repairMissingScriptureTaskConfigs(conn);
     })();
+    initPromise = initPromise.catch(error => {
+      initPromise = null;
+      throw error;
+    });
   }
 
   return initPromise;
@@ -867,6 +876,79 @@ export async function getPrayerTaskConfig(taskId: string): Promise<PrayerTaskCon
     jesusPrayerDuration: row.jesus_prayer_duration ?? undefined,
     jesusPrayerCount: row.jesus_prayer_count ?? undefined,
   };
+}
+
+export async function listTaskLaunchConfigs(): Promise<Record<string, TaskLaunchConfigBundle>> {
+  const db = await openTaskDb();
+  const rows = await db.getAllAsync<TaskLaunchConfigRow>(
+    `SELECT
+       t.id AS task_id,
+       p.prayer_type,
+       p.prayer_rule,
+       p.prayer_task_kind,
+       p.jesus_prayer_mode,
+       p.jesus_prayer_duration,
+       p.jesus_prayer_count,
+       j.journal_type,
+       j.technique,
+       s.reading_type,
+       s.start_book_id,
+       s.start_chapter,
+       s.chapters_per_day,
+       s.total_units_read,
+       r.book_id AS reading_book_id
+     FROM tasks t
+     LEFT JOIN task_prayer_config p ON p.task_id = t.id
+     LEFT JOIN task_journal_config j ON j.task_id = t.id
+     LEFT JOIN task_scripture_config s ON s.task_id = t.id
+     LEFT JOIN task_reading_book_config r ON r.task_id = t.id`,
+  );
+
+  const configs: Record<string, TaskLaunchConfigBundle> = {};
+  for (const row of rows) {
+    const bundle: TaskLaunchConfigBundle = {};
+    if (
+      row.prayer_type != null
+      || row.prayer_rule != null
+      || row.prayer_task_kind != null
+      || row.jesus_prayer_mode != null
+    ) {
+      bundle.prayer = {
+        taskId: row.task_id,
+        prayerType: row.prayer_type ?? undefined,
+        prayerRule: row.prayer_rule ?? undefined,
+        prayerTaskKind: row.prayer_task_kind ?? undefined,
+        jesusPrayerMode: row.jesus_prayer_mode ?? undefined,
+        jesusPrayerDuration: row.jesus_prayer_duration ?? undefined,
+        jesusPrayerCount: row.jesus_prayer_count ?? undefined,
+      };
+    }
+    if (row.journal_type) {
+      bundle.journal = {
+        taskId: row.task_id,
+        journalType: row.journal_type,
+        technique: row.technique ?? undefined,
+      };
+    }
+    if (row.reading_type) {
+      const rawChaptersPerDay = Number(row.chapters_per_day);
+      bundle.scripture = {
+        taskId: row.task_id,
+        readingType: row.reading_type,
+        startBookId: row.start_book_id ?? undefined,
+        startChapter: row.start_chapter ?? undefined,
+        chaptersPerDay: row.reading_type === 'church_calendar'
+          ? 0
+          : Math.max(1, Math.round(Number.isFinite(rawChaptersPerDay) ? rawChaptersPerDay : 1)),
+        totalUnitsRead: row.total_units_read ?? undefined,
+      };
+    }
+    if (row.reading_book_id) {
+      bundle.readingBook = { taskId: row.task_id, bookId: row.reading_book_id };
+    }
+    configs[row.task_id] = bundle;
+  }
+  return configs;
 }
 
 export async function getScriptureTaskConfig(taskId: string): Promise<ScriptureTaskConfig | undefined> {

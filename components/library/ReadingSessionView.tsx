@@ -50,9 +50,10 @@ type Props = {
   title: string;
   author?: string;
   isTask?: boolean;
+  showFinishLoader?: boolean;
   sessionDate?: string;
   onBack: () => void;
-  onComplete?: () => void | Promise<void>;
+  onComplete?: (elapsedMinutes: number) => boolean | void | Promise<boolean | void>;
 };
 
 export default function ReadingSessionView({
@@ -60,6 +61,7 @@ export default function ReadingSessionView({
   title,
   author,
   isTask = false,
+  showFinishLoader = false,
   sessionDate,
   onBack,
   onComplete,
@@ -166,8 +168,13 @@ export default function ReadingSessionView({
 
   const handleFinish = useCallback(async () => {
     const elapsed = Math.round((selectedSecs - timerSecs) / 60);
-    if (elapsed >= 1 && bookId) await recordSession(bookId, elapsed, sessionDate);
-    await onComplete?.();
+    let completedSuccessfully: boolean | void = undefined;
+    if (onComplete) {
+      completedSuccessfully = await onComplete(elapsed);
+    } else if (elapsed >= 1 && bookId) {
+      await recordSession(bookId, elapsed, sessionDate);
+    }
+    if (completedSuccessfully === false) return;
     onBack();
   }, [selectedSecs, timerSecs, bookId, recordSession, sessionDate, onComplete, onBack]);
 
@@ -337,6 +344,7 @@ export default function ReadingSessionView({
         cancelLabel="CANCEL"
         confirmLabel="COMPLETE"
         confirmColor={GOLD}
+        confirmLoading={showFinishLoader}
         onCancel={() => setShowFinish(false)}
         onConfirm={handleFinish}
       />

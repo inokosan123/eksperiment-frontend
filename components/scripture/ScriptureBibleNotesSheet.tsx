@@ -46,6 +46,59 @@ const EXPANDED_ENTRY_DURATION_MS = 440;
 const COLLAPSED_ENTRY_DELAY_MS = 560;
 const ENTRY_EASING = Easing.bezier(0.22, 1, 0.36, 1);
 
+/**
+ * The three rooms of the canon, in the register Bible Notes gives them: the
+ * New Testament green, the Psalter gold, the Old Testament brown. Kept as a
+ * small local table rather than imported, because the shelf's own tone type
+ * carries a dozen fields this sheet has no use for.
+ */
+const PSALMS_BOOK_ID = 19;
+
+type ReferenceTone = {
+  kicker: string;
+  accent: string;
+  soft: string;
+  ink: string;
+  ground: string;
+  border: string;
+  frame: string;
+};
+
+const REFERENCE_TONES: Record<'nt' | 'psalms' | 'ot', ReferenceTone> = {
+  nt: {
+    kicker: 'NEW TESTAMENT',
+    accent: '#5E7B55',
+    soft: '#6E8A64',
+    ink: '#4C6647',
+    ground: '#F7FBF4',
+    border: '#DDE6D9',
+    frame: 'rgba(94,123,85,0.16)',
+  },
+  psalms: {
+    kicker: 'THE PSALTER',
+    accent: '#C5A059',
+    soft: '#A9873F',
+    ink: '#8B6B2F',
+    ground: '#FFFBF0',
+    border: '#EEE1C7',
+    frame: 'rgba(197,160,89,0.18)',
+  },
+  ot: {
+    kicker: 'OLD TESTAMENT',
+    accent: '#8A6A45',
+    soft: '#8A6A45',
+    ink: '#6E5334',
+    ground: '#FBF5EC',
+    border: '#E6D9C6',
+    frame: 'rgba(138,106,69,0.17)',
+  },
+};
+
+function referenceTone(bookId: number): ReferenceTone {
+  if (bookId === PSALMS_BOOK_ID) return REFERENCE_TONES.psalms;
+  return bookId >= 40 ? REFERENCE_TONES.nt : REFERENCE_TONES.ot;
+}
+
 type SaveState = 'saved' | 'unsaved' | 'saving' | 'error';
 
 type DraftSnapshot = {
@@ -100,6 +153,7 @@ export default function ScriptureBibleNotesSheet({
   const { height } = useWindowDimensions();
   const { bibleNotes, saveBibleNote, deleteBibleNote } = useScripture();
   const referenceKey = bookId + ':' + chapter;
+  const tone = referenceTone(bookId);
   const initialNote = noteForReference(bibleNotes, bookId, chapter);
 
   const expandedTop = insets.top + 99;
@@ -426,12 +480,40 @@ export default function ScriptureBibleNotesSheet({
             { paddingBottom: insets.bottom + 38 },
           ]}
         >
-          <View style={sheetStyles.referenceCard}>
-            <View style={sheetStyles.referenceRule} />
+          {/* The reference band, wearing the register of the part of the Bible
+              it belongs to — green for the New Testament, gold for the
+              Psalter, brown for the Old — so a note opened from the reader
+              matches the shelf it will be filed on. Deliberately more compact
+              than the full-screen editor's: here the reference is a caption,
+              not the subject. */}
+          <View
+            style={[
+              sheetStyles.referenceCard,
+              { backgroundColor: tone.ground, borderColor: tone.border },
+            ]}
+          >
+            <View pointerEvents="none" style={[sheetStyles.referenceFrame, { borderColor: tone.frame }]} />
+            <View pointerEvents="none" style={sheetStyles.referenceLit} />
+            <View style={[sheetStyles.referenceRule, { backgroundColor: tone.accent }]} />
+
             <View style={sheetStyles.referenceCopy}>
-              <Text style={sheetStyles.referenceTitle}>{bookName} {chapter}</Text>
+              {/* AUTO-SAVE shares the kicker's line. It used to be a sibling of
+                  this whole column, centred against the card's full height, so
+                  it floated out at the middle-right with nothing to line up
+                  against. Both are 8pt small caps: they belong on one line. */}
+              <View style={sheetStyles.referenceTopRow}>
+                <Text style={[sheetStyles.referenceKicker, { color: tone.soft }]} numberOfLines={1}>
+                  {tone.kicker}
+                </Text>
+                <Text style={[sheetStyles.autosaveText, { color: tone.soft }]} numberOfLines={1}>
+                  AUTO-SAVE
+                </Text>
+              </View>
+
+              <Text style={[sheetStyles.referenceTitle, { color: tone.ink }]} numberOfLines={1}>
+                {bookName} <Text style={{ color: tone.accent }}>{chapter}</Text>
+              </Text>
             </View>
-            <Text style={sheetStyles.autosaveText}>AUTO-SAVE</Text>
           </View>
 
           {guidedPreview ? (
@@ -647,39 +729,78 @@ const sheetStyles = StyleSheet.create({
     paddingTop: 14,
     gap: 13,
   },
+  // A slip, not a card. Its height is set by what is in it — two tight lines
+  // of type — rather than by a minimum it has to fill with air.
   referenceCard: {
-    minHeight: 62,
+    position: 'relative',
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
-    paddingHorizontal: 14,
-    borderRadius: 19,
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.18)',
-    backgroundColor: '#FFFDF8',
   },
+  // The shelf's double ruling and lit edge, at the sheet's smaller scale.
+  // Inset 4.5 against a radius of 16, so the corners stay concentric.
+  referenceFrame: {
+    position: 'absolute',
+    top: 4.5,
+    left: 4.5,
+    right: 4.5,
+    bottom: 4.5,
+    borderRadius: 11.5,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+  },
+  referenceLit: {
+    position: 'absolute',
+    top: 1,
+    left: 16,
+    right: 16,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  // The spine of the book this note belongs to — stretched to the copy rather
+  // than set to a fixed height, so it always reads as the slip's own edge.
   referenceRule: {
-    width: 5,
-    height: 32,
-    borderRadius: 3,
-    backgroundColor: GOLD,
+    alignSelf: 'stretch',
+    width: 3.5,
+    borderRadius: 2,
   },
   referenceCopy: {
     flex: 1,
     minWidth: 0,
   },
+  referenceTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: 10,
+  },
+  referenceKicker: {
+    flexShrink: 1,
+    fontFamily: F.sansBold,
+    fontSize: 8,
+    lineHeight: 10,
+    letterSpacing: 1.8,
+  },
+  // 1, not 3: the kicker is this line's own eyebrow, and they read as one
+  // unit only when they are nearly touching.
   referenceTitle: {
-    marginTop: 2,
+    marginTop: 1,
     fontFamily: F.serifMedium,
     fontSize: 18,
     lineHeight: 22,
-    color: '#3D3229',
   },
   autosaveText: {
+    flexShrink: 0,
     fontFamily: F.sansBold,
     fontSize: 8,
+    lineHeight: 10,
     letterSpacing: 1.25,
-    color: '#B7AD9F',
   },
   fieldCard: {
     position: 'relative',

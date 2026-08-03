@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, Keyboard, View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { CheckSmall } from '@/components/icons/Icons';
@@ -8,8 +8,10 @@ import ScreenTitleBar from '@/components/shared/ScreenTitleBar';
 import { FormatState, RichTextEditor, RichTextEditorRef, RichToolbar } from '@/components/shared/RichTextEditor';
 import { useJournal } from '@/components/journal/JournalContext';
 import { stripRichTextToPlainText } from '@/components/journal/journalLogic';
-import { useTasks } from '@/components/tasks/TaskProvider';
-import { queueTaskCompletionReturnAnimation } from '@/components/tasks/taskReturnAnimation';
+import {
+  RoutedTaskCompletionErrorModal,
+  useRoutedTaskCompletion,
+} from '@/components/tasks/use-routed-task-completion';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 
 
@@ -36,7 +38,10 @@ export default function FreeWritingView() {
   const isTaskLaunch = params.isTask === 'true' || !!params.taskInstanceId;
   const taskTitle = typeof params.title === 'string' && params.title.trim() ? params.title.trim() : 'Free Writing';
   const { ready: journalReady, getEntry, upsertEntry } = useJournal();
-  const { completeInstance } = useTasks();
+  const completion = useRoutedTaskCompletion({
+    taskInstanceId: params.taskInstanceId,
+    taskDate: params.taskDate ?? selectedDateKey,
+  });
   const [html, setHtml] = useState('');
   const [fmt, setFmt] = useState<FormatState>({ bold: false, italic: false, underline: false });
   const [kbHeight, setKbHeight] = useState(0);
@@ -142,11 +147,11 @@ export default function FreeWritingView() {
       if (hasContent) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    await saveNow();
     if (shouldCompleteTask && params.taskInstanceId) {
-      const completionDate = params.taskDate ?? selectedDateKey;
-      await completeInstance(params.taskInstanceId, completionDate);
-      queueTaskCompletionReturnAnimation(params.taskInstanceId, 420);
+      const result = await completion.completeBeforeReturn({ persistCritical: saveNow });
+      if (!result.ok) return;
+    } else {
+      await saveNow();
     }
     router.back();
   };
@@ -170,7 +175,9 @@ export default function FreeWritingView() {
             activeOpacity={0.85}
             onPress={() => { void finish(); }}
           >
-            <CheckSmall s={18} c="#fff" w={2.8} />
+            {completion.showSlowIndicator
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <CheckSmall s={18} c="#fff" w={2.8} />}
           </TouchableOpacity>
         )}
       />
@@ -193,6 +200,11 @@ export default function FreeWritingView() {
         color={C.text}
         editable={!isReadOnly}
         style={s.editor}
+      />
+      <RoutedTaskCompletionErrorModal
+        visible={completion.saveErrorVisible}
+        onKeepEditing={completion.keepEditing}
+        onRetry={completion.retry}
       />
     </View>
   );

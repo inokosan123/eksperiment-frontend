@@ -34,6 +34,10 @@ import { getNativeActivitySelectionSummary, isNativeFocusAvailable } from './foc
 import { usePermissionGate } from './usePermissionGate';
 import { PLAN_VISUALS, planVisualFor } from './planVisuals';
 import {
+  deferPlanApplicationUntilNextFrame,
+  type DeferredPlanApplication,
+} from './plan-application-transition';
+import {
   assignPlanToWeekday,
   assignPlanToWeekdayAndToday,
   dateKey,
@@ -134,6 +138,7 @@ function PlanPickerSheet({
   const [pendingChange, setPendingChange] = useState<PlanChangeConfirmation>(null);
   const [checkingPlanId, setCheckingPlanId] = useState<string | null>(null);
   const [activationError, setActivationError] = useState<string | null>(null);
+  const pendingApplicationRef = useRef<DeferredPlanApplication | null>(null);
   const day = picker?.day ?? 0;
   const today = new Date();
   const todayRecord = state.days[dateKey(today)];
@@ -150,13 +155,29 @@ function PlanPickerSheet({
     setActivationError(null);
   }, [picker?.day, picker?.mode]);
 
-  const apply = (planId: string | null) => {
+  const queueApply = (planId: string | null) => {
     if (!picker) return;
-    if (picker.mode === 'today') swapTodayPlan(planId);
-    else if (picker.mode === 'today-and-template') assignPlanToWeekdayAndToday(day, planId);
-    else assignPlanToWeekday(day, planId);
+    pendingApplicationRef.current = { mode: picker.mode, day: picker.day, planId };
     onClose();
   };
+
+  const commitQueuedApply = useCallback(() => {
+    const pending = pendingApplicationRef.current;
+    pendingApplicationRef.current = null;
+    if (!pending) return;
+
+    // `onExited` fires from the UI thread when the sheet animation reaches
+    // zero, but SmoothBottomSheet still has to commit its native Modal
+    // unmount on JS. Give that unmount one frame before the Focus store emit
+    // swaps the heavy no-plan surface for the live plan and starts native
+    // protection. Doing both inside the same Modal dismissal commit could
+    // terminate the app even though the plan had already persisted.
+    deferPlanApplicationUntilNextFrame(pending, {
+      assignToday: swapTodayPlan,
+      assignTodayAndTemplate: assignPlanToWeekdayAndToday,
+      assignTemplate: assignPlanToWeekday,
+    });
+  }, []);
 
   const missingNativeSelections = async (nextPlan: DayPlan) => {
     // Essentials-only keeps ordinary Daily rules as a reversible draft.
@@ -165,9 +186,9 @@ function PlanPickerSheet({
     const required = new Map<string, string>();
     const ruleSets = nextPlan.rules;
     for (const rule of ruleSets) {
-      const groupMode = rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
+      const groupMode = rule.mode === 'blocked' ? 'blocked' : 'limit';
       const activeAppRules = (rule.appRules ?? []).filter(appRule => {
-        const appMode = appRule.mode ?? (appRule.minutes == null ? 'noLimit' : 'limit');
+        const appMode = appRule.mode === 'blocked' ? 'blocked' : 'limit';
         return appMode === 'blocked' || (appMode === 'limit' && appRule.minutes != null);
       });
       if (
@@ -222,8 +243,8 @@ function PlanPickerSheet({
         setCheckingPlanId(null);
       }
     }
-    if (activatesToday) requestActivation(() => apply(planId));
-    else apply(planId);
+    if (activatesToday) requestActivation(() => queueApply(planId));
+    else queueApply(planId);
   };
 
   const choose = (planId: string | null) => {
@@ -256,6 +277,8 @@ function PlanPickerSheet({
     <SmoothBottomSheet
       visible={picker !== null}
       onClose={onClose}
+      onExited={commitQueuedApply}
+      exitWatchdogMs={420}
       sheetStyle={s.sheet}
       overlayChildren={(
         <>

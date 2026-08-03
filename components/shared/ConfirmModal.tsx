@@ -1,7 +1,8 @@
 import React from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, StyleSheet, Text, View } from 'react-native';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressable } from '@/components/shared/HapticTouch';
+import { ReadableText } from '@/components/shared/typographyScale';
 
 
 type Props = {
@@ -17,6 +18,7 @@ type Props = {
   cancelBorderColor?: string;
   confirmLabel: string;
   confirmColor?: string;
+  confirmLoading?: boolean;
   naturalButtonLabels?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -40,6 +42,7 @@ export default function ConfirmModal({
   cancelBorderColor,
   confirmLabel,
   confirmColor = C.red,
+  confirmLoading = false,
   naturalButtonLabels = false,
   onCancel,
   onConfirm,
@@ -48,13 +51,16 @@ export default function ConfirmModal({
 }: Props) {
   const inner = (
     <View style={s.overlay}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onBackdropPress ?? onCancel} />
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={confirmLoading ? undefined : onBackdropPress ?? onCancel}
+      />
       <View style={s.card}>
         <View style={[s.iconCircle, { backgroundColor: iconBg }]}>
           {icon}
         </View>
         <Text style={s.title}>{title}</Text>
-        {!!body && <Text style={[s.body, !!subject && s.bodyWithSubject]}>{body}</Text>}
+        {!!body && <ReadableText style={[s.body, !!subject && s.bodyWithSubject]}>{body}</ReadableText>}
         {!!subject && (
           <View style={s.subjectPill}>
             <Text style={s.subjectText} numberOfLines={2}>{subject}</Text>
@@ -63,6 +69,7 @@ export default function ConfirmModal({
         <View style={s.row}>
           <TouchableOpacity
             onPress={onCancel}
+            disabled={confirmLoading}
             activeOpacity={0.82}
             style={[
               s.cancelBtn,
@@ -82,10 +89,15 @@ export default function ConfirmModal({
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onConfirm}
+            disabled={confirmLoading}
             activeOpacity={0.82}
             style={[s.confirmBtn, { backgroundColor: confirmColor }]}
           >
-            <Text style={[s.confirmText, naturalButtonLabels ? s.naturalButtonText : null]}>{confirmLabel}</Text>
+            {confirmLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={[s.confirmText, naturalButtonLabels ? s.naturalButtonText : null]}>{confirmLabel}</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -98,7 +110,12 @@ export default function ConfirmModal({
   }
 
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onBackdropPress ?? onCancel}>
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={confirmLoading ? () => {} : onBackdropPress ?? onCancel}
+    >
       {inner}
     </Modal>
   );

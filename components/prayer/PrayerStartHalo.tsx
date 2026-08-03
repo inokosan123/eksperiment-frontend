@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import Reanimated, {
   useAnimatedProps,
+  useAnimatedStyle,
   type SharedValue,
 } from 'react-native-reanimated';
 
@@ -60,7 +61,7 @@ export default function PrayerStartHalo({
   const c = field / 2;
   const edge = size / 2;
 
-  const poolProps = useAnimatedProps(() => ({
+  const poolStyle = useAnimatedStyle(() => ({
     opacity: ignition.value * (0.55 + breath.value * 0.45),
   }));
 
@@ -73,23 +74,32 @@ export default function PrayerStartHalo({
 
   return (
     <View pointerEvents="none" style={[s.wrap, { width: field, height: field }]}>
+      {/* The pool itself is static vector art. Only its layer opacity changes,
+          so Core Animation can composite it instead of react-native-svg
+          receiving a native prop update on every breath frame. */}
+      <Reanimated.View
+        style={[StyleSheet.absoluteFill, poolStyle]}
+        shouldRasterizeIOS
+        renderToHardwareTextureAndroid
+      >
+        <Svg width={field} height={field}>
+          <Defs>
+            <RadialGradient id="prayerStartPool" cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor={tint} stopOpacity={0.34} />
+              <Stop offset="0.42" stopColor={tint} stopOpacity={0.15} />
+              <Stop offset="1" stopColor={tint} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Circle
+            cx={c}
+            cy={c}
+            r={edge * 2.05}
+            fill="url(#prayerStartPool)"
+          />
+        </Svg>
+      </Reanimated.View>
+
       <Svg width={field} height={field}>
-        <Defs>
-          <RadialGradient id="prayerStartPool" cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor={tint} stopOpacity={0.34} />
-            <Stop offset="0.42" stopColor={tint} stopOpacity={0.15} />
-            <Stop offset="1" stopColor={tint} stopOpacity={0} />
-          </RadialGradient>
-        </Defs>
-
-        <AnimatedCircle
-          cx={c}
-          cy={c}
-          r={edge * 2.05}
-          fill="url(#prayerStartPool)"
-          animatedProps={poolProps}
-        />
-
         <StrikeRing c={c} edge={edge} tint={tint} strike={strike} delay={0} />
         <StrikeRing c={c} edge={edge} tint={tint} strike={strike} delay={0.2} />
 

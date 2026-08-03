@@ -12,6 +12,21 @@ import { F } from '@/constants/tokens';
 import { FocusMedallionMark } from '@/components/focus-watch/FocusMedallion';
 import { gaugeMarkerLayout, GOAL_LABEL_OFFSET } from './dayGaugeMarkers';
 import { formatMinutesShort } from './dayPlanStore';
+import {
+  GAUGE_ESSENTIALS_COLOR,
+  GAUGE_TOLERANCE_COLOR,
+  gaugeStanding,
+  gaugeStateColor,
+} from './dayGaugeState';
+
+export {
+  GAUGE_ESSENTIALS_COLOR,
+  GAUGE_TOLERANCE_COLOR,
+  GAUGE_UNDER_COLOR,
+  gaugeStanding,
+  gaugeStateColor,
+  type DayGaugeStanding,
+} from './dayGaugeState';
 
 // The Screen Time macro instrument: one bar that holds the whole day — the
 // goal span, the tolerance span after it, and the essentials-only cap at the
@@ -20,31 +35,6 @@ import { formatMinutesShort } from './dayPlanStore';
 // the essentials cap. A single fill glides to "where today stands", colored
 // like a calorie tracker: green inside the goal, amber in tolerance, red once
 // only essentials remain.
-
-export const GAUGE_UNDER_COLOR = '#327153';
-export const GAUGE_TOLERANCE_COLOR = '#B07E23';
-export const GAUGE_ESSENTIALS_COLOR = '#A24351';
-
-export type DayGaugeStanding = 'unknown' | 'under' | 'tolerance' | 'essentials';
-
-export function gaugeStanding(
-  goalMinutes: number,
-  toleranceEndMinutes: number | null,
-  usedMinutes: number | null
-): DayGaugeStanding {
-  if (usedMinutes == null) return 'unknown';
-  if (usedMinutes <= goalMinutes) return 'under';
-  if (toleranceEndMinutes != null && usedMinutes <= toleranceEndMinutes) return 'tolerance';
-  return 'essentials';
-}
-
-// The traffic-light color of a standing; `fallback` is used while usage is unknown.
-export function gaugeStateColor(standing: DayGaugeStanding, fallback: string) {
-  if (standing === 'under') return GAUGE_UNDER_COLOR;
-  if (standing === 'tolerance') return GAUGE_TOLERANCE_COLOR;
-  if (standing === 'essentials') return GAUGE_ESSENTIALS_COLOR;
-  return fallback;
-}
 
 export default function DayGauge({
   goalMinutes,
@@ -70,7 +60,6 @@ export default function DayGauge({
   const reduceMotion = useReducedMotion();
   const [trackWidth, setTrackWidth] = useState(0);
   const fillX = useSharedValue(0);
-
   // The essentials cap is a SEGMENT of the day, not a bullet at the end of it:
   // at the bar's own height it came out exactly round, and a lone pink dot
   // floating past the track read as a stray mark rather than as the last stretch
@@ -94,7 +83,13 @@ export default function DayGauge({
     goalLabelFlipped,
     toleranceAnchor,
     showTolerance,
-  } = gaugeMarkerLayout({ trackWidth, baseCapWidth, goalMinutes, toleranceSpan, gap });
+  } = gaugeMarkerLayout({
+    trackWidth,
+    baseCapWidth,
+    goalMinutes,
+    toleranceSpan,
+    gap,
+  });
 
   const fraction = usedMinutes == null
     ? 0

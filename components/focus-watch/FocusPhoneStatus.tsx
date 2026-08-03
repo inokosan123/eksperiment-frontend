@@ -1,21 +1,20 @@
-import { useEffect, useState } from 'react';
-import { AppState, StyleSheet, View } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { memo, useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import Animated, {
-  cancelAnimation,
-  Easing,
   interpolate,
   useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
+  useDerivedValue,
 } from 'react-native-reanimated';
 import { Smartphone } from '@/components/icons/Icons';
 import { C } from '@/constants/tokens';
 import FocusWatchLottie from './FocusWatchLottie';
+import { useFocusMainMotion } from './focus-main-motion';
+import {
+  continuousPhase,
+} from '@/components/shared/use-continuous-animation-clock';
+import { useAmbientMotion } from '@/components/shared/ambient-motion';
 
-export default function FocusPhoneStatus({
+const FocusPhoneStatus = memo(function FocusPhoneStatus({
   active,
   critical = false,
   size = 142,
@@ -24,49 +23,43 @@ export default function FocusPhoneStatus({
   critical?: boolean;
   size?: number;
 }) {
-  const isFocused = useIsFocused();
-  const reduceMotion = useReducedMotion();
-  const [isForeground, setIsForeground] = useState(AppState.currentState === 'active');
-  const motion = useSharedValue(0);
+  const mainMotionEnabled = useFocusMainMotion();
+  const runtime = useAmbientMotion(mainMotionEnabled);
+  const { clock, reduceMotion } = runtime;
+  const motionEnabled = runtime.enabled;
+  const motionPhase = useDerivedValue(() => (
+    motionEnabled ? continuousPhase(clock.value, 8400) : 0
+  ));
+  const lottieStyle = useMemo(
+    () => ({ width: size * 0.84, height: size * 0.84 }),
+    [size],
+  );
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', next => setIsForeground(next === 'active'));
-    return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
-    if (!isFocused || !isForeground || reduceMotion) {
-      cancelAnimation(motion);
-      motion.value = 0;
-      return;
-    }
-    motion.value = 0;
-    motion.value = withRepeat(
-      withTiming(1, { duration: 8400, easing: Easing.linear }),
-      -1,
-      false
-    );
-    return () => {
-      cancelAnimation(motion);
+  const auraStyle = useAnimatedStyle(() => {
+    const motion = motionPhase.value;
+    return {
+      opacity: active
+        ? interpolate(motion, [0, 0.5, 1], [0.48, 0.72, 0.48])
+        : interpolate(motion, [0, 0.5, 1], [0.18, 0.3, 0.18]),
+      transform: [{ scale: interpolate(motion, [0, 0.5, 1], [0.96, 1.025, 0.96]) }],
     };
-  }, [isFocused, isForeground, motion, reduceMotion]);
-
-  const auraStyle = useAnimatedStyle(() => ({
-    opacity: active
-      ? interpolate(motion.value, [0, 0.5, 1], [0.48, 0.72, 0.48])
-      : interpolate(motion.value, [0, 0.5, 1], [0.18, 0.3, 0.18]),
-    transform: [{ scale: interpolate(motion.value, [0, 0.5, 1], [0.96, 1.025, 0.96]) }],
-  }));
-  const orbitStyle = useAnimatedStyle(() => ({
-    opacity: active ? 0.82 : 0.38,
-    transform: [{ rotate: `${motion.value * 360}deg` }],
-  }));
-  const boundaryStyle = useAnimatedStyle(() => ({
-    opacity: active
-      ? interpolate(motion.value, [0, 0.5, 1], [0.22, 0.08, 0.22])
-      : interpolate(motion.value, [0, 0.5, 1], [0.12, 0.06, 0.12]),
-    transform: [{ scale: interpolate(motion.value, [0, 0.5, 1], [0.94, 1.04, 0.94]) }],
-  }));
+  });
+  const orbitStyle = useAnimatedStyle(() => {
+    const motion = motionPhase.value;
+    return {
+      opacity: active ? 0.82 : 0.38,
+      transform: [{ rotate: `${motion * 360}deg` }],
+    };
+  });
+  const boundaryStyle = useAnimatedStyle(() => {
+    const motion = motionPhase.value;
+    return {
+      opacity: active
+        ? interpolate(motion, [0, 0.5, 1], [0.22, 0.08, 0.22])
+        : interpolate(motion, [0, 0.5, 1], [0.12, 0.06, 0.12]),
+      transform: [{ scale: interpolate(motion, [0, 0.5, 1], [0.94, 1.04, 0.94]) }],
+    };
+  });
 
   const accent = critical ? '#B74B5D' : active ? '#4E9A72' : C.gold;
 
@@ -127,14 +120,16 @@ export default function FocusPhoneStatus({
             mode="periodic"
             restMs={4200}
             speed={1}
-            playing={isFocused && isForeground}
-            style={{ width: size * 0.84, height: size * 0.84 }}
+            playing={mainMotionEnabled}
+            style={lottieStyle}
           />
         )}
       </View>
     </View>
   );
-}
+});
+
+export default FocusPhoneStatus;
 
 const s = StyleSheet.create({
   boundary: {

@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react';
+import { useSyncExternalStoreWithSelector } from 'use-sync-external-store/with-selector';
 import {
   deletePlanRow,
+  focusEventCalendarContext,
   insertEventRow,
   loadFocusWatchData,
   setMetaRow,
@@ -8,7 +10,16 @@ import {
   upsertDayRow,
   upsertPlanRow,
 } from './focusWatchDb';
-import { normalizeWebDomain, WEB_PACK_DOMAINS } from './webProtectionCatalog';
+import {
+  normalizeWebDomain,
+  WEB_DOMAIN_LIMIT,
+  WEB_PACK_DOMAINS,
+} from './webProtectionCatalog';
+import {
+  assertFocusLimitBudget,
+  FOCUS_LIMIT_STEP_MINUTES,
+} from './focusLimitBudget';
+import { retainNewestLocalDayKeys } from './analytics/focusAnalyticsDates';
 
 // The Focus v4 store is the React-side source of truth. Product state persists
 // to SQLite; private Family Controls selections stay in the shared iOS App
@@ -35,6 +46,8 @@ export type PlanThemeId = typeof PLAN_THEME_IDS[number];
 // The auto-assigned palette stays the original six on purpose: a legacy plan
 // saved before themeId existed must not change colour when new themes ship.
 const AUTO_THEME_IDS: readonly PlanThemeId[] = ['gold', 'teal', 'plum', 'blue', 'rose', 'clay'];
+// `noLimit` is accepted only while hydrating older plans. New and normalized
+// rules use `limit` with a null duration for the natural unlimited state.
 export type RuleMode = 'noLimit' | 'limit' | 'blocked';
 
 export function defaultPlanThemeId(planId: string): PlanThemeId {
@@ -138,6 +151,12 @@ export type CustomGroup = {
   id: string;
   name: string;
   appIds: string[];
+  /**
+   * The face this group wears — a Noto emoji name, the same vocabulary Habits
+   * and Big Events choose from. Optional: groups saved before there was a
+   * picker have none, and fall back to their initial.
+   */
+  icon?: string;
 };
 
 // Monday-first: 0 = Mon … 6 = Sun (matches the rest of the app).
@@ -202,8 +221,23 @@ export type CustomWebPack = {
   mode: PackMode;
 };
 
-export type LockCooldown = '45m' | '1h' | '6h' | '12h' | '24h' | '3d';
-export const HARD_LOCK_DISABLE_DELAY_MS = 24 * 60 * 60_000;
+export type LockCooldown = '12h' | '24h' | '2d' | '3d';
+
+export type NeverAllowedTargetKind = 'builtin-pack' | 'custom-pack' | 'domain';
+export type NeverAllowedCommitment = {
+  id: string;
+  targetKind: NeverAllowedTargetKind;
+  targetId: string;
+  targetLabel: string;
+  domainsSnapshot: string[];
+  committedAt: number;
+  reason: string;
+  temptation: string;
+  nextStep: string;
+  reusedFromId?: string;
+  legacy?: boolean;
+  status?: 'pending-native' | 'active';
+};
 
 export type WebHardLockState = {
   enabled: boolean;
@@ -217,6 +251,7 @@ export type PurityState = {
   packs: { id: WebPackId; mode: PackMode; extraDomains: string[] }[];
   customPacks: CustomWebPack[];
   customDomains: CustomDomain[];
+  neverAllowed: NeverAllowedCommitment[];
   locks: WebHardLockState;
 };
 
@@ -300,13 +335,28 @@ export const DEFAULT_GROUP_APP_IDS: Record<string, string[]> = {
   dating: ['tinder', 'bumble', 'hinge'],
 };
 
+// Every practice the app knows how to run, including ones no longer offered as
+// a choice. Keep it whole: a plan saved earlier may still name any of these,
+// `InterventionView` still runs them, and the native bridge still lists them.
 export const RETURN_PRACTICES: { id: PracticeKind; name: string; detail: string }[] = [
-  { id: 'prayer', name: 'Short Prayer', detail: 'One short prayer before the door opens' },
-  { id: 'jesus-prayer', name: 'Jesus Prayer', detail: 'Two minutes of the Jesus Prayer' },
-  { id: 'psalm', name: 'Psalm', detail: 'One Psalm, chosen for the moment' },
-  { id: 'chapter', name: 'A Bible chapter', detail: 'One chapter before you enter' },
-  { id: 'intention', name: 'Written intention', detail: 'Write down why you are opening it' },
+  // Each detail says what you actually do, in one short line — these are read
+  // as the seats of a choice list, not as help text.
+  { id: 'prayer', name: 'Short Prayer', detail: 'One prayer before the door opens' },
+  { id: 'jesus-prayer', name: 'Jesus Prayer', detail: 'Two minutes of it' },
+  { id: 'psalm', name: 'Psalm', detail: 'One Psalm, read slowly' },
+  { id: 'chapter', name: 'Bible chapter', detail: 'One chapter, start to finish' },
+  { id: 'intention', name: 'Written intention', detail: 'Write why you are opening it' },
 ];
+
+/**
+ * The practices a rule can be set to. Written intention is deliberately NOT
+ * offered: the other four are things you do, and it was the one that could be
+ * discharged by typing a sentence. It stays in `RETURN_PRACTICES` above so
+ * plans already carrying it keep working.
+ */
+export const SELECTABLE_RETURN_PRACTICES = RETURN_PRACTICES.filter(
+  practice => practice.id !== 'intention',
+);
 
 export const STREAK_MILESTONES = [7, 30, 100] as const;
 
@@ -555,6 +605,13 @@ export function groupName(state: DayPlanState, groupId: string): string {
   return groupId;
 }
 
+// A group you made yourself wears the face you chose for it. The built-in
+// categories carry theirs in `GROUP_EMOJI`, so this returns nothing for them
+// and the seal falls back to its own table.
+export function groupIcon(state: DayPlanState, groupId: string): string | undefined {
+  return state.customGroups.find(entry => entry.id === groupId)?.icon;
+}
+
 export function selectionCount(selection: WatchSelection) {
   return selection.categoryIds.length + selection.appIds.length + selection.groupIds.length;
 }
@@ -622,10 +679,41 @@ const DEFAULT_RULE = (groupId: string): GroupRule => ({
   dailyMinutes: null,
   strength: 'loose',
   practice: 'prayer',
-  mode: 'noLimit',
+  mode: 'limit',
   checkInMinutes: null,
   appRules: [],
 });
+
+function normalizeBoundaryMinutes(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value) || value <= 0) return null;
+  return Math.max(
+    FOCUS_LIMIT_STEP_MINUTES,
+    Math.round(value / FOCUS_LIMIT_STEP_MINUTES) * FOCUS_LIMIT_STEP_MINUTES
+  );
+}
+
+function normalizeAppRule(rule: AppRule): AppRule {
+  const blocked = rule.mode === 'blocked';
+  const minutes = blocked ? null : normalizeBoundaryMinutes(rule.minutes);
+  return {
+    ...rule,
+    mode: blocked ? 'blocked' : 'limit',
+    minutes,
+    checkInMinutes: minutes == null ? null : rule.checkInMinutes,
+  };
+}
+
+function normalizeGroupRule(rule: GroupRule): GroupRule {
+  const blocked = rule.mode === 'blocked';
+  const dailyMinutes = blocked ? null : normalizeBoundaryMinutes(rule.dailyMinutes);
+  return {
+    ...rule,
+    mode: blocked ? 'blocked' : 'limit',
+    dailyMinutes,
+    checkInMinutes: dailyMinutes == null ? null : rule.checkInMinutes,
+    appRules: (rule.appRules ?? []).map(normalizeAppRule),
+  };
+}
 
 function withCompleteRules(plan: DayPlan, customGroups: CustomGroup[]): DayPlan {
   const referencedCustomIds = plan.customGroupIds?.length
@@ -642,12 +730,11 @@ function withCompleteRules(plan: DayPlan, customGroups: CustomGroup[]): DayPlan 
     return groupIds.map(id => {
       const rule = existing.get(id);
       if (!rule) return DEFAULT_RULE(id);
-      return {
+      return normalizeGroupRule({
         ...DEFAULT_RULE(id),
         ...rule,
-        mode: rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit'),
         appRules: rule.appRules ?? [],
-      };
+      });
     });
   };
   const storedKind: PlanKind = plan.kind ?? 'daily';
@@ -790,17 +877,17 @@ export function computeStreak(days: Record<string, DayRecord>): StreakSummary {
 // State
 // ---------------------------------------------------------------------------
 
-const HARD_LOCK_COOLDOWNS: readonly LockCooldown[] = ['45m', '1h', '6h', '12h', '24h', '3d'];
+const HARD_LOCK_COOLDOWNS: readonly LockCooldown[] = ['12h', '24h', '2d', '3d'];
 
 function normalizeLockCooldown(value: unknown): LockCooldown {
   if (typeof value === 'string' && HARD_LOCK_COOLDOWNS.includes(value as LockCooldown)) {
     return value as LockCooldown;
   }
-  // v4 migration: the retired 10-minute choice is below the new 45-minute
-  // floor. The variable "until morning" option becomes a conservative day.
-  if (value === '10m') return '45m';
+  // All retired short windows are raised to the new twelve-hour floor. A
+  // pending request keeps its already-persisted effectiveAt timestamp.
+  if (value === '10m' || value === '45m' || value === '1h' || value === '6h') return '12h';
   if (value === 'morning') return '24h';
-  return '1h';
+  return '24h';
 }
 
 function normalizeWebHardLock(value: unknown): WebHardLockState {
@@ -815,6 +902,56 @@ function normalizeWebHardLock(value: unknown): WebHardLockState {
   };
 }
 
+const WEB_PACK_LABELS: Record<WebPackId, string> = {
+  gambling: 'Gambling & Betting',
+  adult: 'Adult Content',
+  social: 'Social Feeds',
+  news: 'News & Doomscrolling',
+};
+
+const LEGACY_PROMISE_COPY = {
+  reason: 'You chose to make this part of the web permanently unavailable before personal promises were introduced.',
+  temptation: 'This boundary was already marked Never Allowed and remains part of your earlier decision.',
+  nextStep: 'Step away, take a breath, and return to the life and person you chose to protect.',
+};
+
+function normalizeNeverCommitment(value: unknown): NeverAllowedCommitment | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<NeverAllowedCommitment>;
+  if (
+    typeof raw.id !== 'string'
+    || (raw.targetKind !== 'builtin-pack' && raw.targetKind !== 'custom-pack' && raw.targetKind !== 'domain')
+    || typeof raw.targetId !== 'string'
+    || typeof raw.targetLabel !== 'string'
+    || !Array.isArray(raw.domainsSnapshot)
+  ) return null;
+  const domainsSnapshot = Array.from(new Set(
+    raw.domainsSnapshot
+      .filter((domain): domain is string => typeof domain === 'string')
+      .map(normalizeDomain)
+      .filter(domain => domain.includes('.'))
+  ));
+  if (domainsSnapshot.length === 0) return null;
+  return {
+    id: raw.id,
+    targetKind: raw.targetKind,
+    targetId: raw.targetId,
+    targetLabel: raw.targetLabel,
+    domainsSnapshot,
+    committedAt: typeof raw.committedAt === 'number' ? raw.committedAt : Date.now(),
+    reason: typeof raw.reason === 'string' && raw.reason.trim() ? raw.reason.trim() : LEGACY_PROMISE_COPY.reason,
+    temptation: typeof raw.temptation === 'string' && raw.temptation.trim() ? raw.temptation.trim() : LEGACY_PROMISE_COPY.temptation,
+    nextStep: typeof raw.nextStep === 'string' && raw.nextStep.trim() ? raw.nextStep.trim() : LEGACY_PROMISE_COPY.nextStep,
+    reusedFromId: typeof raw.reusedFromId === 'string' ? raw.reusedFromId : undefined,
+    legacy: raw.legacy === true,
+    status: raw.status === 'pending-native' ? 'pending-native' : 'active',
+  };
+}
+
+function storedArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
 const DEFAULT_PURITY: PurityState = {
   packs: [
     { id: 'gambling', mode: 'off', extraDomains: [] },
@@ -824,10 +961,11 @@ const DEFAULT_PURITY: PurityState = {
   ],
   customPacks: [],
   customDomains: [],
+  neverAllowed: [],
   locks: {
-    enabled: true,
+    enabled: false,
     locked: false,
-    cooldown: '1h',
+    cooldown: '24h',
   },
 };
 
@@ -909,6 +1047,24 @@ export function useDayPlan(): DayPlanState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/**
+ * Subscribes a screen to only the store slice it renders. The store can emit
+ * for persistence, sheets, or analytics without reconciling an unrelated
+ * rich screen subtree.
+ */
+export function useDayPlanSelector<Selection>(
+  selector: (snapshot: DayPlanState) => Selection,
+  equality: (previous: Selection, next: Selection) => boolean = Object.is,
+): Selection {
+  return useSyncExternalStoreWithSelector(
+    subscribe,
+    getSnapshot,
+    getSnapshot,
+    selector,
+    equality,
+  );
+}
+
 export function getDayPlanState(): DayPlanState {
   return state;
 }
@@ -926,10 +1082,15 @@ function makeId(prefix: string) {
 }
 
 function logEvent(kind: FocusEventKind, extra?: { groupId?: string; planId?: string; meta?: Record<string, unknown> }) {
+  const occurredAt = new Date();
+  const calendarContext = focusEventCalendarContext(occurredAt.getTime());
   persist(() =>
     insertEventRow({
       id: makeId('ev'),
-      ts: Date.now(),
+      ts: occurredAt.getTime(),
+      local_day: calendarContext.localDay,
+      timezone_id: calendarContext.timezoneId,
+      utc_offset_minutes: calendarContext.utcOffsetMinutes,
       kind,
       group_id: extra?.groupId ?? null,
       plan_id: extra?.planId ?? null,
@@ -980,7 +1141,7 @@ function persistMeta(key: string, value: unknown | null) {
   persist(() => setMetaRow(key, value === null ? null : JSON.stringify(value)));
 }
 
-const PLAN_SNAPSHOT_DAY_LIMIT = 400;
+const PLAN_SNAPSHOT_DAY_LIMIT = 800;
 
 function clonePlanSnapshot(plan: DayPlan): DayPlan {
   return JSON.parse(JSON.stringify(plan)) as DayPlan;
@@ -1013,12 +1174,18 @@ function normalizeStoredPlanSnapshot(plan: DayPlan | null): DayPlan | null {
 function compactPlanSnapshots(
   snapshots: Record<string, DayPlan | null>
 ): Record<string, DayPlan | null> {
-  const retained = Object.keys(snapshots).sort().slice(-PLAN_SNAPSHOT_DAY_LIMIT);
+  const retained = retainNewestLocalDayKeys(
+    Object.keys(snapshots),
+    PLAN_SNAPSHOT_DAY_LIMIT
+  );
   return Object.fromEntries(retained.map(key => [key, snapshots[key]]));
 }
 
 function compactTargetArmedDays(values: Record<string, string>): Record<string, string> {
-  const retained = Object.keys(values).sort().slice(-PLAN_SNAPSHOT_DAY_LIMIT);
+  const retained = retainNewestLocalDayKeys(
+    Object.keys(values),
+    PLAN_SNAPSHOT_DAY_LIMIT
+  );
   return Object.fromEntries(retained.map(key => [key, values[key]]));
 }
 
@@ -1284,23 +1451,102 @@ export async function hydrateDayPlanStore() {
     );
     persistMeta('target_armed_by_date', state.targetArmedByDate);
     state.eligibilityByDate = parse<Record<string, DayEligibilityLedger>>(data.meta.eligibility_ledger, {});
-    const storedPurity = parse<Partial<PurityState>>(data.meta.purity_state, {});
-    state.purity = { ...DEFAULT_PURITY, ...storedPurity };
-    state.purity.packs = DEFAULT_PURITY.packs.map(defaultPack => {
-      const storedPack = storedPurity.packs?.find(pack => pack.id === defaultPack.id);
+    const parsedPurity = parse<unknown>(data.meta.purity_state, {});
+    const storedPurity = parsedPurity && typeof parsedPurity === 'object' && !Array.isArray(parsedPurity)
+      ? parsedPurity as Partial<PurityState>
+      : {};
+    const storedPacks = storedArray<PurityState['packs'][number]>(storedPurity.packs);
+    const storedCustomPacks = storedArray<CustomWebPack>(storedPurity.customPacks);
+    const storedCustomDomains = storedArray<CustomDomain>(storedPurity.customDomains);
+    const neverAllowed = storedArray<unknown>(storedPurity.neverAllowed)
+      .map(normalizeNeverCommitment)
+      .filter((entry): entry is NeverAllowedCommitment => entry != null);
+    const normalizedPacks = DEFAULT_PURITY.packs.map(defaultPack => {
+      const storedPack = storedPacks.find(pack => pack && pack.id === defaultPack.id);
       const curatedDomains = new Set<string>(WEB_PACK_DOMAINS[defaultPack.id]);
-      const mode = storedPack?.mode === 'on' || storedPack?.mode === 'never'
-        ? storedPack.mode
-        : 'off';
       const extraDomains = Array.from(new Set(
-        (storedPack?.extraDomains ?? [])
+        storedArray<unknown>(storedPack?.extraDomains)
+          .filter((domain): domain is string => typeof domain === 'string')
           .map(normalizeDomain)
           .filter(domain => domain.includes('.') && !curatedDomains.has(domain))
       ));
+      if (
+        storedPack?.mode === 'never'
+        && !neverAllowed.some(entry => entry.targetKind === 'builtin-pack' && entry.targetId === defaultPack.id)
+      ) {
+        neverAllowed.push({
+          id: `legacy-builtin-${defaultPack.id}`,
+          targetKind: 'builtin-pack',
+          targetId: defaultPack.id,
+          targetLabel: WEB_PACK_LABELS[defaultPack.id],
+          domainsSnapshot: [...WEB_PACK_DOMAINS[defaultPack.id], ...extraDomains],
+          committedAt: nowMs,
+          ...LEGACY_PROMISE_COPY,
+          legacy: true,
+          status: 'active',
+        });
+      }
+      const mode: PackMode = storedPack?.mode === 'on' || storedPack?.mode === 'never' ? 'on' : 'off';
       return { id: defaultPack.id, mode, extraDomains };
     });
-    state.purity.customPacks = state.purity.customPacks ?? [];
-    state.purity.locks = normalizeWebHardLock(storedPurity.locks);
+    const normalizedCustomPacks = storedCustomPacks.flatMap(rawPack => {
+      if (!rawPack || typeof rawPack.id !== 'string' || typeof rawPack.name !== 'string') return [];
+      const domains = Array.from(new Set(
+        storedArray<unknown>(rawPack.domains)
+          .filter((domain): domain is string => typeof domain === 'string')
+          .map(normalizeDomain)
+          .filter(domain => domain.includes('.'))
+      ));
+      if (!domains.length) return [];
+      if (
+        rawPack.mode === 'never'
+        && !neverAllowed.some(entry => entry.targetKind === 'custom-pack' && entry.targetId === rawPack.id)
+      ) {
+        neverAllowed.push({
+          id: `legacy-custom-pack-${rawPack.id}`,
+          targetKind: 'custom-pack',
+          targetId: rawPack.id,
+          targetLabel: rawPack.name,
+          domainsSnapshot: domains,
+          committedAt: nowMs,
+          ...LEGACY_PROMISE_COPY,
+          legacy: true,
+          status: 'active',
+        });
+      }
+      return [{ ...rawPack, domains, mode: rawPack.mode === 'off' ? 'off' as const : 'on' as const }];
+    });
+    const normalizedCustomDomains = storedCustomDomains.flatMap(rawEntry => {
+      const domain = normalizeDomain(typeof rawEntry?.domain === 'string' ? rawEntry.domain : '');
+      if (!domain.includes('.')) return [];
+      if (
+        rawEntry.never === true
+        && !neverAllowed.some(entry => entry.targetKind === 'domain' && entry.targetId === domain)
+      ) {
+        neverAllowed.push({
+          id: `legacy-domain-${domain.replace(/[^a-z0-9]/g, '-')}`,
+          targetKind: 'domain',
+          targetId: domain,
+          targetLabel: domain,
+          domainsSnapshot: [domain],
+          committedAt: nowMs,
+          ...LEGACY_PROMISE_COPY,
+          legacy: true,
+          status: 'active',
+        });
+      }
+      return [{ domain, never: false }];
+    });
+    // Assign once, only after every persisted field has been validated. If a
+    // legacy/corrupt value is encountered, the live store can never be left in
+    // the half-hydrated shape consumed by the global native coordinator.
+    state.purity = {
+      packs: normalizedPacks,
+      customPacks: normalizedCustomPacks,
+      customDomains: normalizedCustomDomains,
+      neverAllowed,
+      locks: normalizeWebHardLock(storedPurity.locks),
+    };
     // Persist the compact MVP shape once so retired legacy app-lock
     // fields and legacy cooldown ids cannot reappear on the next launch.
     persistPurity();
@@ -1441,6 +1687,14 @@ export function saveDayPlan(input: SaveDayPlanInput): DayPlan {
   const now = Date.now();
   const existing = input.id ? state.plans.find(plan => plan.id === input.id) : undefined;
   const savedId = input.id ?? makeId('plan');
+  const essentialsOnly = input.essentialsOnly ?? existing?.essentialsOnly ?? false;
+  const normalizedRules = input.rules.map(normalizeGroupRule);
+  if (!essentialsOnly) {
+    assertFocusLimitBudget({
+      dailyTargetMinutes: input.budgetMinutes,
+      rules: normalizedRules,
+    });
+  }
   const alwaysBlockedIds = new Set(state.alwaysBlockedApps.map(entry => entry.appId));
   const essentialAppIds = Array.from(new Set(
     input.essentialAppIds ?? existing?.essentialAppIds ?? []
@@ -1448,10 +1702,11 @@ export function saveDayPlan(input: SaveDayPlanInput): DayPlan {
   const saved = withCompleteRules(
     {
       ...input,
+      rules: normalizedRules,
       id: savedId,
       kind: input.kind ?? existing?.kind ?? 'daily',
       themeId: input.themeId ?? existing?.themeId ?? defaultPlanThemeId(savedId),
-      essentialsOnly: input.essentialsOnly ?? existing?.essentialsOnly ?? false,
+      essentialsOnly,
       essentialAppIds,
       tolerableMinutes: input.tolerableMinutes ?? existing?.tolerableMinutes ?? null,
       essentialOnlyMinutes: input.essentialOnlyMinutes ?? existing?.essentialOnlyMinutes ?? null,
@@ -1575,7 +1830,10 @@ export function assignPlanToWeekdayAndToday(
   return scheduleChanged || todayChanged;
 }
 
-export function getEffectivePlan(stateArg: DayPlanState, date: Date): DayPlan | null {
+export function getEffectivePlan(
+  stateArg: Pick<DayPlanState, 'days' | 'schedule' | 'plans'>,
+  date: Date,
+): DayPlan | null {
   const record = stateArg.days[dateKey(date)];
   const planId = record ? record.planId : stateArg.schedule[weekdayMondayFirst(date)];
   return stateArg.plans.find(plan => plan.id === planId) ?? null;
@@ -1618,9 +1876,17 @@ export function saveCustomGroup(group: Omit<CustomGroup, 'id'> & { id?: string }
   if (group.id) {
     const id = group.id;
     saved = { ...group, id };
-    state.customGroups = state.customGroups.map(existing =>
-      existing.id === id ? saved : existing
-    );
+    // An id being supplied does NOT mean the group is already stored. The
+    // create sheet mints its own id up front (it needs one to hold the native
+    // app selection while you are still filling the form), so a brand-new
+    // group arrives here with an id that is not in the list yet. Mapping alone
+    // replaced nothing and dropped it silently — the caller still got its
+    // group back, the plan still recorded the id, and every screen that looked
+    // the group up then fell back to printing the raw id with no face.
+    const known = state.customGroups.some(existing => existing.id === id);
+    state.customGroups = known
+      ? state.customGroups.map(existing => (existing.id === id ? saved : existing))
+      : [...state.customGroups, saved];
   } else {
     saved = { ...group, id: makeId('group') };
     state.customGroups = [...state.customGroups, saved];
@@ -1655,7 +1921,9 @@ export function quietHourDefaultSelection(): WatchSelection {
   };
 }
 
-export function allCoreEssentialIds(stateArg: DayPlanState = state): string[] {
+export function allCoreEssentialIds(
+  stateArg: Pick<DayPlanState, 'designatedCoreAppIds'> = state,
+): string[] {
   return Array.from(new Set([
     ...(CORE_ESSENTIAL_APP_IDS as readonly string[]),
     ...stateArg.designatedCoreAppIds,
@@ -2095,11 +2363,9 @@ export function acknowledgeMilestone() {
 
 export function hardLockDelayMs(cooldown: LockCooldown) {
   const minutes: Record<LockCooldown, number> = {
-    '45m': 45,
-    '1h': 60,
-    '6h': 6 * 60,
     '12h': 12 * 60,
     '24h': 24 * 60,
+    '2d': 2 * 24 * 60,
     '3d': 3 * 24 * 60,
   };
   return minutes[cooldown] * 60_000;
@@ -2114,6 +2380,14 @@ function persistPendingChanges() {
 }
 
 function applyChangeAction(action: PendingChange['action']) {
+  if (action.kind === 'pack-mode' && action.mode === 'off' && targetHasPermanentPromise('builtin-pack', action.packId)) return;
+  if (action.kind === 'pack-domain-remove' && isPermanentDomain(action.domain)) return;
+  if (
+    (action.kind === 'custom-pack-mode' && action.mode === 'off' || action.kind === 'custom-pack-remove')
+    && targetHasPermanentPromise('custom-pack', action.packId)
+  ) return;
+  if (action.kind === 'custom-pack-domain-remove' && isPermanentDomain(action.domain)) return;
+  if ((action.kind === 'domain-never' && action.never === false || action.kind === 'domain-remove') && isPermanentDomain(action.domain)) return;
   if (action.kind === 'pack-mode') {
     state.purity = {
       ...state.purity,
@@ -2271,9 +2545,182 @@ export function cancelPendingChange(id: string) {
 
 const PACK_MODE_RANK: Record<PackMode, number> = { off: 0, on: 1, never: 2 };
 
+export function getNeverAllowedCommitment(id: string) {
+  return state.purity.neverAllowed.find(entry => entry.id === id) ?? null;
+}
+
+export function getNeverAllowedCommitmentsForTarget(
+  targetKind: NeverAllowedTargetKind,
+  targetId: string
+) {
+  return state.purity.neverAllowed.filter(
+    entry => entry.targetKind === targetKind && entry.targetId === targetId
+  );
+}
+
+export function getNeverAllowedCommitmentForDomain(rawDomain: string) {
+  const domain = normalizeDomain(rawDomain);
+  return state.purity.neverAllowed.find(entry => entry.domainsSnapshot.includes(domain)) ?? null;
+}
+
+export function resolveNeverAllowedTarget(
+  targetKind: NeverAllowedTargetKind,
+  targetId: string
+): { label: string; domains: string[] } | null {
+  if (targetKind === 'builtin-pack') {
+    const id = targetId as WebPackId;
+    if (!(id in WEB_PACK_DOMAINS)) return null;
+    const pack = state.purity.packs.find(entry => entry.id === id);
+    return {
+      label: WEB_PACK_LABELS[id],
+      domains: Array.from(new Set([...WEB_PACK_DOMAINS[id], ...(pack?.extraDomains ?? [])])),
+    };
+  }
+  if (targetKind === 'custom-pack') {
+    const pack = state.purity.customPacks.find(entry => entry.id === targetId);
+    return pack ? { label: pack.name, domains: [...pack.domains] } : null;
+  }
+  const domain = normalizeDomain(targetId);
+  return domain.includes('.') ? { label: domain, domains: [domain] } : null;
+}
+
+function targetHasPermanentPromise(targetKind: NeverAllowedTargetKind, targetId: string) {
+  return state.purity.neverAllowed.some(
+    entry => entry.targetKind === targetKind && entry.targetId === targetId
+  );
+}
+
+function isPermanentDomain(rawDomain: string) {
+  const domain = normalizeDomain(rawDomain);
+  return state.purity.neverAllowed.some(entry => entry.domainsSnapshot.includes(domain));
+}
+
+export type CreateNeverAllowedInput = {
+  targetKind: NeverAllowedTargetKind;
+  targetId: string;
+  reason: string;
+  temptation: string;
+  nextStep: string;
+  reusedFromId?: string;
+  candidateDomain?: string;
+};
+
+export type CreateNeverAllowedResult =
+  | { ok: true; commitment: NeverAllowedCommitment }
+  | { ok: false; reason: 'permission' | 'native' | 'answers' | 'target' | 'duplicate' | 'capacity' };
+
+export function createNeverAllowedCommitment(input: CreateNeverAllowedInput): CreateNeverAllowedResult {
+  if (state.permission !== 'approved') return { ok: false, reason: 'permission' };
+  if (state.nativeProtection.status !== 'applied') return { ok: false, reason: 'native' };
+  const answers = [input.reason, input.temptation, input.nextStep].map(value => value.trim());
+  if (answers.some(value => value.length < 20 || value.length > 600)) {
+    return { ok: false, reason: 'answers' };
+  }
+  const candidateDomain = normalizeDomain(input.candidateDomain ?? '');
+  const baseTarget = resolveNeverAllowedTarget(input.targetKind, input.targetId);
+  const target = candidateDomain.includes('.') && input.targetKind !== 'domain' && baseTarget
+    ? { label: baseTarget.label, domains: [candidateDomain] }
+    : baseTarget;
+  if (!target) return { ok: false, reason: 'target' };
+  if (candidateDomain.includes('.') && input.targetKind === 'custom-pack') {
+    const pack = state.purity.customPacks.find(entry => entry.id === input.targetId);
+    if (!pack || pack.domains.includes(candidateDomain)) return { ok: false, reason: 'duplicate' };
+  }
+  if (candidateDomain.includes('.') && input.targetKind === 'builtin-pack') {
+    const packId = input.targetId as WebPackId;
+    const pack = state.purity.packs.find(entry => entry.id === packId);
+    if (!pack || WEB_PACK_DOMAINS[packId]?.includes(candidateDomain as never) || pack.extraDomains.includes(candidateDomain)) {
+      return { ok: false, reason: 'duplicate' };
+    }
+  }
+  const alreadyForTarget = new Set(
+    state.purity.neverAllowed
+      .filter(entry => entry.targetKind === input.targetKind && entry.targetId === input.targetId)
+      .flatMap(entry => entry.domainsSnapshot)
+  );
+  const domainsSnapshot = target.domains.filter(domain => !alreadyForTarget.has(domain));
+  if (domainsSnapshot.length === 0) return { ok: false, reason: 'duplicate' };
+  const permanentDomains = new Set(state.purity.neverAllowed.flatMap(entry => entry.domainsSnapshot));
+  domainsSnapshot.forEach(domain => permanentDomains.add(domain));
+  if (permanentDomains.size > WEB_DOMAIN_LIMIT) return { ok: false, reason: 'capacity' };
+
+  const commitment: NeverAllowedCommitment = {
+    id: makeId('never'),
+    targetKind: input.targetKind,
+    targetId: input.targetId,
+    targetLabel: target.label,
+    domainsSnapshot,
+    committedAt: Date.now(),
+    reason: answers[0],
+    temptation: answers[1],
+    nextStep: answers[2],
+    reusedFromId: input.reusedFromId,
+    status: 'pending-native',
+  };
+  state.purity = {
+    ...state.purity,
+    neverAllowed: [...state.purity.neverAllowed, commitment],
+    packs: input.targetKind === 'builtin-pack'
+      ? state.purity.packs.map(pack => pack.id === input.targetId ? { ...pack, mode: 'on' } : pack)
+      : state.purity.packs,
+    customPacks: input.targetKind === 'custom-pack'
+      ? state.purity.customPacks.map(pack => pack.id === input.targetId
+        ? {
+            ...pack,
+            mode: 'on',
+            domains: candidateDomain.includes('.') ? [...pack.domains, candidateDomain] : pack.domains,
+          }
+        : pack)
+      : state.purity.customPacks,
+  };
+  if (input.targetKind === 'builtin-pack' && candidateDomain.includes('.')) {
+    state.purity = {
+      ...state.purity,
+      packs: state.purity.packs.map(pack => pack.id === input.targetId
+        ? { ...pack, extraDomains: [...pack.extraDomains, candidateDomain] }
+        : pack),
+    };
+  }
+  const sealed = new Set(domainsSnapshot);
+  const nextPending = state.pendingChanges.filter(change => {
+    const action = change.action;
+    if (input.targetKind === 'builtin-pack') {
+      if (action.kind === 'pack-mode' && action.packId === input.targetId) return false;
+      if (action.kind === 'pack-domain-remove' && action.packId === input.targetId && sealed.has(action.domain)) return false;
+    }
+    if (input.targetKind === 'custom-pack') {
+      if ((action.kind === 'custom-pack-mode' || action.kind === 'custom-pack-remove') && action.packId === input.targetId) return false;
+      if (action.kind === 'custom-pack-domain-remove' && action.packId === input.targetId && sealed.has(action.domain)) return false;
+    }
+    if ((action.kind === 'domain-remove' || action.kind === 'domain-never') && sealed.has(action.domain)) return false;
+    return true;
+  });
+  const pendingChanged = nextPending.length !== state.pendingChanges.length;
+  state.pendingChanges = nextPending;
+  persistPurity();
+  if (pendingChanged) persistPendingChanges();
+  emit();
+  return { ok: true, commitment };
+}
+
+export function confirmNeverAllowedNativeApplied(commitmentId: string) {
+  const commitment = getNeverAllowedCommitment(commitmentId);
+  if (!commitment || commitment.status === 'active') return false;
+  state.purity = {
+    ...state.purity,
+    neverAllowed: state.purity.neverAllowed.map(entry =>
+      entry.id === commitmentId ? { ...entry, status: 'active' } : entry
+    ),
+  };
+  persistPurity();
+  emit();
+  return true;
+}
+
 export function setPackMode(packId: WebPackId, mode: PackMode) {
   const current = state.purity.packs.find(pack => pack.id === packId)?.mode ?? 'off';
-  if (current === mode) return;
+  if (current === mode || mode === 'never') return false;
+  if (mode === 'off' && targetHasPermanentPromise('builtin-pack', packId)) return false;
   const weakening = PACK_MODE_RANK[mode] < PACK_MODE_RANK[current];
   const packName: Record<WebPackId, string> = {
     gambling: 'Gambling',
@@ -2286,6 +2733,7 @@ export function setPackMode(packId: WebPackId, mode: PackMode) {
     `${packName[packId]} changes to ${mode === 'off' ? 'Off' : mode === 'on' ? 'On' : 'Never Allowed'}`,
     weakening
   );
+  return true;
 }
 
 export function addDomainToWebPack(packId: WebPackId, rawDomain: string) {
@@ -2311,7 +2759,7 @@ export function addDomainToWebPack(packId: WebPackId, rawDomain: string) {
 export function removeDomainFromWebPack(packId: WebPackId, rawDomain: string) {
   const domain = normalizeDomain(rawDomain);
   const pack = state.purity.packs.find(entry => entry.id === packId);
-  if (!pack || !pack.extraDomains.includes(domain)) return false;
+  if (!pack || !pack.extraDomains.includes(domain) || isPermanentDomain(domain)) return false;
   queueOrApply(
     { kind: 'pack-domain-remove', packId, domain },
     `Remove ${domain} from ${packId}`,
@@ -2343,20 +2791,22 @@ export function createCustomWebPack(name: string, rawDomains: string[]): CustomW
 export function setCustomWebPackMode(packId: string, mode: PackMode) {
   const pack = state.purity.customPacks.find(entry => entry.id === packId);
   const current = pack?.mode;
-  if (!pack || !current || current === mode) return;
+  if (!pack || !current || current === mode || mode === 'never') return false;
+  if (mode === 'off' && targetHasPermanentPromise('custom-pack', packId)) return false;
   const weakening = PACK_MODE_RANK[mode] < PACK_MODE_RANK[current];
   queueOrApply(
     { kind: 'custom-pack-mode', packId, mode },
     `${pack.name} changes to ${mode === 'off' ? 'Off' : mode === 'on' ? 'On' : 'Never Allowed'}`,
     weakening
   );
+  return true;
 }
 
 export function addDomainToCustomWebPack(packId: string, rawDomain: string) {
   const domain = normalizeDomain(rawDomain);
   if (!domain.includes('.')) return false;
   const pack = state.purity.customPacks.find(entry => entry.id === packId);
-  if (!pack || pack.domains.includes(domain)) return false;
+  if (!pack || pack.domains.includes(domain) || targetHasPermanentPromise('custom-pack', packId)) return false;
   state.purity = {
     ...state.purity,
     customPacks: state.purity.customPacks.map(pack =>
@@ -2373,22 +2823,24 @@ export function addDomainToCustomWebPack(packId: string, rawDomain: string) {
 export function removeDomainFromCustomWebPack(packId: string, rawDomain: string) {
   const domain = normalizeDomain(rawDomain);
   const pack = state.purity.customPacks.find(entry => entry.id === packId);
-  if (!pack || pack.domains.length <= 1 || !pack.domains.includes(domain)) return;
+  if (!pack || pack.domains.length <= 1 || !pack.domains.includes(domain) || isPermanentDomain(domain)) return false;
   queueOrApply(
     { kind: 'custom-pack-domain-remove', packId, domain },
     `Remove ${domain} from ${pack.name}`,
     pack.mode !== 'off'
   );
+  return true;
 }
 
 export function removeCustomWebPack(packId: string) {
   const pack = state.purity.customPacks.find(entry => entry.id === packId);
-  if (!pack) return;
+  if (!pack || targetHasPermanentPromise('custom-pack', packId)) return false;
   queueOrApply(
     { kind: 'custom-pack-remove', packId },
     `Remove ${pack.name}`,
     pack.mode !== 'off'
   );
+  return true;
 }
 
 export function normalizeDomain(raw: string) {
@@ -2409,27 +2861,27 @@ export function addCustomDomain(raw: string, never = false) {
 
 export function setDomainNever(domain: string, never: boolean) {
   const entry = state.purity.customDomains.find(item => item.domain === domain);
-  if (!entry || entry.never === never) return;
+  if (!entry || entry.never === never || never || isPermanentDomain(domain)) return false;
   // Marking a door "never" is strengthening; unmarking it is weakening.
   queueOrApply(
     { kind: 'domain-never', domain, never },
     `${domain} ${never ? 'becomes Never Allowed' : 'leaves Never Allowed'}`,
     !never
   );
+  return true;
 }
 
 export function removeCustomDomain(domain: string) {
   const entry = state.purity.customDomains.find(item => item.domain === domain);
-  if (!entry) return;
+  if (!entry || isPermanentDomain(domain)) return false;
   queueOrApply({ kind: 'domain-remove', domain }, `Remove ${domain}`, true);
+  return true;
 }
 
 const HARD_LOCK_LABELS: Record<LockCooldown, string> = {
-  '45m': '45 minutes',
-  '1h': '1 hour',
-  '6h': '6 hours',
   '12h': '12 hours',
   '24h': '24 hours',
+  '2d': '2 days',
   '3d': '3 days',
 };
 
@@ -2456,8 +2908,7 @@ export function updateWebHardLock(
   queueOrApply(
     { kind: 'locks', partial: normalizedPartial },
     label,
-    weakening,
-    partial.enabled === false ? HARD_LOCK_DISABLE_DELAY_MS : undefined
+    weakening
   );
   return true;
 }
@@ -2513,11 +2964,11 @@ type ResolveAppAccessInput = {
 };
 
 function ruleMode(rule: Pick<GroupRule, 'mode' | 'dailyMinutes'>): RuleMode {
-  return rule.mode ?? (rule.dailyMinutes == null ? 'noLimit' : 'limit');
+  return rule.mode === 'blocked' ? 'blocked' : 'limit';
 }
 
 function appRuleMode(rule: AppRule): RuleMode {
-  return rule.mode ?? (rule.minutes == null ? 'noLimit' : 'limit');
+  return rule.mode === 'blocked' ? 'blocked' : 'limit';
 }
 
 export function planHasProtectionNow(plan: DayPlan | null | undefined, now: Date): boolean {
@@ -2526,7 +2977,9 @@ export function planHasProtectionNow(plan: DayPlan | null | undefined, now: Date
   const rules = rulesForPlanAt(plan, now);
   return rules.some(rule => {
     if (ruleMode(rule) === 'blocked' || rule.dailyMinutes != null) return true;
-    return (rule.appRules ?? []).some(appRule => appRuleMode(appRule) !== 'noLimit');
+    return (rule.appRules ?? []).some(
+      appRule => appRuleMode(appRule) === 'blocked' || appRule.minutes != null
+    );
   });
 }
 
@@ -2712,11 +3165,17 @@ export function resolveAppAccess({
 
 export type LiveDayStatus = 'off' | 'on_track' | 'broken';
 
-export function getTodayRecord(stateArg: DayPlanState, now: Date): DayRecord | null {
+export function getTodayRecord(
+  stateArg: Pick<DayPlanState, 'days'>,
+  now: Date,
+): DayRecord | null {
   return stateArg.days[dateKey(now)] ?? null;
 }
 
-export function getLiveDayStatus(stateArg: DayPlanState, now: Date): LiveDayStatus {
+export function getLiveDayStatus(
+  stateArg: Pick<DayPlanState, 'days' | 'schedule' | 'plans'>,
+  now: Date,
+): LiveDayStatus {
   const record = getTodayRecord(stateArg, now);
   const planId = record ? record.planId : stateArg.schedule[weekdayMondayFirst(now)];
   const plan = stateArg.plans.find(entry => entry.id === planId);
@@ -2739,7 +3198,9 @@ export type WebProtectionSummary = {
 
 // One shared read model for every surface that summarizes Web Protection.
 // This prevents My Routine and Focus from drifting into different answers.
-export function getWebProtectionSummary(stateArg: DayPlanState): WebProtectionSummary {
+export function getWebProtectionSummary(
+  stateArg: Pick<DayPlanState, 'purity' | 'permission' | 'nativeProtection'>,
+): WebProtectionSummary {
   const activeBuiltInPacks = stateArg.purity.packs.filter(pack => pack.mode !== 'off');
   const activeCustomPacks = stateArg.purity.customPacks.filter(pack => pack.mode !== 'off');
   const packsOn = activeBuiltInPacks.length + activeCustomPacks.length;

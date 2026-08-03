@@ -26,13 +26,14 @@ the conversation.
 - Screen Time includes Daily Plans and Session Plans, a weekly assignment
   planner, required names, a maximum of four connected Sessions, exact time
   editing, add/remove confirmations, and compatible Session-rule copying.
-- A new plan starts at `No limit`. Every group and Session rule also starts at
-  `No limit`; limits are deliberate choices, not hidden defaults.
+- A new plan starts with every group in `Limit` and no duration. `No limit` is
+  the natural value inside Limit, not a third mode; finite limits are deliberate
+  choices rather than hidden defaults.
 - Daily Target includes target, tolerable, and Essentials-only thresholds; the
   80 percent planning marker; grouped planned time; a warning after 90 percent;
   and the requested 365-dot year perspective.
-- Daily Target and group allowance sliders use 15-minute resolution, including
-  values such as 5h 45m, while keeping `No limit` explicit.
+- Daily Target, group, and app duration controls use 15-minute resolution,
+  including values such as 5h 45m, while keeping `No limit` explicit.
 - App Groups have globally unique custom names, reusable saved groups, one app
   per group in a plan, and deletion protection while any plan references them.
 - Essential Apps are separated into conceptual system-critical access,
@@ -167,8 +168,8 @@ Native behavior already implemented:
   Session id, group, or app and cannot be erased by later editing.
 - Raising a wall that already fired does not reopen it in the same Session,
   because universal Family Controls does not expose exact remaining use to the
-  host. `No limit` is an explicit removal and still remains below stronger
-  global layers.
+  host. `No limit` inside Limit mode explicitly removes the local duration and
+  still remains below stronger global layers.
 - Changing a picker selection or editing an unrelated rule does not clear a
   reached wall.
 - Rebuilding a monitor cannot let an old `intervalDidEnd` callback clear the

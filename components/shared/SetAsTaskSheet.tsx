@@ -31,21 +31,14 @@ import Reanimated, {
 import { StaticChallengeTrophy } from '@/components/challenges/ChallengeTrophy';
 import TaskTimeEditor from '@/components/shared/TaskTimeEditor';
 import {
-  Book,
-  BookMarked,
-  CalendarCheck,
-  CheckSmall,
   ChevronDown,
-  Cross,
   Feather,
   Notebook,
-  OpenBook,
   OrthodoxCross,
   Pause,
   Pencil,
   Plus,
   RotateCcw,
-  Sparkles,
   Trash2,
   X,
 } from '@/components/icons/Icons';
@@ -66,6 +59,14 @@ import { HapticTouchableOpacity as TouchableOpacity, HapticPressable as Pressabl
 import { EveningMoon, MealBowl, MorningSun, PrayerCandle } from '@/components/icons/PrayerHours';
 import BeadLoop from '@/components/prayer/BeadLoop';
 import { useSelectionHop } from '@/components/shared/selectionHop';
+import {
+  DEFAULT_SCRIPTURE_SESSION_AMOUNT,
+  DEFAULT_SCRIPTURE_TASK_TITLE,
+  MAX_SCRIPTURE_SESSION_AMOUNT,
+  scriptureSessionAmountLabel,
+  scriptureSessionUnitLabel,
+  UNIVERSAL_SCRIPTURE_READING_TYPE,
+} from '@/components/scripture/scripture-task-model';
 
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -297,7 +298,6 @@ type TaskTab = 'spiritual' | 'routine' | 'challenge';
 type RuleFrequency = 'daily' | 'weekdays' | 'weekends' | 'specific_days' | 'monthly';
 export type PrayerType = 'morning' | 'evening' | 'meal' | 'jesus' | 'custom';
 type JournalTechnique = 'daily' | 'morning_pages' | 'free_writing';
-export type ScriptureReadingType = 'new_testament' | 'old_testament' | 'psalter' | 'church_calendar' | 'custom';
 type PrayerRuleChoice = 'standard' | 'short' | 'seraphim' | 'personal' | 'breakfast' | 'lunch' | 'dinner';
 export type PrayerChallengeRuleChoice = Extract<PrayerRuleChoice, 'standard' | 'short' | 'seraphim' | 'personal'>;
 export type JesusPrayerMode = 'duration' | 'count';
@@ -338,7 +338,6 @@ type Props = {
   // with this type already chosen — identical to the user tapping it.
   // Default behavior is unchanged when omitted.
   initialPrayerType?: PrayerType;
-  initialScriptureType?: ScriptureReadingType;
   lockToPrimaryTask?: boolean;
 };
 
@@ -457,27 +456,6 @@ const JOURNAL_TECHNIQUES: {
   { key: 'free_writing', label: 'Free Writing', Icon: Notebook, color: '#3D8273', defaultTitle: 'Free Writing', defaultTime: '20:45' },
 ];
 
-const SCRIPTURE_TYPES: {
-  key: ScriptureReadingType;
-  label: string;
-  Icon: React.ComponentType<{ s?: number; c?: string; w?: number }>;
-  defaultTitle: string;
-  accent: string;
-}[] = [
-  { key: 'new_testament', label: 'New Testament', Icon: OpenBook, defaultTitle: 'New Testament Reading', accent: '#5E7B55' },
-  { key: 'old_testament', label: 'Old Testament', Icon: Book, defaultTitle: 'Old Testament Reading', accent: '#A97732' },
-  { key: 'psalter', label: 'Psalter', Icon: BookMarked, defaultTitle: 'Psalter Reading', accent: '#C58A2D' },
-  { key: 'church_calendar', label: 'Church Readings', Icon: CalendarCheck, defaultTitle: 'Church Calendar Reading', accent: '#7B915D' },
-  { key: 'custom', label: 'Custom', Icon: Sparkles, defaultTitle: 'Custom Scripture Reading', accent: '#7C6EAF' },
-];
-
-function scriptureSessionAmountLabel(type: ScriptureReadingType, amount: number) {
-  if (type === 'church_calendar') return 'Church readings';
-  const safeAmount = Math.max(1, Math.round(Number.isFinite(amount) ? amount : 1));
-  if (type === 'psalter') return `${safeAmount} ${safeAmount === 1 ? 'psalm' : 'psalms'}/day`;
-  return `${safeAmount} ${safeAmount === 1 ? 'chapter' : 'chapters'}/day`;
-}
-
 const META_SEPARATOR = ` ${String.fromCharCode(183)} `;
 
 function cleanMetaSeparators(value?: string) {
@@ -490,19 +468,19 @@ function cleanMetaSeparators(value?: string) {
 
 const PRAYER_RULES: Record<Exclude<PrayerType, 'jesus' | 'custom'>, { key: PrayerRuleChoice; label: string; desc: string }[]> = {
   morning: [
-    { key: 'personal', label: 'My Rule', desc: 'From your own prayer book or in your own way — any tradition' },
+    { key: 'personal', label: 'My Rule', desc: 'Pray from your own prayer book, or in your own words — for every Christian tradition' },
     { key: 'standard', label: 'Standard Rule', desc: 'Full morning prayers' },
     { key: 'short', label: 'Shortened Rule', desc: 'Abbreviated prayer rule' },
     { key: 'seraphim', label: 'St. Seraphim Rule', desc: 'Rule of St. Seraphim of Sarov' },
   ],
   evening: [
-    { key: 'personal', label: 'My Rule', desc: 'From your own prayer book or in your own way — any tradition' },
+    { key: 'personal', label: 'My Rule', desc: 'Pray from your own prayer book, or in your own words — for every Christian tradition' },
     { key: 'standard', label: 'Standard Rule', desc: 'Full evening prayers' },
     { key: 'short', label: 'Shortened Rule', desc: 'Abbreviated prayer rule' },
     { key: 'seraphim', label: 'St. Seraphim Rule', desc: 'Rule of St. Seraphim of Sarov' },
   ],
   meal: [
-    { key: 'personal', label: 'My Rule', desc: 'Your own meal prayer or blessing' },
+    { key: 'personal', label: 'My Rule', desc: 'Your own blessing before a meal — for every Christian tradition' },
     { key: 'breakfast', label: 'Breakfast Prayer', desc: 'Prayer before the morning meal' },
     { key: 'lunch', label: 'Lunch Prayer', desc: 'Prayer before the midday meal' },
     { key: 'dinner', label: 'Dinner Prayer', desc: 'Prayer before the evening meal' },
@@ -937,7 +915,6 @@ export default function SetAsTaskSheet({
   onTaskDraft,
   onTaskMutation,
   initialPrayerType,
-  initialScriptureType,
   lockToPrimaryTask = false,
 }: Props) {
   const { height: windowHeight } = useWindowDimensions();
@@ -968,10 +945,9 @@ export default function SetAsTaskSheet({
   const [journalTitle, setJournalTitle] = useState(JOURNAL_TECHNIQUES[0].defaultTitle);
   const [journalTime, setJournalTime] = useState<ScheduleDraft>(defaultSchedule('21:30'));
 
-  const [scriptureType, setScriptureType] = useState<ScriptureReadingType | null>(null);
-  const [scriptureTitle, setScriptureTitle] = useState('');
+  const [scriptureTitle, setScriptureTitle] = useState(DEFAULT_SCRIPTURE_TASK_TITLE);
   const [scriptureSchedule, setScriptureSchedule] = useState<ScheduleDraft>(defaultSchedule('08:00'));
-  const [scriptureDailyAmount, setScriptureDailyAmount] = useState(1);
+  const [scriptureDailyAmount, setScriptureDailyAmount] = useState(DEFAULT_SCRIPTURE_SESSION_AMOUNT);
 
   const [challengeSchedule, setChallengeSchedule] = useState<ChallengeScheduleDraft>(defaultChallengeSchedule('08:00'));
   const [selectedPaceId, setSelectedPaceId] = useState<string | null>(null);
@@ -1037,18 +1013,10 @@ export default function SetAsTaskSheet({
     setJesusMode('duration');
     setJesusDuration('15');
     setJesusCount('100');
-    if (initialScriptureType) {
-      const meta = SCRIPTURE_TYPES.find(item => item.key === initialScriptureType);
-      setScriptureType(initialScriptureType);
-      setScriptureTitle(meta?.defaultTitle ?? 'Scripture Reading');
-      setScriptureSchedule(
-        defaultSchedule(
-          initialScriptureType === 'psalter' ? '06:45' : initialScriptureType === 'church_calendar' ? '06:30' : '08:00'
-        )
-      );
-      setScriptureDailyAmount(1);
-    }
-  }, [context, initialPrayerType, initialScriptureType, visible]);
+    setScriptureTitle(DEFAULT_SCRIPTURE_TASK_TITLE);
+    setScriptureSchedule(defaultSchedule('08:00'));
+    setScriptureDailyAmount(DEFAULT_SCRIPTURE_SESSION_AMOUNT);
+  }, [context, initialPrayerType, visible]);
 
   useEffect(() => {
     tabMotion.value = withSpring(taskTab === 'challenge' ? 1 : 0, {
@@ -1107,14 +1075,6 @@ export default function SetAsTaskSheet({
     setJesusMode('duration');
     setJesusDuration('15');
     setJesusCount('100');
-  };
-
-  const selectScriptureType = (next: ScriptureReadingType) => {
-    const meta = SCRIPTURE_TYPES.find(item => item.key === next);
-    setScriptureType(next);
-    setScriptureTitle(meta?.defaultTitle ?? 'Scripture Reading');
-    setScriptureSchedule(defaultSchedule(next === 'psalter' ? '06:45' : next === 'church_calendar' ? '06:30' : '08:00'));
-    setScriptureDailyAmount(1);
   };
 
   const selectJournalTechnique = (next: JournalTechnique) => {
@@ -1219,8 +1179,8 @@ export default function SetAsTaskSheet({
     }
 
     if (context === 'scripture') {
-      if (!scriptureType || !scriptureTitle.trim()) return;
-      const amountLabel = scriptureSessionAmountLabel(scriptureType, scriptureDailyAmount);
+      if (!scriptureTitle.trim()) return;
+      const amountLabel = scriptureSessionAmountLabel(scriptureDailyAmount);
       await onTaskDraft?.({
         title: scriptureTitle.trim(),
         subtitle: `${amountLabel} - ${formatSummaryFrequency(scriptureSchedule)} - ${scriptureSchedule.time}`,
@@ -1232,8 +1192,8 @@ export default function SetAsTaskSheet({
         notificationMode: scriptureSchedule.notificationMode,
         reminderMinutes: scriptureSchedule.notificationMode === 'double' ? scriptureSchedule.reminderMinutes : undefined,
         scriptureConfig: {
-          readingType: scriptureType,
-          chaptersPerDay: scriptureType === 'church_calendar' ? 0 : scriptureDailyAmount,
+          readingType: UNIVERSAL_SCRIPTURE_READING_TYPE,
+          chaptersPerDay: scriptureDailyAmount,
           totalUnitsRead: 0,
         },
       });
@@ -1550,11 +1510,9 @@ export default function SetAsTaskSheet({
 
                   {context === 'scripture' && (
                     <ScriptureSpiritualPanel
-                      scriptureType={scriptureType}
                       scriptureTitle={scriptureTitle}
                       schedule={scriptureSchedule}
                       dailyAmount={scriptureDailyAmount}
-                      onSelectScriptureType={selectScriptureType}
                       onTitleChange={setScriptureTitle}
                       onScheduleChange={setScriptureSchedule}
                       onDailyAmountChange={setScriptureDailyAmount}
@@ -1881,7 +1839,7 @@ function PrayerRuleChooser({
    * cards, and there is no figure to measure and nothing to clip.
    */
   const toggle = useCallback(() => {
-    animateSoftLayoutChange();
+    animateDrawerChange();
     setOpen(current => !current);
   }, []);
 
@@ -1912,9 +1870,10 @@ function PrayerRuleChooser({
 
         {open && (
           <View style={s.ruleFold}>
-            {orthodox.map(item => (
+            {orthodox.map((item, index) => (
               <PrayerRuleRow
                 key={item.key}
+                index={index}
                 item={item}
                 active={value === item.key}
                 onSelect={onChange}
@@ -1971,22 +1930,100 @@ function PrayerRuleGroupHead({
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Reanimated.View style={[s.ruleCard, motionStyle]}>
-        <View style={s.ruleCopy}>
-          <View style={s.ruleHeadLine}>
-            <View style={s.orthodoxRuleBadge}>
-              <OrthodoxCross s={11} c={C.gold} w={1.35} />
-              <Text style={s.orthodoxRuleBadgeText}>ORTH.</Text>
-            </View>
-            <Text style={[s.ruleTitle, chosen && s.ruleTitleActive]} numberOfLines={1}>{label}</Text>
+      <Reanimated.View style={[s.ruleCard, s.ruleCardDoor, motionStyle]}>
+        {/* The title takes the left, its tag the right, exactly as the
+            card beside it puts its name left and its mark right. The tag
+            beside the title was labelling the WORDS; on the right it
+            labels the CARD, which is what it is for. */}
+        <View style={s.ruleHeadLine}>
+          <Text style={[s.ruleTitle, chosen && s.ruleTitleActive]} numberOfLines={1}>{label}</Text>
+          <View style={s.orthodoxRuleBadge}>
+            <OrthodoxCross s={11} c={C.gold} w={1.35} />
+            <Text style={s.orthodoxRuleBadgeText}>ORTH.</Text>
           </View>
-          <Text style={[s.ruleSub, chosen && s.ruleAnswer]} numberOfLines={1}>{summary}</Text>
         </View>
-        <Reanimated.View style={[s.ruleMark, chevronStyle]}>
-          <ChevronDown s={16} c={chosen ? C.gold : '#9CA3AF'} w={2} />
+        <Text style={[s.ruleSub, s.ruleDoorSub, chosen && s.ruleAnswer]} numberOfLines={1}>{summary}</Text>
+        {/* ⚠ THE CHEVRON GOES TO THE CORNER, out of the title's line. On
+            the right of the title it was sitting where the OTHER card
+            puts its selection ring, so the two cards were using the same
+            seat for two different kinds of thing — one a state, one a
+            control. In the corner it is plainly the card's own handle. */}
+        <Reanimated.View style={[s.ruleDoorHandle, chevronStyle]} pointerEvents="none">
+          <ChevronDown s={15} c={chosen ? C.gold : '#B7B0A5'} w={2} />
         </Reanimated.View>
       </Reanimated.View>
     </TouchableOpacity>
+  );
+}
+
+/**
+ * HOW THE DRAWER MOVES.
+ *
+ * ⚠ THE SOFT CHANGE THIS SHEET USES EVERYWHERE WAS TOO BRISK HERE, and
+ * the reason is that it is not doing the same job. Everywhere else it
+ * absorbs a block swapping for another block of roughly its own size;
+ * here three rows appear out of nothing, which is the largest single
+ * layout change in the sheet. At 280 and eased on both ends it reads as
+ * the list being switched on.
+ *
+ * 380, and eased OUT rather than in-and-out: a drawer should leave at
+ * once and arrive slowing down. The rows then fade in on top of it,
+ * staggered a frame apart each, so what you watch is a list being drawn
+ * out rather than a box changing height.
+ */
+function animateDrawerChange() {
+  try {
+    LayoutAnimation.configureNext({
+      duration: 380,
+      create: {
+        type: LayoutAnimation.Types.easeOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: { type: LayoutAnimation.Types.easeOut },
+      delete: {
+        type: LayoutAnimation.Types.easeOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+  } catch {
+    // LayoutAnimation is native-first; web can safely ignore this.
+  }
+}
+
+/** Each row arrives just after the one above it. */
+const ROW_ENTER = (index: number) => FadeIn.duration(240).delay(60 + index * 55);
+
+/**
+ * WHAT DIVIDES ONE RULE FROM THE NEXT.
+ *
+ * ⚠ A FLAT HAIRLINE WAS DOING THE JOB AND NOTHING MORE. It separated the
+ * rows, which is all it was asked for, and it looked like a border --
+ * the one piece of plain furniture in a block otherwise built out of
+ * gold edges and struck plates.
+ *
+ * This is the app's own divider instead: the GOLD THREAD the About
+ * sheet's foot is strung on, with one of its small lozenges set on it.
+ * Two things make it read as ornament rather than as a border --
+ *
+ *   · IT FADES AT BOTH ENDS. A rule that stops dead has two ends you can
+ *     point at; a thread that arrives out of nothing and leaves into it
+ *     has none, so the eye reads a mark rather than an edge.
+ *   · THE LOZENGE SITS ON IT, not in a gap cut for it. Punching a hole
+ *     in the thread would need this to know the colour of the paper
+ *     behind it, which changes between the two rooms it is used in.
+ */
+function RuleDivider() {
+  return (
+    <View style={s.ruleThread} pointerEvents="none">
+      <LinearGradient
+        colors={['rgba(197,160,89,0)', 'rgba(197,160,89,0.5)', 'rgba(197,160,89,0)']}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={s.ruleThreadLine}
+      />
+      <View style={s.ruleThreadMark} />
+    </View>
   );
 }
 
@@ -2001,10 +2038,13 @@ function PrayerRuleGroupHead({
  * surface the rows are drawn on.
  */
 const PrayerRuleRow = React.memo(function PrayerRuleRow({
+  index,
   item,
   active,
   onSelect,
 }: {
+  /** Its place in the drawer, which is how long it waits to arrive. */
+  index: number;
   item: { key: PrayerRuleChoice; label: string; desc: string };
   active: boolean;
   onSelect: (next: PrayerRuleChoice) => void;
@@ -2017,6 +2057,15 @@ const PrayerRuleRow = React.memo(function PrayerRuleRow({
   }));
 
   return (
+    <Reanimated.View entering={ROW_ENTER(index)}>
+      {/* ⚠ A HAIRLINE ABOVE EACH ROW BUT THE FIRST. Three rows on bare
+          paper with nothing between them read as three separate remarks;
+          ruled apart they read as one list of three, which is what they
+          are. In gold at low light rather than the sheet's grey, because
+          this list lives inside a gold card and a neutral rule would be
+          the one cold line in it. Inset to the words, so it divides the
+          list and does not underline the card. */}
+      {index > 0 && <RuleDivider />}
     <TouchableOpacity
       onPress={press}
       activeOpacity={0.9}
@@ -2028,10 +2077,16 @@ const PrayerRuleRow = React.memo(function PrayerRuleRow({
         <Text style={[s.ruleTitle, active && s.ruleTitleActive]}>{item.label}</Text>
         <Text style={s.ruleSub}>{item.desc}</Text>
       </View>
-      <View style={[s.ruleRing, active && s.ruleRingActive, s.ruleMark]}>
+      {/* ⚠ CENTRED ON BOTH LINES, not hung on the title's. The cards
+          above are chosen ONE AT A TIME against a long description and
+          want their mark where the name is; these are a set being read
+          down, and a column of marks that all sit high reads as a ragged
+          edge rather than as a list. */}
+      <View style={[s.ruleRing, active && s.ruleRingActive]}>
         <Reanimated.View style={[s.ruleDot, dotStyle]} />
       </View>
     </TouchableOpacity>
+    </Reanimated.View>
   );
 });
 
@@ -2070,11 +2125,20 @@ function PrayerRuleOption({
       accessibilityState={{ checked: active }}
     >
       <Reanimated.View style={[s.ruleCard, motionStyle]}>
+        {/* ⚠ NO TAG. It wore one for a while so the fork would read as two
+            named things rather than one named and one unnamed — and it
+            was one label too many. The card says My Rule and the line
+            under it says who it is for; a chip repeating that in seven
+            letters was decoration standing where nothing needed saying. */}
         <View style={s.ruleCopy}>
           <Text style={[s.ruleTitle, active && s.ruleTitleActive]}>{item.label}</Text>
           <Text style={s.ruleSub}>{item.desc}</Text>
         </View>
-        <View style={[s.ruleRing, active && s.ruleRingActive, s.ruleMark]}>
+        {/* ⚠ CENTRED, exactly as the frequency chip below centres its own.
+            It was hung on the title's line while the card carried a tag
+            up there needing room; with the tag gone there is nothing to
+            align to and the ring goes back where this sheet keeps it. */}
+        <View style={[s.ruleRing, active && s.ruleRingActive, s.ruleRingCentred]}>
           <Reanimated.View style={[s.ruleDot, dotStyle]} />
         </View>
       </Reanimated.View>
@@ -2413,21 +2477,17 @@ function TechniqueChoice({
 }
 
 function ScriptureSpiritualPanel({
-  scriptureType,
   scriptureTitle,
   schedule,
   dailyAmount,
-  onSelectScriptureType,
   onTitleChange,
   onScheduleChange,
   onDailyAmountChange,
   onSave,
 }: {
-  scriptureType: ScriptureReadingType | null;
   scriptureTitle: string;
   schedule: ScheduleDraft;
   dailyAmount: number;
-  onSelectScriptureType: (value: ScriptureReadingType) => void;
   onTitleChange: (value: string) => void;
   onScheduleChange: (value: ScheduleDraft) => void;
   onDailyAmountChange: (value: number) => void;
@@ -2435,77 +2495,46 @@ function ScriptureSpiritualPanel({
 }) {
   return (
     <View style={s.stack}>
-      <CardBlock label="Reading Type">
-        <View style={s.typeGridTwo}>
-          {SCRIPTURE_TYPES.map(item => {
-            const active = scriptureType === item.key;
-            return (
-              <TouchableOpacity
-                key={item.key}
-                onPress={() => onSelectScriptureType(item.key)}
-                activeOpacity={0.84}
-                style={[s.scriptureTypeChip, active && { backgroundColor: `${item.accent}10`, borderColor: item.accent }]}
-              >
-                <item.Icon s={22} c={active ? item.accent : '#B6B8C0'} />
-                <Text style={[s.scriptureTypeText, active && { color: item.accent }]}>{item.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
+      <CardBlock label="Name Activity">
+        <TextInput
+          value={scriptureTitle}
+          onChangeText={onTitleChange}
+          placeholder="e.g. Daily Scripture Reading"
+          placeholderTextColor="#D1D5DB"
+          style={s.activityNameInput}
+        />
+      </CardBlock>
+
+      <CardBlock label="Chapters or Psalms per Session">
+        <View style={s.amountRow}>
+          <TouchableOpacity
+            onPress={() => onDailyAmountChange(Math.max(1, dailyAmount - 1))}
+            activeOpacity={0.84}
+            style={s.amountBtn}
+          >
+            <Text style={s.amountBtnText}>-</Text>
+          </TouchableOpacity>
+          <View style={s.amountCenter}>
+            <Text style={s.amountValue}>{dailyAmount}</Text>
+            <Text style={s.amountCaption}>{scriptureSessionUnitLabel(dailyAmount)}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => onDailyAmountChange(Math.min(MAX_SCRIPTURE_SESSION_AMOUNT, dailyAmount + 1))}
+            activeOpacity={0.84}
+            style={s.amountBtn}
+          >
+            <Plus s={18} c={C.gold} />
+          </TouchableOpacity>
         </View>
       </CardBlock>
 
-      {!!scriptureType && (
-        <>
-          <CardBlock label="Name Activity">
-            <TextInput
-              value={scriptureTitle}
-              onChangeText={onTitleChange}
-              placeholder="e.g. Daily Bible Reading"
-              placeholderTextColor="#D1D5DB"
-              style={s.activityNameInput}
-            />
-          </CardBlock>
+      <ScheduleEditor
+        value={schedule}
+        onChange={onScheduleChange}
+        showFrequency
+      />
 
-          {scriptureType !== 'church_calendar' && (
-            <>
-              <CardBlock label={scriptureType === 'psalter' ? 'Psalms per Day' : 'Chapters per Day'}>
-                <View style={s.amountRow}>
-                  <TouchableOpacity
-                    onPress={() => onDailyAmountChange(Math.max(1, dailyAmount - 1))}
-                    activeOpacity={0.84}
-                    style={s.amountBtn}
-                  >
-                    <Text style={s.amountBtnText}>-</Text>
-                  </TouchableOpacity>
-                  <View style={s.amountCenter}>
-                    <Text style={s.amountValue}>{dailyAmount}</Text>
-                    <Text style={s.amountCaption}>
-                      {scriptureType === 'psalter'
-                        ? `${dailyAmount === 1 ? 'Psalm' : 'Psalms'} per day`
-                        : `${dailyAmount === 1 ? 'Chapter' : 'Chapters'} per day`}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => onDailyAmountChange(Math.min(10, dailyAmount + 1))}
-                    activeOpacity={0.84}
-                    style={s.amountBtn}
-                  >
-                    <Plus s={18} c={C.gold} />
-                  </TouchableOpacity>
-                </View>
-              </CardBlock>
-            </>
-          )}
-
-          <ScheduleEditor
-            value={schedule}
-            onChange={onScheduleChange}
-            showFrequency
-          />
-
-          <PrimaryButton label="Save Spiritual Task" onPress={onSave} />
-        </>
-      )}
+      <PrimaryButton label="Save Spiritual Task" onPress={onSave} />
     </View>
   );
 }
@@ -4540,11 +4569,6 @@ const s = StyleSheet.create({
     lineHeight: 11,
     marginTop: 8,
   },
-  typeGridTwo: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
   typeChip: {
     width: '18%',
     minWidth: 58,
@@ -4562,28 +4586,6 @@ const s = StyleSheet.create({
     fontFamily: F.sansBold,
     fontSize: 8,
     letterSpacing: 1.1,
-    color: '#B6B8C0',
-    textTransform: 'uppercase',
-    textAlign: 'center',
-  },
-  scriptureTypeChip: {
-    width: '48%',
-    minHeight: 72,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#F0EDE6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  scriptureTypeText: {
-    fontFamily: F.sansBold,
-    fontSize: 10,
-    letterSpacing: 1.3,
-    lineHeight: 14,
     color: '#B6B8C0',
     textTransform: 'uppercase',
     textAlign: 'center',
@@ -4873,10 +4875,31 @@ const s = StyleSheet.create({
    * the card does.
    */
   ruleCopy: { flex: 1, minWidth: 0 },
-  ruleHeadLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  /**
+   * The title's line: the name takes what it needs, the tag sits at the
+   * far end of it. `justifyContent: space-between` rather than a gap, so
+   * the tag is pinned to the card's edge and does not drift left as the
+   * title gets shorter.
+   */
+  ruleHeadLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   ruleTitle: {
     fontFamily: F.serifMedium,
     fontSize: 17,
+    /**
+     * ⚠ SET EXPLICITLY, so the line under it lands in the same place on
+     * both cards. Left to the font's own metrics the title's box is
+     * whatever the face reports, and on the door card that box is inside
+     * a ROW carrying a chip -- so the row took its height from whichever
+     * of the two happened to measure taller, and the summary underneath
+     * was pushed down by a difference nothing in the design intended.
+     * Fixed at 22, the row is the title's and nothing else's.
+     */
+    lineHeight: 22,
     color: '#4B5563',
     flexShrink: 1,
   },
@@ -4888,17 +4911,27 @@ const s = StyleSheet.create({
     lineHeight: 15,
     color: '#9CA3AF',
   },
+  /**
+   * ⚠ TIGHTER THAN A DESCRIPTION, because it is not one. The other cards'
+   * second line is prose ABOUT the choice and wants air; this one is the
+   * choice's ANSWER, and an answer belongs against the question it
+   * answers. Pulled up onto the title's own line spacing.
+   */
+  ruleDoorSub: { marginTop: -1 },
   // The second line stops being a hint and becomes the answer.
   ruleAnswer: { color: '#B08A47' },
   /**
-   * The mark, ON THE TITLE'S LINE rather than centred on the card.
+   * ⚠ CENTRED AGAINST THE WHOLE CARD, which is where this sheet keeps a
+   * selection mark -- see `frequencyDotRing` one block down. It was hung
+   * on the title's line while the card carried a tag up there competing
+   * for that row; with the tag gone there is nothing to align to, and a
+   * mark that sits high on a two-line card reads as unfinished beside a
+   * block of chips that all centre theirs.
    *
-   * The card is top-aligned, so this is nudged down by the difference
-   * between the ring and the title's own line height -- (30 - 22) / 2 --
-   * which lands it on the title's optical centre at every text size
-   * instead of floating between two lines of unequal weight.
+   * `alignSelf`, because the card itself stays top-aligned: the words
+   * must still start at the top whatever the mark does.
    */
-  ruleMark: { marginTop: -4 },
+  ruleRingCentred: { alignSelf: 'center' },
   ruleRing: {
     width: 30,
     height: 30,
@@ -4910,6 +4943,39 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   ruleRingActive: { borderColor: '#D6B067', backgroundColor: '#FFF9EE' },
+  /**
+   * THE DOOR CARD holds its handle in the corner, so it needs the room
+   * for it -- the summary must not run under the chevron.
+   */
+  /**
+   * The door card stacks instead of sitting in a row.
+   *
+   * ⚠ AND IT MUST SAY `alignItems: stretch`. The card it is struck from
+   * is a ROW and pins its children to the top with flex-start; turned on
+   * its side that same flex-start becomes a cross-axis rule that shrinks
+   * every child to its own content width — so the title line stopped
+   * being the width of the card and the tag came to rest against the
+   * title instead of against the far edge.
+   */
+  ruleCardDoor: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingRight: 15,
+    paddingBottom: 15,
+  },
+  /**
+   * The handle, in the bottom-right corner.
+   *
+   * It was on the title's line, where the card BESIDE this one puts its
+   * selection ring -- two cards using one seat for two different kinds of
+   * thing, a state and a control. Down here it is plainly this card's own
+   * handle and nothing else's.
+   */
+  ruleDoorHandle: {
+    position: 'absolute',
+    right: 12,
+    bottom: 9,
+  },
   ruleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.gold },
   /**
    * The drawer. It is INDENTED and unplated: the rows belong to the card
@@ -4917,6 +4983,33 @@ const s = StyleSheet.create({
    * three more cards inside one.
    */
   ruleFold: { paddingLeft: 12, paddingTop: 2 },
+  /**
+   * The thread between two rules -- see RuleDivider. Inset to where the
+   * words begin, so it divides the LIST rather than underlining the card.
+   */
+  ruleThread: {
+    height: 9,
+    marginLeft: 15,
+    marginRight: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ruleThreadLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 4,
+    height: 1,
+  },
+  // The lozenge: the About sheet's own bead, at the size a divider can
+  // carry. A square turned on its corner, not a diamond glyph -- at five
+  // points a drawn shape has no room for a shape.
+  ruleThreadMark: {
+    width: 5,
+    height: 5,
+    backgroundColor: 'rgba(197,160,89,0.55)',
+    transform: [{ rotate: '45deg' }],
+  },
   ruleRow: {
     minHeight: 54,
     flexDirection: 'row',
@@ -4955,8 +5048,19 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 7,
   },
+  /**
+   * ⚠ IT MUST NOT BE TALLER THAN THE TITLE'S OWN LINE. At 20 with two
+   * points of padding the chip stood about 26 high while the serif title
+   * beside it measures 21 -- so the chip, not the type, was setting the
+   * height of that row, and the summary underneath was pushed down by the
+   * difference. The gap read as wrong because it WAS wrong: every other
+   * card in this sheet sets that distance with the title alone.
+   *
+   * 18 with a point of padding tucks the chip inside the title's line and
+   * hands the row back to the type.
+   */
   orthodoxRuleBadge: {
-    minHeight: 20,
+    minHeight: 18,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -4965,7 +5069,7 @@ const s = StyleSheet.create({
     borderColor: '#E8DCC4',
     backgroundColor: '#FFFBEB',
     paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingVertical: 1,
   },
   orthodoxRuleBadgeText: {
     fontFamily: F.sansBold,

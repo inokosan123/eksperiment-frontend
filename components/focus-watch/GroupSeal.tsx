@@ -33,6 +33,8 @@ export const GROUP_EMOJI: Record<string, string> = {
 };
 
 const BLOCKED_COLOR = '#A24351';
+// Scarlet, not the block's rose: a passed boundary is a different event.
+const OVER_COLOR = '#BE123C';
 
 export function groupTint(groupId: string) {
   return CATEGORY_TINTS[groupId] ?? { bg: C.goldLight, color: C.goldDark };
@@ -52,6 +54,9 @@ export default function GroupSeal({
   share = 0,
   blocked = false,
   dim = false,
+  tone,
+  icon,
+  marker,
 }: {
   groupId: string;
   name: string;
@@ -61,14 +66,39 @@ export default function GroupSeal({
   blocked?: boolean;
   /** No rule set yet: the seal rests, so ruled groups read as the lit ones. */
   dim?: boolean;
+  /**
+   * Struck in a colour the caller supplies rather than the group's own tint.
+   *
+   * ⚠️ Wherever a seal sits ON a rule — a card, a sheet — its colour must be
+   * the rule's STATE, not the group's identity, or the card ends up wearing two
+   * colours at once. The group's own tint is right only where several groups
+   * are shown together and have to be told apart. See `RULE_TONES`.
+   */
+  tone?: { color: string; bg: string };
+  /**
+   * A custom group's chosen face. The built-in groups carry theirs in
+   * `GROUP_EMOJI`; a group you made yourself carries its own, and falls back to
+   * its initial when it has none.
+   */
+  icon?: string;
+  /**
+   * What is struck on the face's corner. `lock` is a configured block; `warning`
+   * is a boundary that was passed. They must never be interchangeable, so they
+   * are different shapes in different colours — see `FOCUS_BOUNDARY_TONES`.
+   */
+  marker?: 'none' | 'lock' | 'warning';
 }) {
   const reduceMotion = useReducedMotion();
-  const tint = groupTint(groupId);
+  const tint = tone ?? groupTint(groupId);
   const accent = blocked ? BLOCKED_COLOR : tint.color;
-  const emoji = GROUP_EMOJI[groupId];
+  const emoji = icon ?? GROUP_EMOJI[groupId];
 
   // The ring orbits just outside the disc.
   const ringSize = size + 11;
+  const badgeSize = Math.round(size * 0.43);
+  // Pulled in from the ring's corner so the badge's centre lands INSIDE the
+  // disc's rim; at 9% of the ring it overlaps by about half.
+  const badgeInset = Math.round(ringSize * 0.09);
   const radius = (ringSize - 3) / 2;
   const circumference = 2 * Math.PI * radius;
   const target = Math.max(0, Math.min(1, share));
@@ -130,13 +160,45 @@ export default function GroupSeal({
         ]}
       >
         {emoji
-          ? <NotoEmoji name={emoji} size={size * 0.55} />
+          ? <NotoEmoji name={emoji as never} size={size * 0.55} />
           : <Text style={[styles.letter, { fontSize: size * 0.42, color: accent }]}>{name.charAt(0).toUpperCase()}</Text>}
       </View>
 
-      {blocked && (
-        <View style={[styles.lockBadge, { right: -1, bottom: -1 }]}>
-          <Lock s={10} c="#FFFFFF" w={2.6} />
+      {/* The lock sits ON the disc's rim, overlapping it, rather than hanging
+          off the corner of the ring — it is part of the face, not a sticker
+          placed beside it. Measured from the ring so it holds at any size. */}
+      {(blocked || marker === 'lock') && marker !== 'warning' && (
+        <View
+          style={[
+            styles.lockBadge,
+            {
+              width: badgeSize,
+              height: badgeSize,
+              borderRadius: badgeSize / 2,
+              right: badgeInset,
+              bottom: badgeInset,
+            },
+          ]}
+        >
+          <Lock s={badgeSize * 0.56} c="#FFFFFF" w={2.6} />
+        </View>
+      )}
+
+      {marker === 'warning' && (
+        <View
+          style={[
+            styles.lockBadge,
+            {
+              width: badgeSize,
+              height: badgeSize,
+              borderRadius: badgeSize / 2,
+              right: badgeInset,
+              bottom: badgeInset,
+              backgroundColor: OVER_COLOR,
+            },
+          ]}
+        >
+          <Text style={[styles.warningMark, { fontSize: badgeSize * 0.62 }]}>!</Text>
         </View>
       )}
     </View>
@@ -150,11 +212,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   letter: { fontFamily: F.serifSemiBold },
+  warningMark: { fontFamily: F.sansBold, color: '#FFFFFF', includeFontPadding: false },
   lockBadge: {
     position: 'absolute',
-    width: 18,
-    height: 18,
-    borderRadius: 9,
     backgroundColor: BLOCKED_COLOR,
     alignItems: 'center',
     justifyContent: 'center',

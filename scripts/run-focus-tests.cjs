@@ -1,5 +1,10 @@
 const Module = require('node:module');
 
+// Calendar analytics fixtures intentionally exercise Europe/Belgrade's
+// 23-hour and 25-hour days. Pin the process zone so CI and developer machines
+// do not silently reinterpret those local boundaries.
+process.env.TZ = 'Europe/Belgrade';
+
 const calls = [];
 const fixtures = {
   plans: [
@@ -72,8 +77,18 @@ const db = {
   async execAsync(sql) {
     calls.push({ kind: 'exec', sql });
   },
-  async getAllAsync(sql) {
-    calls.push({ kind: 'select', sql });
+  async getAllAsync(sql, ...params) {
+    calls.push({ kind: 'select', sql, params });
+    if (sql.includes('PRAGMA table_info(focus_watch_events)')) {
+      return [
+        { name: 'id' },
+        { name: 'ts' },
+        { name: 'kind' },
+        { name: 'local_day' },
+        { name: 'timezone_id' },
+        { name: 'utc_offset_minutes' },
+      ];
+    }
     if (sql.includes('focus_watch_plans')) return fixtures.plans;
     if (sql.includes('focus_watch_schedule')) return fixtures.schedule;
     if (sql.includes('focus_watch_days')) return fixtures.days;
@@ -98,3 +113,4 @@ Module._load = function focusTestLoad(request, parent, isMain) {
 
 require('tsx/cjs');
 require('../tests/focus-v4.test.ts');
+require('../tests/focus-analytics.test.ts');

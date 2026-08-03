@@ -1,11 +1,9 @@
 import { StyleSheet } from 'react-native';
 import Svg, { Defs, Rect, RadialGradient, Stop } from 'react-native-svg';
 import Reanimated, {
-  useAnimatedProps,
+  useAnimatedStyle,
   type SharedValue,
 } from 'react-native-reanimated';
-
-const AnimatedRect = Reanimated.createAnimatedComponent(Rect);
 
 /* ─────────────────────────────────────────────────────────────
  * THE ROOM — what the page itself does when the prayer begins.
@@ -46,12 +44,18 @@ export default function PrayerRoom({
   /** 0 at rest, 1 while the prayer runs. */
   ignition: SharedValue<number>;
 }) {
-  const animatedProps = useAnimatedProps(() => ({ opacity: ignition.value }));
+  const animatedStyle = useAnimatedStyle(() => ({ opacity: ignition.value }));
 
   return (
-    <Svg pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Defs>
-        {/*
+    <Reanimated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, animatedStyle]}
+      shouldRasterizeIOS
+      renderToHardwareTextureAndroid
+    >
+      <Svg style={StyleSheet.absoluteFill}>
+        <Defs>
+          {/*
           ⚠ THE CLEAR CENTRE REACHES MOST OF THE WAY OUT. A vignette that
           starts closing at the middle darkens the object it is supposed
           to be presenting. Holding it clear to 55% and letting it gather
@@ -64,22 +68,22 @@ export default function PrayerRoom({
           finish well before the corners and leave a visible round edge
           of shadow. Past 70 it clears the corners on every aspect ratio
           a phone has.
-        */}
-        <RadialGradient id="prayerRoomVignette" cx="50%" cy="46%" r="72%">
-          <Stop offset="0" stopColor="#6B4E1E" stopOpacity={0} />
-          <Stop offset="0.55" stopColor="#6B4E1E" stopOpacity={0} />
-          <Stop offset="0.78" stopColor="#6B4E1E" stopOpacity={0.09} />
-          <Stop offset="1" stopColor="#4A3312" stopOpacity={0.2} />
-        </RadialGradient>
-      </Defs>
-      <AnimatedRect
-        x="0"
-        y="0"
-        width="100%"
-        height="100%"
-        fill="url(#prayerRoomVignette)"
-        animatedProps={animatedProps}
-      />
-    </Svg>
+          */}
+          <RadialGradient id="prayerRoomVignette" cx="50%" cy="46%" r="72%">
+            <Stop offset="0" stopColor="#6B4E1E" stopOpacity={0} />
+            <Stop offset="0.55" stopColor="#6B4E1E" stopOpacity={0} />
+            <Stop offset="0.78" stopColor="#6B4E1E" stopOpacity={0.09} />
+            <Stop offset="1" stopColor="#4A3312" stopOpacity={0.2} />
+          </RadialGradient>
+        </Defs>
+        <Rect
+          x="0"
+          y="0"
+          width="100%"
+          height="100%"
+          fill="url(#prayerRoomVignette)"
+        />
+      </Svg>
+    </Reanimated.View>
   );
 }

@@ -5,13 +5,20 @@ let userContentDbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function openUserContentDb() {
   if (!userContentDbPromise) {
-    userContentDbPromise = SQLite.openDatabaseAsync(USER_CONTENT_DB_NAME);
+    userContentDbPromise = (async () => {
+      const db = await SQLite.openDatabaseAsync(USER_CONTENT_DB_NAME);
+      // Connection pragmas belong to connection startup. Re-running
+      // `journal_mode` from a nested challenge/task transaction can fail on a
+      // real phone and leave the two stores out of sync.
+      await db.execAsync('PRAGMA journal_mode = WAL;');
+      await db.execAsync('PRAGMA foreign_keys = ON;');
+      return db;
+    })().catch(error => {
+      userContentDbPromise = null;
+      throw error;
+    });
   }
-
-  const db = await userContentDbPromise;
-  await db.execAsync('PRAGMA journal_mode = WAL;');
-  await db.execAsync('PRAGMA foreign_keys = ON;');
-  return db;
+  return userContentDbPromise;
 }
 
 export async function initJournalStoreTable(db: SQLite.SQLiteDatabase) {

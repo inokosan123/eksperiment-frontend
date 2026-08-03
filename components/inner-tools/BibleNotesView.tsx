@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  startTransition, useCallback, useEffect, useMemo, useRef, useState,
+} from 'react';
 import {
   Modal,
   ScrollView,
@@ -8,12 +10,15 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
   Easing,
   FadeInDown,
   FadeOutUp,
   LinearTransition,
   interpolateColor,
+  runOnJS,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -145,6 +150,18 @@ const CHAPTER_GRID_SIDE_PADDING = 4;
 const CHAPTER_LEAF_PADDING = 4;
 const CHAPTER_LEAF_INSET = 2 + CHAPTER_LEAF_PADDING * 2;
 const BIBLE_NOTES_EASE = Easing.bezier(0.22, 1, 0.36, 1);
+const TAB_SLIDE_MS = 190;
+const TAB_CONTENT_COMMIT_DELAY_MS = TAB_SLIDE_MS + 20;
+const TAB_SLIDE = { duration: TAB_SLIDE_MS, easing: BIBLE_NOTES_EASE } as const;
+const TAB_PRESS_IN = { duration: 70 } as const;
+const TAB_PRESS_OUT = { duration: 120 } as const;
+const INITIAL_BOOK_RENDER_COUNT = 9;
+const BOOK_RENDER_BATCH_SIZE = 4;
+const INITIAL_PSALTER_SECTION_COUNT = 5;
+const PSALTER_RENDER_BATCH_SIZE = 2;
+const FIRST_CONTENT_BATCH_DELAY_MS = 240;
+const NEXT_CONTENT_BATCH_DELAY_MS = 80;
+const CONTENT_IDLE_TIMEOUT_MS = 500;
 const bibleNotesLayout = LinearTransition.duration(178).easing(BIBLE_NOTES_EASE);
 // Opening runs a shade slower than closing: the room's light has to come up
 // under the cover before the leaf below has finished unfolding, while closing
@@ -156,6 +173,31 @@ const BOOK_INK_BLANK = '#BDB8AF';
 const BOOK_SPINE_BLANK = 'rgba(198,193,183,0.5)';
 const BOOK_CHEVRON_BLANK = '#C7C2B8';
 const BOOK_SEAT_BLANK = 'rgba(214,209,199,0.5)';
+
+type IdleRuntime = typeof globalThis & {
+  requestIdleCallback?: (
+    callback: () => void,
+    options?: { timeout: number },
+  ) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+function scheduleContentBatch(callback: () => void, delayMs: number) {
+  const runtime = globalThis as IdleRuntime;
+  let idleHandle: number | null = null;
+  const delayHandle = setTimeout(() => {
+    if (runtime.requestIdleCallback) {
+      idleHandle = runtime.requestIdleCallback(callback, { timeout: CONTENT_IDLE_TIMEOUT_MS });
+      return;
+    }
+    callback();
+  }, delayMs);
+
+  return () => {
+    clearTimeout(delayHandle);
+    if (idleHandle !== null) runtime.cancelIdleCallback?.(idleHandle);
+  };
+}
 
 type BibleTab = 'nt' | 'psalms' | 'ot';
 type BibleBook = {
@@ -234,14 +276,27 @@ const BOOKS: BibleBook[] = [
   { id: 66, name: 'Revelation', chapters: 22, section: 'nt' },
 ];
 
-function noteKey(bookId: number, chapter: number) {
-  return `${bookId}:${chapter}`;
+const BOOK_BY_ID = new Map(BOOKS.map(book => [book.id, book]));
+const BOOK_CHAPTERS = new Map(
+  BOOKS.map(book => [
+    book.id,
+    Array.from({ length: book.chapters }, (_, index) => index + 1),
+  ]),
+);
+const BOOKS_BY_TAB: Record<BibleTab, BibleBook[]> = {
+  nt: BOOKS.filter(book => book.section === 'nt'),
+  psalms: BOOKS.filter(book => book.id === PSALMS_ID),
+  ot: BOOKS.filter(book => book.section === 'ot' && book.id !== PSALMS_ID),
+};
+const PSALTER_SECTIONS = groupPsalmsIntoKathismata(BOOK_CHAPTERS.get(PSALMS_ID) ?? []);
+
+function tabIndex(tab: BibleTab) {
+  if (tab === 'psalms') return 1;
+  return tab === 'ot' ? 2 : 0;
 }
 
-function tabMatches(book: BibleBook, tab: BibleTab) {
-  if (tab === 'psalms') return book.id === PSALMS_ID;
-  if (tab === 'nt') return book.section === 'nt';
-  return book.section === 'ot' && book.id !== PSALMS_ID;
+function noteKey(bookId: number, chapter: number) {
+  return `${bookId}:${chapter}`;
 }
 
 /** Which room of the canon a book belongs to. */
@@ -368,30 +423,16 @@ export default function BibleNotesView({
 
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<BibleTab>('nt');
-  const tabProgress = useSharedValue(0);
-  const [tabsWidth, setTabsWidth] = useState(0);
-  const tabPillWidth = tabsWidth > 0 ? (tabsWidth - 14) / 3 : 0;
-  const tabPillTravel = tabPillWidth + 3;
+  const activeTabIntentRef = useRef<BibleTab>('nt');
+  const tabCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
+  const [visibleBookCount, setVisibleBookCount] = useState(INITIAL_BOOK_RENDER_COUNT);
+  const [visiblePsalterSectionCount, setVisiblePsalterSectionCount] = useState(INITIAL_PSALTER_SECTION_COUNT);
 
   useEffect(() => {
     guideActionLockRef.current = false;
   }, [guidePhase]);
 
-  useEffect(() => {
-    const idx = activeTab === 'nt' ? 0 : activeTab === 'psalms' ? 1 : 2;
-    tabProgress.value = withTiming(idx, {
-      duration: 190,
-      easing: BIBLE_NOTES_EASE,
-    });
-    if (activeTab !== 'psalms') setExpandedBookId(null);
-  }, [activeTab, tabProgress]);
-
-  const tabPillMotionStyle = useAnimatedStyle(() => ({
-    width: tabPillWidth,
-    transform: [{ translateX: tabProgress.value * tabPillTravel }],
-  }), [tabPillWidth, tabPillTravel]);
-
-  const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
   const [activeChapter, setActiveChapter] = useState<{ book: BibleBook; chapter: number; note?: ScriptureBibleNote } | null>(null);
   // True only when the editor was opened via deep-link (Scripture → Bible Notes).
   // In that case, pressing back inside the editor should pop one extra route to
@@ -402,25 +443,100 @@ export default function BibleNotesView({
   const [lessons, setLessons] = useState('');
   const [application, setApplication] = useState('');
 
-  const notesByChapter = useMemo(() => {
-    const map = new Map<string, ScriptureBibleNote>();
-    visibleBibleNotes.forEach(note => map.set(noteKey(note.bookId, note.chapter), note));
-    return map;
+  const noteIndex = useMemo(() => {
+    const notesByChapter = new Map<string, ScriptureBibleNote>();
+    const noteCountByBook = new Map<number, number>();
+    const tabCounts: Record<BibleTab, number> = { nt: 0, psalms: 0, ot: 0 };
+
+    visibleBibleNotes.forEach(note => {
+      const key = noteKey(note.bookId, note.chapter);
+      const isNewChapter = !notesByChapter.has(key);
+      notesByChapter.set(key, note);
+      if (!isNewChapter) return;
+
+      const book = BOOK_BY_ID.get(note.bookId);
+      if (!book) return;
+      const tab = tabForBook(book);
+      noteCountByBook.set(note.bookId, (noteCountByBook.get(note.bookId) ?? 0) + 1);
+      tabCounts[tab] += 1;
+    });
+
+    return { notesByChapter, noteCountByBook, tabCounts };
   }, [visibleBibleNotes]);
+  const { notesByChapter, noteCountByBook, tabCounts } = noteIndex;
 
   const filteredBooks = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return BOOKS.filter(book => tabMatches(book, activeTab))
+    return BOOKS_BY_TAB[activeTab]
       .filter(book => !q || book.name.toLowerCase().includes(q));
   }, [activeTab, search]);
+
+  const changeSearch = useCallback((value: string) => {
+    setSearch(value);
+    setVisibleBookCount(INITIAL_BOOK_RENDER_COUNT);
+    setVisiblePsalterSectionCount(INITIAL_PSALTER_SECTION_COUNT);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'psalms' || visibleBookCount >= filteredBooks.length) return undefined;
+    return scheduleContentBatch(() => {
+      startTransition(() => {
+        setVisibleBookCount(current => Math.min(
+          filteredBooks.length,
+          current + BOOK_RENDER_BATCH_SIZE,
+        ));
+      });
+    }, visibleBookCount <= INITIAL_BOOK_RENDER_COUNT
+      ? FIRST_CONTENT_BATCH_DELAY_MS
+      : NEXT_CONTENT_BATCH_DELAY_MS);
+  }, [activeTab, filteredBooks.length, visibleBookCount]);
+
+  useEffect(() => {
+    if (
+      activeTab !== 'psalms'
+      || filteredBooks.length === 0
+      || visiblePsalterSectionCount >= PSALTER_SECTIONS.length
+    ) return undefined;
+
+    return scheduleContentBatch(() => {
+      startTransition(() => {
+        setVisiblePsalterSectionCount(current => Math.min(
+          PSALTER_SECTIONS.length,
+          current + PSALTER_RENDER_BATCH_SIZE,
+        ));
+      });
+    }, visiblePsalterSectionCount <= INITIAL_PSALTER_SECTION_COUNT
+      ? FIRST_CONTENT_BATCH_DELAY_MS
+      : NEXT_CONTENT_BATCH_DELAY_MS);
+  }, [activeTab, filteredBooks.length, visiblePsalterSectionCount]);
 
   // The room the screen is standing in.
   const tone = NOTE_TONES[activeTab];
 
-  const tabCount = (tab: BibleTab) => visibleBibleNotes.filter(note => {
-    const book = BOOKS.find(item => item.id === note.bookId);
-    return book ? tabMatches(book, tab) : false;
-  }).length;
+  const selectTab = useCallback((next: BibleTab) => {
+    if (isGuided || next === activeTabIntentRef.current) return;
+    activeTabIntentRef.current = next;
+    Haptics.selectionAsync().catch(() => {});
+
+    if (tabCommitTimerRef.current !== null) clearTimeout(tabCommitTimerRef.current);
+    // The selector has already moved on the UI thread. Commit the heavier
+    // list replacement only after its leaf has landed; rapid taps replace
+    // this pending commit, so the user is never locked behind stale work.
+    tabCommitTimerRef.current = setTimeout(() => {
+      tabCommitTimerRef.current = null;
+      if (activeTabIntentRef.current !== next) return;
+      startTransition(() => {
+        setExpandedBookId(null);
+        setVisibleBookCount(INITIAL_BOOK_RENDER_COUNT);
+        setVisiblePsalterSectionCount(INITIAL_PSALTER_SECTION_COUNT);
+        setActiveTab(next);
+      });
+    }, TAB_CONTENT_COMMIT_DELAY_MS);
+  }, [isGuided]);
+
+  useEffect(() => () => {
+    if (tabCommitTimerRef.current !== null) clearTimeout(tabCommitTimerRef.current);
+  }, []);
 
   const chapterGridWidth = Math.min(width, 430)
     - (PAGE_SIDE_PADDING * 2)
@@ -438,10 +554,16 @@ export default function BibleNotesView({
     const paramChapter = Number(params.chapter);
     if (!paramBookId || !paramChapter) return;
 
-    const book = BOOKS.find(item => item.id === paramBookId);
+    const book = BOOK_BY_ID.get(paramBookId);
     if (!book) return;
 
-    setActiveTab(book.id === PSALMS_ID ? 'psalms' : book.section === 'nt' ? 'nt' : 'ot');
+    const nextTab = tabForBook(book);
+    activeTabIntentRef.current = nextTab;
+    if (tabCommitTimerRef.current !== null) {
+      clearTimeout(tabCommitTimerRef.current);
+      tabCommitTimerRef.current = null;
+    }
+    setActiveTab(nextTab);
     setExpandedBookId(book.id);
 
     if (params.open === '1') {
@@ -454,7 +576,7 @@ export default function BibleNotesView({
     }
   }, [guided, isGuided, notesByChapter, params.bookId, params.chapter, params.open]);
 
-  const openChapter = (book: BibleBook, chapter: number) => {
+  const openChapter = useCallback((book: BibleBook, chapter: number) => {
     if (isGuided && guidePhase !== 'noteEntry') return;
     const existing = notesByChapter.get(noteKey(book.id, chapter));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -462,7 +584,7 @@ export default function BibleNotesView({
     setObservations(existing?.observations ?? '');
     setLessons(existing?.lessons ?? '');
     setApplication(existing?.application ?? '');
-  };
+  }, [guidePhase, isGuided, notesByChapter]);
 
   // ─── Guided Bible tour ─────────────────────────────────────────────────────
   // The tour arrives here straight from the reader's notebook icon: open the
@@ -472,9 +594,15 @@ export default function BibleNotesView({
     if (!isGuided || !initialBookId || guideEntryOpenedRef.current) return;
     if (guidePhase !== 'noteEntry') return;
     guideEntryOpenedRef.current = true;
-    const book = BOOKS.find(item => item.id === initialBookId);
+    const book = BOOK_BY_ID.get(initialBookId);
     if (!book) return;
-    setActiveTab(book.id === PSALMS_ID ? 'psalms' : book.section === 'nt' ? 'nt' : 'ot');
+    const nextTab = tabForBook(book);
+    activeTabIntentRef.current = nextTab;
+    if (tabCommitTimerRef.current !== null) {
+      clearTimeout(tabCommitTimerRef.current);
+      tabCommitTimerRef.current = null;
+    }
+    setActiveTab(nextTab);
     setExpandedBookId(book.id);
     openChapter(book, initialChapter ?? 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -729,7 +857,7 @@ export default function BibleNotesView({
           <Search s={15} c="#D1D5DB" />
           <TextInput
             value={search}
-            onChangeText={setSearch}
+            onChangeText={changeSearch}
             editable={!isGuided}
             placeholder="Search books..."
             placeholderTextColor="#D1D5DB"
@@ -737,7 +865,7 @@ export default function BibleNotesView({
           />
           {!!search && (
             <Pressable onPress={() => {
-              if (!isGuided) setSearch('');
+              if (!isGuided) changeSearch('');
             }} hitSlop={8}>
               <X s={15} c="#D1D5DB" />
             </Pressable>
@@ -746,36 +874,20 @@ export default function BibleNotesView({
       </View>
 
       <View ref={tabsTarget.ref} onLayout={tabsTarget.onLayout} style={s.tabsWrap}>
-        <View style={s.tabs} onLayout={event => setTabsWidth(event.nativeEvent.layout.width)}>
-          {/* Animated sliding pill */}
-          <Reanimated.View
-            pointerEvents="none"
-            style={[
-              s.tabPill,
-              { backgroundColor: tone.pill, borderColor: tone.pillBorder, shadowColor: tone.accent },
-              tabPillMotionStyle,
-            ]}
-          />
-          <TabButton label="New Test." tone={tone} active={activeTab === 'nt'} count={tabCount('nt')} onPress={() => {
-            if (!isGuided) setActiveTab('nt');
-          }} />
-          <TabButton label="Psalter" tone={tone} active={activeTab === 'psalms'} count={tabCount('psalms')} onPress={() => {
-            if (!isGuided) setActiveTab('psalms');
-          }} />
-          <TabButton label="Old Test." tone={tone} active={activeTab === 'ot'} count={tabCount('ot')} onPress={() => {
-            if (!isGuided) setActiveTab('ot');
-          }} />
-        </View>
+        <BibleNotesTabStrip
+          counts={tabCounts}
+          disabled={isGuided}
+          onChange={selectTab}
+          value={activeTab}
+        />
       </View>
 
       <ScrollView contentContainerStyle={[s.bookList, { paddingBottom: insets.bottom + 36 }]} showsVerticalScrollIndicator={false}>
         {filteredBooks.length === 0 ? (
           <Text style={s.noBooks}>No books found</Text>
         ) : (
-          filteredBooks.map(book => {
-            const chaptersWithNotes = Array.from({ length: book.chapters }, (_, index) => index + 1)
-              .filter(chapter => notesByChapter.has(noteKey(book.id, chapter)));
-            const hasAnyNote = chaptersWithNotes.length > 0;
+          filteredBooks.slice(0, visibleBookCount).map(book => {
+            const noteCount = noteCountByBook.get(book.id) ?? 0;
             const isExpanded = activeTab === 'psalms' || expandedBookId === book.id;
 
             return (
@@ -783,7 +895,7 @@ export default function BibleNotesView({
                 {activeTab !== 'psalms' && (
                   <NotedBookRow
                     name={book.name}
-                    count={chaptersWithNotes.length}
+                    count={noteCount}
                     expanded={isExpanded}
                     tone={tone}
                     onPress={() => {
@@ -841,9 +953,7 @@ export default function BibleNotesView({
                       // The Psalter is read in kathismata, so it is written in
                       // them too — the same twenty divisions Holy Scripture
                       // lays it out in, from the same shared table.
-                      groupPsalmsIntoKathismata(
-                        Array.from({ length: book.chapters }, (_, index) => index + 1),
-                      ).map(section => (
+                      PSALTER_SECTIONS.slice(0, visiblePsalterSectionCount).map(section => (
                         <View key={section.key}>
                           <View style={s.kathismaHead}>
                             <View style={[s.kathismaRule, { backgroundColor: tone.frame }]} />
@@ -872,7 +982,7 @@ export default function BibleNotesView({
                       ))
                     ) : (
                       <View style={s.chapterGrid}>
-                        {Array.from({ length: book.chapters }, (_, index) => index + 1).map(chapter => (
+                        {(BOOK_CHAPTERS.get(book.id) ?? []).map(chapter => (
                           <ChapterCell
                             key={chapter}
                             chapter={chapter}
@@ -923,6 +1033,157 @@ export default function BibleNotesView({
         guidedOverlay={isGuided && guidePhase === 'noteEntry' ? <GuidedOverlayHost /> : undefined}
       />
     </View>
+  );
+}
+
+const BibleNotesTabStrip = React.memo(function BibleNotesTabStrip({
+  counts,
+  disabled,
+  onChange,
+  value,
+}: {
+  counts: Record<BibleTab, number>;
+  disabled: boolean;
+  onChange: (tab: BibleTab) => void;
+  value: BibleTab;
+}) {
+  const [visualTab, setVisualTab] = useState(value);
+  const visualIntentRef = useRef(value);
+  const [tabsWidth, setTabsWidth] = useState(0);
+  const progress = useSharedValue(tabIndex(value));
+  const pillWidth = tabsWidth > 0 ? (tabsWidth - 14) / 3 : 0;
+  const pillTravel = pillWidth + 3;
+  const tone = NOTE_TONES[visualTab];
+
+  useEffect(() => {
+    visualIntentRef.current = value;
+    setVisualTab(value);
+    progress.value = withTiming(tabIndex(value), TAB_SLIDE);
+  }, [progress, value]);
+
+  const select = useCallback((next: BibleTab) => {
+    if (disabled || next === visualIntentRef.current) return;
+    visualIntentRef.current = next;
+    setVisualTab(next);
+    onChange(next);
+  }, [disabled, onChange]);
+
+  const pillMotionStyle = useAnimatedStyle(() => ({
+    width: pillWidth,
+    transform: [{ translateX: progress.value * pillTravel }],
+  }), [pillTravel, pillWidth]);
+
+  return (
+    <View style={s.tabs} onLayout={event => setTabsWidth(event.nativeEvent.layout.width)}>
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          s.tabPill,
+          {
+            backgroundColor: tone.pill,
+            borderColor: tone.pillBorder,
+            shadowColor: tone.accent,
+          },
+          pillMotionStyle,
+        ]}
+      />
+      <GestureTabButton
+        active={visualTab === 'nt'}
+        count={counts.nt}
+        disabled={disabled}
+        label="New Test."
+        onPress={() => select('nt')}
+        progress={progress}
+        targetProgress={0}
+        tone={tone}
+      />
+      <GestureTabButton
+        active={visualTab === 'psalms'}
+        count={counts.psalms}
+        disabled={disabled}
+        label="Psalter"
+        onPress={() => select('psalms')}
+        progress={progress}
+        targetProgress={1}
+        tone={tone}
+      />
+      <GestureTabButton
+        active={visualTab === 'ot'}
+        count={counts.ot}
+        disabled={disabled}
+        label="Old Test."
+        onPress={() => select('ot')}
+        progress={progress}
+        targetProgress={2}
+        tone={tone}
+      />
+    </View>
+  );
+});
+
+function GestureTabButton({
+  active,
+  count,
+  disabled,
+  label,
+  onPress,
+  progress,
+  targetProgress,
+  tone,
+}: {
+  active: boolean;
+  count: number;
+  disabled: boolean;
+  label: string;
+  onPress: () => void;
+  progress: SharedValue<number>;
+  targetProgress: number;
+  tone: NoteTone;
+}) {
+  const pressProgress = useSharedValue(0);
+  const pressMotionStyle = useAnimatedStyle(() => ({
+    opacity: 1 - pressProgress.value * 0.14,
+  }));
+  const activateFromAccessibility = useCallback(() => {
+    if (disabled) return;
+    progress.value = withTiming(targetProgress, TAB_SLIDE);
+    onPress();
+  }, [disabled, onPress, progress, targetProgress]);
+  const tapGesture = useMemo(() => Gesture.Tap()
+    .enabled(!disabled)
+    .onBegin(() => {
+      pressProgress.value = withTiming(1, TAB_PRESS_IN);
+    })
+    .onFinalize((_event, success) => {
+      pressProgress.value = withTiming(0, TAB_PRESS_OUT);
+      if (!success) return;
+      progress.value = withTiming(targetProgress, TAB_SLIDE);
+      runOnJS(onPress)();
+    }), [disabled, onPress, pressProgress, progress, targetProgress]);
+
+  return (
+    <GestureDetector gesture={tapGesture}>
+      <Reanimated.View
+        accessibilityLabel={label}
+        accessibilityRole="button"
+        accessibilityState={{ disabled, selected: active }}
+        accessible
+        focusable={!disabled}
+        onAccessibilityTap={activateFromAccessibility}
+        style={[s.tabButton, pressMotionStyle]}
+      >
+        <Text style={[s.tabText, active && { color: tone.pillText }]} numberOfLines={1}>
+          {label}
+        </Text>
+        {count > 0 && (
+          <View style={[s.tabCount, { backgroundColor: active ? tone.countBgActive : tone.countBg }]}>
+            <Text style={[s.tabCountText, { color: active ? tone.pillText : tone.countText }]}>
+              {count}
+            </Text>
+          </View>
+        )}
+      </Reanimated.View>
+    </GestureDetector>
   );
 }
 
@@ -1157,27 +1418,6 @@ function ChapterCell({
       {hasNote && <View pointerEvents="none" style={s.chapterCellLit} />}
       <Text style={[s.chapterText, hasNote && s.chapterTextActive]}>{chapter}</Text>
       {hasNote && <View style={[s.noteDot, { backgroundColor: tone.accent }]} />}
-    </TouchableOpacity>
-  );
-}
-
-function TabButton({
-  label, active, count, tone, onPress,
-}: {
-  label: string;
-  active: boolean;
-  count: number;
-  tone: NoteTone;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.86} style={s.tabButton}>
-      <Text style={[s.tabText, active && { color: tone.pillText }]} numberOfLines={1}>{label}</Text>
-      {count > 0 && (
-        <View style={[s.tabCount, { backgroundColor: active ? tone.countBgActive : tone.countBg }]}>
-          <Text style={[s.tabCountText, { color: active ? tone.pillText : tone.countText }]}>{count}</Text>
-        </View>
-      )}
     </TouchableOpacity>
   );
 }

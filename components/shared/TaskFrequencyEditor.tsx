@@ -23,6 +23,7 @@ type Props = {
   onMonthlyDaysChange: (days: number[]) => void;
   accent?: string;
   label?: string;
+  allowedFrequencies?: TaskFrequency[];
 };
 
 const FREQUENCY_OPTIONS: { value: TaskFrequency; label: string; desc: string }[] = [
@@ -77,6 +78,7 @@ export default function TaskFrequencyEditor({
   onMonthlyDaysChange,
   accent = C.gold,
   label = 'Frequency',
+  allowedFrequencies,
 }: Props) {
   const [gridWidth, setGridWidth] = useState(0);
   const weekdayGap = gridWidth > 0 && gridWidth < 284 ? 6 : 8;
@@ -88,6 +90,10 @@ export default function TaskFrequencyEditor({
     ? Math.max(30, Math.min(42, Math.floor((gridWidth - monthlyGap * 6) / 7)))
     : 36;
   const effectiveSelectedDays = frequency === 'specific_days' ? ensureSelectedDays(selectedDays) : selectedDays;
+  const visibleFrequencyOptions = allowedFrequencies?.length
+    ? FREQUENCY_OPTIONS.filter(option => allowedFrequencies.includes(option.value))
+    : FREQUENCY_OPTIONS;
+  const monthlyAllowed = visibleFrequencyOptions.some(option => option.value === 'monthly');
 
   useEffect(() => {
     if (frequency === 'specific_days' && selectedDays.length === 0) {
@@ -103,7 +109,7 @@ export default function TaskFrequencyEditor({
       </View>
 
       <View style={s.frequencyWrap}>
-        {FREQUENCY_OPTIONS.map(option => (
+        {visibleFrequencyOptions.map(option => (
           <FrequencyChoice
             key={option.value}
             option={option}
@@ -151,7 +157,7 @@ export default function TaskFrequencyEditor({
         </View>
       )}
 
-      {frequency === 'monthly' && (
+      {frequency === 'monthly' && monthlyAllowed && (
         <View
           style={s.monthlyWrap}
           onLayout={event => setGridWidth(Math.floor(event.nativeEvent.layout.width))}

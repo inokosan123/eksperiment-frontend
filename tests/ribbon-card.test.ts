@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  estimateRibbonHeight,
   RIBBON,
   RIBBON_STARS,
   placeRibbonStars,
@@ -151,17 +152,17 @@ test('an untilted spark fills its box exactly', () => {
   assert.ok(d.startsWith('M') && d.endsWith('Z'), 'path is closed');
 });
 
-test('both constellations are used, and each has its own clock', () => {
+test('both constellations are used, and each has its own tempo group', () => {
   const shoulder = RIBBON_STARS.filter(s => s.clock === 'shoulder');
   const foot = RIBBON_STARS.filter(s => s.clock === 'foot');
   assert.ok(shoulder.length >= 3, 'the lit shoulder carries a constellation');
   assert.ok(foot.length >= 4, 'the emblem is ringed');
-  // Uneven phases: no two arrivals on the same clock may share a moment.
+  // Uneven phases: no two arrivals in one tempo group may share a moment.
   [shoulder, foot].forEach(group => {
     const phases = group.map(s => s.phase).sort((a, b) => a - b);
     phases.forEach((p, i) => {
       if (i === 0) return;
-      assert.ok(p - phases[i - 1] > 0.1, 'two stars on one clock arrive together');
+      assert.ok(p - phases[i - 1] > 0.1, 'two stars in one tempo group arrive together');
     });
   });
 });
@@ -229,4 +230,28 @@ test('the emblem never outgrows its share of the width', () => {
     assert.ok(e.size <= RIBBON.emblemScale * w + 1, `emblem is too wide at ${w}x${h}`);
     assert.ok(e.size > 60, `emblem has collapsed at ${w}x${h}`);
   });
+});
+
+test('the first-frame height estimate stays inside the supported card geometry', () => {
+  WIDTHS.forEach(w => {
+    [
+      'Keep track of your life goals and celebrate achievements.',
+      'Keep your saved verses, highlights, and reflections from Scripture in one place.',
+      'Challenge yourself to grow, build discipline, and become a better version of yourself.',
+    ].forEach(description => {
+      assert.ok(
+        HEIGHTS.includes(estimateRibbonHeight(w, description)),
+        `height estimate left the supported rhythm at width ${w}`,
+      );
+    });
+  });
+});
+
+test('system text settings never change the first-frame card estimate', () => {
+  const copy = 'Set a clear goal for this month, so you never lose track of what you want to achieve.';
+  const base = estimateRibbonHeight(320, copy, 1);
+
+  assert.equal(estimateRibbonHeight(320, copy, 1.1), base);
+  assert.equal(estimateRibbonHeight(320, copy, 2), base);
+  assert.equal(estimateRibbonHeight(320, copy, 0.8), base);
 });

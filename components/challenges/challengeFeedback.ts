@@ -3,7 +3,10 @@ import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import type { AudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
-const CHALLENGE_COMPLETE_SOUND = require('@/assets/audio/prayer-complete.wav');
+// A trophy is a larger, rarer reward than an ordinary task or prayer. Use the
+// longer achievement chime so every Challenge variant has the same deliberate
+// ceremonial finish.
+const CHALLENGE_COMPLETE_SOUND = require('@/assets/audio/achievement-complete.wav');
 
 let completePlayer: AudioPlayer | null = null;
 let audioInitPromise: Promise<void> | null = null;
@@ -27,7 +30,7 @@ async function ensureChallengeCompletePlayer() {
         updateInterval: 1000,
         keepAudioSessionActive: true,
       });
-      completePlayer.volume = 0.86;
+      completePlayer.volume = 0.8;
     })().catch(() => {
       audioInitPromise = null;
     });
@@ -49,7 +52,7 @@ function playChallengeCompleteSound() {
 
     try {
       if (player.playing) player.pause();
-      player.volume = 0.86;
+      player.volume = 0.8;
       await player.seekTo(0);
       player.play();
     } catch {}
@@ -61,12 +64,10 @@ export async function playChallengeCompleteFeedback() {
   playChallengeCompleteSound();
 
   try {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await wait(75);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    await wait(135);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await wait(120);
+    await wait(60);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await wait(125);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   } catch {}
 }

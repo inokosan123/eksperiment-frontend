@@ -2,16 +2,20 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
-  cancelAnimation,
   Easing,
   interpolate,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 import { C } from '@/constants/tokens';
+import { useFocusMainMotion } from './focus-main-motion';
+import {
+  continuousPhase,
+  easeInOutQuad,
+} from '@/components/shared/use-continuous-animation-clock';
+import { useAmbientMotion } from '@/components/shared/ambient-motion';
 
 // The Focus tab's animated progress language: fills glide to their value with
 // the tab's calm ease-out (no bounce), and a live meter carries a slow light
@@ -41,10 +45,13 @@ export function FocusMeter({
   style?: ViewStyle;
 }) {
   const reduceMotion = useReducedMotion();
+  const mainMotionEnabled = useFocusMainMotion();
   const [width, setWidth] = useState(0);
   const clamped = Number.isFinite(fraction) ? Math.max(0, Math.min(1, fraction)) : 0;
   const fillX = useSharedValue(0);
-  const sheen = useSharedValue(0);
+  const sheenRuntime = useAmbientMotion(live && mainMotionEnabled && width > 0);
+  const sheenEnabled = sheenRuntime.enabled;
+  const sheenClock = sheenRuntime.clock;
 
   useEffect(() => {
     if (width <= 0) return;
@@ -58,33 +65,26 @@ export function FocusMeter({
     });
   }, [clamped, width, reduceMotion, fillX]);
 
-  useEffect(() => {
-    if (live && width > 0 && !reduceMotion) {
-      sheen.value = 0;
-      sheen.value = withRepeat(
-        withTiming(1, { duration: 3600, easing: Easing.inOut(Easing.quad) }),
-        -1,
-        false
-      );
-    } else {
-      cancelAnimation(sheen);
-      sheen.value = 0;
-    }
-    return () => cancelAnimation(sheen);
-  }, [live, width, reduceMotion, sheen]);
-
   const fillStyle = useAnimatedStyle(() => ({ width: fillX.value }));
-  const sheenStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(sheen.value, [0, 0.06, 0.4, 0.52, 1], [0, 0.85, 0.85, 0, 0]),
-    transform: [
-      { translateX: interpolate(sheen.value, [0, 0.5, 1], [-72, width + 16, width + 16]) },
-    ],
-  }));
+  const sheenStyle = useAnimatedStyle(() => {
+    const phase = sheenEnabled
+      ? easeInOutQuad(continuousPhase(sheenClock.value, 3600))
+      : 0;
+    return {
+      opacity: interpolate(phase, [0, 0.06, 0.4, 0.52, 1], [0, 0.85, 0.85, 0, 0]),
+      transform: [
+        { translateX: interpolate(phase, [0, 0.5, 1], [-72, width + 16, width + 16]) },
+      ],
+    };
+  });
 
   return (
     <View
       style={[{ height }, style]}
-      onLayout={event => setWidth(event.nativeEvent.layout.width)}
+      onLayout={event => {
+        const nextWidth = event.nativeEvent.layout.width;
+        setWidth(current => current === nextWidth ? current : nextWidth);
+      }}
     >
       <View style={[s.track, { borderRadius: height / 2, backgroundColor: track }]}>
         <Animated.View
@@ -132,29 +132,19 @@ export function PulseDot({
   size?: number;
   pulse?: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-  const animate = pulse && !reduceMotion;
+  const mainMotionEnabled = useFocusMainMotion();
+  const runtime = useAmbientMotion(pulse && mainMotionEnabled);
+  const animate = runtime.enabled;
+  const clock = runtime.clock;
 
-  useEffect(() => {
-    if (animate) {
-      t.value = 0;
-      t.value = withRepeat(
-        withTiming(1, { duration: 1900, easing: Easing.out(Easing.quad) }),
-        -1,
-        false
-      );
-    } else {
-      cancelAnimation(t);
-      t.value = 0;
-    }
-    return () => cancelAnimation(t);
-  }, [animate, t]);
-
-  const ringStyle = useAnimatedStyle(() => ({
-    opacity: animate ? 0.5 * (1 - t.value) : 0,
-    transform: [{ scale: 1 + t.value * 1.8 }],
-  }));
+  const ringStyle = useAnimatedStyle(() => {
+    const linear = animate ? continuousPhase(clock.value, 1900) : 0;
+    const phase = 1 - Math.pow(1 - linear, 2);
+    return {
+      opacity: animate ? 0.5 * (1 - phase) : 0,
+      transform: [{ scale: 1 + phase * 1.8 }],
+    };
+  });
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>

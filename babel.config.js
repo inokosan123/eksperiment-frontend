@@ -1,23 +1,37 @@
 module.exports = function (api) {
   api.cache(true);
+
+  const reactCompilerExcludedFiles = [
+    '/components/onboarding/OnboardingView.tsx',
+    // Reanimated currently recommends opting troublesome worklet-heavy
+    // components out of React Compiler. Keep the visual/animation code intact
+    // and skip only the compiler pass for the worklet-heavy Focus routes that terminate
+    // Expo Go on iOS.
+    '/components/focus-watch/DayPlanHubView.tsx',
+    '/components/focus-watch/PurityView.tsx',
+    '/components/focus-watch/NeverAllowedView.tsx',
+  ];
+
   return {
     presets: [
       [
         'babel-preset-expo',
         {
           'react-compiler': {
-            // This route is a 1.1 MB generated-style component. Compiling it
-            // added roughly 33 seconds to every cold iOS transform. Keep the
-            // compiler enabled everywhere else and let this route use normal
-            // React semantics.
-            sources: filename =>
-              !filename
-                .replace(/\\/g, '/')
-                .endsWith('/components/onboarding/OnboardingView.tsx'),
+            sources: filename => {
+              const normalizedFilename = filename.replace(/\\/g, '/');
+              const excludedFile = reactCompilerExcludedFiles.some(file => (
+                normalizedFilename.endsWith(file)
+              ));
+              return !excludedFile;
+            },
           },
         },
       ],
     ],
-    plugins: ['react-native-reanimated/plugin'],
+    // Expo SDK 54 configures the Worklets/Reanimated transform through
+    // babel-preset-expo. Keep only app-owned transforms here so a worklet is
+    // never compiled twice or by a plugin that differs from Expo Go's runtime.
+    plugins: ['./scripts/babel-plugin-fixed-native-text.cjs'],
   };
 };

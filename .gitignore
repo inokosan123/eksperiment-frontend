@@ -38,6 +38,8 @@ expo-*.err.log
 .tools/
 .playwright-mcp/
 .playwright-runtime/
+.playwright-cli/
+.tmp/
 
 # macOS
 .DS_Store

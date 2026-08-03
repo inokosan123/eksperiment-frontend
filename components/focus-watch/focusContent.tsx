@@ -54,15 +54,74 @@ export const WEB_PACKS: WebPackContent[] = [
 // labels as Apple selections; Family Controls app tokens remain private.
 export type PreviewApp = { id: string; name: string; categoryId: string };
 
+/**
+ * WHAT A RULE IS — the colour a group's card, seal and sheet are struck in.
+ *
+ * ⚠️ Colour on a rule carries its STATE, never which group it is. Rose means
+ * shut, everywhere in Focus and nowhere else; a group merely holding a limit
+ * takes the one measured colour below. That separation is the whole point:
+ * when a group's own tint could be red, a card with a LIMIT looked exactly like
+ * a card that was BLOCKED, and no amount of copy fixes a colour that lies.
+ *
+ * A group is told apart by its name and its face, not by its hue.
+ */
+export const RULE_TONES = {
+  limit: { color: '#6D5AAE', bg: '#EEEAF5' },
+  blocked: { color: '#A24351', bg: '#F8E7EA' },
+} as const;
+
+/**
+ * WHICH GROUP IT IS — used only where several groups are shown at once and have
+ * to be told apart at a glance: the capacity rail's segments.
+ *
+ * ⚠️ Two rules for anything added here. It may not sit near rose (351°), which
+ * belongs to Blocked; and it may not be a dead neutral — News was a true grey
+ * and read as a disabled row rather than a category. The hues below are spread
+ * around the wheel (40 · 150 · 195 · 225 · 254 · 318) so no two segments blur
+ * into one another on a 12pt bar.
+ */
 export const CATEGORY_TINTS: Record<string, { bg: string; color: string }> = {
   'always-blocked': { bg: '#F8E7EA', color: '#A24351' },
   social: { bg: '#EEEAF5', color: '#6D5AAE' },
-  entertainment: { bg: '#FBE6E9', color: '#B54155' },
-  games: { bg: '#E8EAFB', color: '#4F46E5' },
-  news: { bg: '#EFEEEB', color: '#5B564F' },
+  entertainment: { bg: '#E3F0F2', color: '#2C7C8C' },
+  games: { bg: '#E4F0EA', color: '#2E7D62' },
+  news: { bg: '#E8EDF5', color: '#4A6699' },
   shopping: { bg: '#FBF3DE', color: '#A9863F' },
-  dating: { bg: '#FBE6E9', color: '#B54155' },
+  dating: { bg: '#F5E8F3', color: '#8E4A85' },
 };
+
+/**
+ * The rail colour for ANY group, including one you made yourself.
+ *
+ * The six tints above cover the built-in categories. Everything else used to
+ * fall back to one gold — so two custom groups were the same colour as each
+ * other AND as the rail's own buffer shading, which is exactly where a stacked
+ * bar stops being readable.
+ *
+ * WHY ONLY THREE. The wheel is already spoken for: 40 · 159 · 190 · 219 · 254 ·
+ * 308, plus rose at 351 for Blocked. Measured rather than eyeballed, the only
+ * genuinely free stretch is 40→159, and three hues is what fits there with the
+ * same separation the built-ins keep between themselves (~26–31°). A first
+ * attempt at five put one 15° from Games and another 16° from Social, which
+ * looked like a bigger palette and read as a smaller one.
+ *
+ * The colour is drawn from the group's id, not its position, so a group keeps
+ * the same colour when the plan is reordered or another group is removed.
+ *
+ * Past three custom groups colours must repeat. That is what the legend under
+ * the rail is for: colour carries the fast reading, the legend the exact one.
+ */
+const GROUP_RAIL_EXTENSION = ['#7D7A1C', '#478A2E', '#2E7A3F'];
+
+export function groupRailColor(groupId: string): string {
+  const tint = CATEGORY_TINTS[groupId];
+  if (tint) return tint.color;
+  let hash = 0;
+  for (let index = 0; index < groupId.length; index += 1) {
+    hash = (hash * 31 + groupId.charCodeAt(index)) >>> 0;
+  }
+  return GROUP_RAIL_EXTENSION[hash % GROUP_RAIL_EXTENSION.length];
+}
 
 export const PREVIEW_APPS: PreviewApp[] = [
   { id: 'whatsapp', name: 'WhatsApp', categoryId: 'social' },

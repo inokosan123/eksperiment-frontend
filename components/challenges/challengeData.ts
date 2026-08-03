@@ -77,6 +77,16 @@ export type ChallengeChurchConfig = {
   reminderMinutes?: number;
 };
 
+export type ChallengeChurchWeek = {
+  weekStart: string;
+  weekEnd: string;
+  requiredDates: string[];
+  completedDates: string[];
+  requiredCount: number;
+  completedCount: number;
+  status: 'active' | 'earned' | 'missed' | 'practice';
+};
+
 export type ChallengeRecord = {
   id: string;
   templateId: string;
@@ -100,6 +110,7 @@ export type ChallengeRecord = {
   totalUnits?: number;
   durationDays?: number;
   startedAt?: string;
+  createdAt?: number;
   pausedAt?: string;
   completedAt?: string;
   cancelledAt?: string;
@@ -110,6 +121,9 @@ export type ChallengeRecord = {
   scriptureConfig?: ChallengeScriptureConfig;
   prayerConfig?: ChallengePrayerConfig;
   churchConfig?: ChallengeChurchConfig;
+  churchWeek?: ChallengeChurchWeek;
+  churchTrophyWeeks?: string[];
+  churchTrophyCount?: number;
 };
 
 export const TAB_ACTIVE_COLORS: Record<ChallengeTab, string> = {

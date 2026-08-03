@@ -19,8 +19,8 @@ import {
   continuousPhase,
   easeInOutQuad,
   pingPongPhase,
-  useContinuousAnimationClock,
 } from '@/components/shared/use-continuous-animation-clock';
+import { useAmbientMotion } from '@/components/shared/ambient-motion';
 
 // "Banked ember" — the resting register shared by the app's two streak
 // cards: Your Progress on Home and Trophy Streak on Focus.
@@ -313,9 +313,9 @@ export function EmberPulse({
   style?: ViewStyle;
   active?: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-  const motionEnabled = active && !reduceMotion;
-  const clock = useContinuousAnimationClock(motionEnabled);
+  const runtime = useAmbientMotion(active);
+  const motionEnabled = runtime.enabled;
+  const clock = runtime.clock;
 
   // Opacity only — scaling a small view on Android resamples its bitmap.
   const breath = useAnimatedStyle(() => {
@@ -732,12 +732,12 @@ export function BankedGlint({
   variant?: BankedGlintVariant;
   active?: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
   const [w, setW] = useState(0);
   const cfg = BANKED_GLINT[variant];
   const { duration, arrival, peak, corePeak } = cfg;
-  const motionEnabled = active && !reduceMotion && w > 0;
-  const clock = useContinuousAnimationClock(motionEnabled);
+  const runtime = useAmbientMotion(active && w > 0);
+  const { clock } = runtime;
+  const motionEnabled = runtime.enabled;
 
   const sweep = useAnimatedStyle(() => {
     const progress = easeInOutQuad(continuousPhase(clock.value, duration));
@@ -770,7 +770,7 @@ export function BankedGlint({
         setW(current => current === width ? current : width);
       }}
     >
-      {!reduceMotion && active && w > 0 && (
+      {motionEnabled && (
         <>
           <Reanimated.View style={[glint.band, sweep]}>
             <LinearGradient colors={cfg.wide} locations={GLINT_WIDE_LOC} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={glint.fill} />

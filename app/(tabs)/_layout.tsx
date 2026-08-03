@@ -1,6 +1,6 @@
+import { Tabs } from 'expo-router';
 import {
-  Tabs } from 'expo-router';
-import { View,
+  View,
   Text,
   StyleSheet,
 } from 'react-native';
@@ -13,7 +13,9 @@ import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/
 
 type TabBarProps = {
   state: { index: number; routes: { name: string }[] };
-  navigation: { navigate: (name: string) => void };
+  navigation: {
+    navigate: (name: string) => void;
+  };
 };
 
 const TABS = [

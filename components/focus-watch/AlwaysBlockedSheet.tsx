@@ -22,13 +22,20 @@ import {
   allCoreEssentialIds,
   removeAlwaysBlockedApp,
   saveAlwaysBlockedApp,
-  useDayPlan,
+  useDayPlanSelector,
+  type DayPlanState,
   type Strength,
 } from './dayPlanStore';
 
 // The sheet speaks about the same standing boundary as the row that opened it,
 // so its cards are cut from the register's cloth.
 const ROSE = REGISTER_TONES.rose;
+const selectAlwaysBlockedSheetState = (snapshot: DayPlanState) => snapshot;
+const alwaysBlockedSheetStateEqual = (previous: DayPlanState, next: DayPlanState) => (
+  previous.alwaysBlockedApps === next.alwaysBlockedApps
+  && previous.optionalEssentialAppIds === next.optionalEssentialAppIds
+  && previous.designatedCoreAppIds === next.designatedCoreAppIds
+);
 
 function nameFor(appId: string) {
   return PREVIEW_APPS.find(app => app.id === appId)?.name
@@ -37,7 +44,7 @@ function nameFor(appId: string) {
 }
 
 export default function AlwaysBlockedSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const state = useDayPlan();
+  const state = useDayPlanSelector(selectAlwaysBlockedSheetState, alwaysBlockedSheetStateEqual);
   const nativeAvailable = isNativeFocusAvailable();
   const [adding, setAdding] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<string | null>(null);

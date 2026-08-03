@@ -442,7 +442,12 @@ export async function deleteReadingBook(bookId: string) {
   await db.runAsync('DELETE FROM reading_book_task_day_times WHERE book_id = ?', bookId);
 }
 
-export async function recordReadingSession(bookId: string | null, minutes: number, sessionDate?: string) {
+export async function recordReadingSession(
+  bookId: string | null,
+  minutes: number,
+  sessionDate?: string,
+  options?: { completeTask?: boolean },
+) {
   if (!bookId || minutes <= 0) return;
 
   await initReadingListDb();
@@ -451,34 +456,38 @@ export async function recordReadingSession(bookId: string | null, minutes: numbe
   const targetDate = sessionDate ?? getLocalDateKey(new Date(now));
   const cleanMinutes = Math.max(1, Math.round(minutes));
 
-  await db.runAsync(
-    `INSERT INTO reading_sessions (id, book_id, minutes, session_date, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    `reading_session_${now}_${Math.random().toString(36).slice(2, 8)}`,
-    bookId,
-    cleanMinutes,
-    targetDate,
-    now,
-  );
+  await db.withExclusiveTransactionAsync(async transaction => {
+    await transaction.runAsync(
+      `INSERT INTO reading_sessions (id, book_id, minutes, session_date, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      `reading_session_${now}_${Math.random().toString(36).slice(2, 8)}`,
+      bookId,
+      cleanMinutes,
+      targetDate,
+      now,
+    );
 
-  await db.runAsync(
-    `UPDATE reading_books
-     SET sessions = sessions + 1,
-         total_minutes = total_minutes + ?,
-         last_session_at = ?,
-         status = CASE WHEN status = 'to_read' THEN 'reading' ELSE status END,
-         started_at = COALESCE(started_at, ?),
-         updated_at = ?
-     WHERE id = ? AND archived_at IS NULL`,
-    cleanMinutes,
-    now,
-    now,
-    now,
-    bookId,
-  );
+    await transaction.runAsync(
+      `UPDATE reading_books
+       SET sessions = sessions + 1,
+           total_minutes = total_minutes + ?,
+           last_session_at = ?,
+           status = CASE WHEN status = 'to_read' THEN 'reading' ELSE status END,
+           started_at = COALESCE(started_at, ?),
+           updated_at = ?
+       WHERE id = ? AND archived_at IS NULL`,
+      cleanMinutes,
+      now,
+      now,
+      now,
+      bookId,
+    );
+  });
 
-  await ensureTaskInstancesForDate(targetDate, new Date(now));
-  await setTaskInstanceStatus(buildInstanceId(readingTaskId(bookId), targetDate), 'completed');
+  if (options?.completeTask !== false) {
+    await ensureTaskInstancesForDate(targetDate, new Date(now));
+    await setTaskInstanceStatus(buildInstanceId(readingTaskId(bookId), targetDate), 'completed');
+  }
 }
 
 export async function syncReadingTaskCompletionsFromSessions(fromDate: string, toDate: string) {

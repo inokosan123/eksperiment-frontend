@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import type { BigEvent } from './bigEventsDb';
 import { getBigEventCountdown, resolveBigEventForDate, toLocalDateKey } from './bigEventsLogic';
+import { NOTIFICATION_HOME_ROUTE } from '@/components/notifications/notification-navigation';
 
 const CHANNEL_ID = 'anasta-big-event-reminders';
 const ACCENT = '#C5A059';
@@ -16,7 +17,7 @@ export type BigEventNotificationData = {
   kind: 'advance' | 'today';
   title: string;
   body: string;
-  route: '/big-events';
+  route: typeof NOTIFICATION_HOME_ROUTE;
   fireAt: number;
   repeatsYearly: boolean;
 };
@@ -43,7 +44,7 @@ function parseData(value: unknown): BigEventNotificationData | null {
   return {
     app: 'anasta', notificationType: 'big-event', eventId: raw.eventId,
     occurrenceDate: raw.occurrenceDate, kind: raw.kind,
-    title: raw.title, body: raw.body, route: '/big-events', fireAt: raw.fireAt,
+    title: raw.title, body: raw.body, route: NOTIFICATION_HOME_ROUTE, fireAt: raw.fireAt,
     repeatsYearly: raw.repeatsYearly === true,
   };
 }
@@ -103,7 +104,7 @@ function collectCandidates(events: BigEvent[], referenceDate: Date) {
         app: 'anasta', notificationType: 'big-event', eventId: source.id,
         occurrenceDate: event.endDate, kind: 'advance', title: source.title,
         body: `${source.title} is coming up in ${days} ${days === 1 ? 'day' : 'days'}.`,
-        route: '/big-events', fireAt: advanceAt, repeatsYearly: false,
+        route: NOTIFICATION_HOME_ROUTE, fireAt: advanceAt, repeatsYearly: false,
       });
     }
 
@@ -112,7 +113,7 @@ function collectCandidates(events: BigEvent[], referenceDate: Date) {
       result.push({
         app: 'anasta', notificationType: 'big-event', eventId: source.id,
         occurrenceDate: event.endDate, kind: 'today', title: source.title,
-        body: `${source.title} is today.`, route: '/big-events', fireAt: eventAt,
+        body: `${source.title} is today.`, route: NOTIFICATION_HOME_ROUTE, fireAt: eventAt,
         repeatsYearly: repeatsOnEventDay,
       });
     }

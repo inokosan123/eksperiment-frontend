@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleProp, View, ViewStyle } from 'react-native';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
@@ -14,11 +15,12 @@ const sources: Record<FocusAnimation, any> = {
 
 type ColorFilter = { keypath: string; color: string };
 
-export default function FocusLottie({
+function FocusLottie({
   name,
   style,
   loop = true,
   autoplay = true,
+  playing = autoplay,
   speed = 1,
   colorFilters: _colorFilters,
 }: {
@@ -26,6 +28,7 @@ export default function FocusLottie({
   style?: StyleProp<ViewStyle>;
   loop?: boolean;
   autoplay?: boolean;
+  playing?: boolean;
   speed?: number;
   colorFilters?: ColorFilter[];
 }) {
@@ -34,11 +37,13 @@ export default function FocusLottie({
       <DotLottieReact
         data={sources[name]}
         loop={loop}
-        autoplay={autoplay}
-        speed={speed}
+        autoplay={autoplay && playing}
+        speed={playing ? speed : 0}
         renderConfig={{ autoResize: true }}
         style={{ width: '100%', height: '100%' }}
       />
     </View>
   );
 }
+
+export default memo(FocusLottie);

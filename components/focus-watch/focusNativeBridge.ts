@@ -17,7 +17,7 @@ import { resolveWebProtectionDomains } from './webProtectionCatalog';
 export type NativeAuthorizationStatus = 'notDetermined' | 'approved' | 'denied' | 'unavailable';
 
 export type NativePendingIntervention = {
-  kind: 'always' | 'blocked' | 'checkin' | 'daily-hard' | 'limit' | 'quiet' | 'web';
+  kind: 'always' | 'blocked' | 'checkin' | 'daily-hard' | 'limit' | 'quiet' | 'web' | 'web-never';
   day: string;
   planId: string;
   selectionId: string;
@@ -26,6 +26,7 @@ export type NativePendingIntervention = {
   strength: 'loose' | 'strict';
   practice: 'chapter' | 'intention' | 'jesus-prayer' | 'prayer' | 'psalm';
   label: string;
+  commitmentId: string;
   minutes: number;
   createdAt: number;
 };
@@ -37,7 +38,7 @@ export type NativeBoundaryEvent = Omit<NativePendingIntervention, 'kind'> & {
 };
 
 const NATIVE_EVENT_KINDS = new Set([
-  'always', 'blocked', 'checkin', 'daily-hard', 'daily-target', 'limit', 'quiet', 'web',
+  'always', 'blocked', 'checkin', 'daily-hard', 'daily-target', 'limit', 'quiet', 'web', 'web-never',
 ]);
 const NATIVE_PRACTICES = new Set(['chapter', 'intention', 'jesus-prayer', 'prayer', 'psalm']);
 
@@ -58,6 +59,7 @@ function normalizeNativeEvent(value: Record<string, unknown>): NativeBoundaryEve
     strength: value.strength === 'loose' ? 'loose' : 'strict',
     practice: (NATIVE_PRACTICES.has(rawPractice) ? rawPractice : 'prayer') as NativeBoundaryEvent['practice'],
     label: typeof value.label === 'string' ? value.label : '',
+    commitmentId: typeof value.commitmentId === 'string' ? value.commitmentId : '',
     minutes: Math.max(0, Number(value.minutes) || 0),
     createdAt: Math.max(0, Number(value.createdAt) || 0),
     activity: typeof value.activity === 'string' ? value.activity : '',
@@ -82,6 +84,10 @@ type LegacyAnastaFocusNativeModule = {
     targetArmedDays?: Record<string, string>;
     targetLostDays?: Record<string, string>;
   }>;
+  syncAnalyticsContext?: (payloadJson: string) => Promise<{
+    requestId: string;
+    stored: boolean;
+  }>;
   runtimeStatus?: () => Promise<{
     hardWallReached: boolean;
     hardWallDate: string | null;
@@ -102,6 +108,11 @@ export function isNativeFocusAvailable() {
   return Platform.OS === 'ios'
     && typeof nativeModule?.requestAuthorization === 'function'
     && typeof nativeModule?.applyProtection === 'function';
+}
+
+export function isNativeFocusAnalyticsAvailable() {
+  return Platform.OS === 'ios'
+    && typeof nativeModule?.syncAnalyticsContext === 'function';
 }
 
 export async function getNativeAuthorizationStatus(): Promise<NativeAuthorizationStatus> {
@@ -141,6 +152,7 @@ export function buildNativeProtectionPayload(state: DayPlanState, now = new Date
     // must not schedule a second, redundant Daily Hard Wall event.
     essentialOnlyMinutes: entry.essentialsOnly ? null : entry.essentialOnlyMinutes,
     groupCatalog: entry.groupCatalog,
+    groupOrder: Object.keys(entry.groupCatalog),
     groupNames: Object.fromEntries(
       Object.keys(entry.groupCatalog).map(groupId => [groupId, groupName(state, groupId)])
     ),
@@ -198,6 +210,10 @@ export function buildNativeProtectionPayload(state: DayPlanState, now = new Date
       resolvedDomains: resolvedWeb.domains,
       omittedDomainCount: resolvedWeb.omittedDomains.length,
       adultFilterActive: resolvedWeb.adultFilterActive,
+      neverAllowed: {
+        domains: resolvedWeb.neverDomainContexts,
+        adultFilterCommitmentId: resolvedWeb.adultFilterNeverCommitmentId,
+      },
     },
   };
 }
@@ -207,6 +223,14 @@ export async function applyNativeProtection(state: DayPlanState) {
     return { applied: false, unavailable: true as const };
   }
   const result = await nativeModule.applyProtection(JSON.stringify(buildNativeProtectionPayload(state)));
+  return { ...result, unavailable: false as const };
+}
+
+export async function syncNativeAnalyticsContext(payloadJson: string) {
+  if (!isNativeFocusAvailable() || !nativeModule?.syncAnalyticsContext) {
+    return { requestId: '', stored: false, unavailable: true as const };
+  }
+  const result = await nativeModule.syncAnalyticsContext(payloadJson);
   return { ...result, unavailable: false as const };
 }
 

@@ -4,7 +4,7 @@ import ScreenTimePermissionModal from './ScreenTimePermissionModal';
 import {
   grantScreenTimePermission,
   markScreenTimePermissionDenied,
-  useDayPlan,
+  useDayPlanSelector,
 } from './dayPlanStore';
 import { isNativeFocusAvailable, requestNativeAuthorization } from './focusNativeBridge';
 
@@ -13,7 +13,7 @@ import { isNativeFocusAvailable, requestNativeAuthorization } from './focusNativ
 // away or shows the Screen Time modal first and runs it on consent.
 // Render `gate` once near the end of the screen/sheet.
 export function usePermissionGate(options?: { embedded?: boolean }) {
-  const permission = useDayPlan().permission;
+  const permission = useDayPlanSelector(state => state.permission);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   useEffect(() => {

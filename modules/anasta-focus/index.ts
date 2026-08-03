@@ -26,6 +26,10 @@ export type AnastaFocusNativeModule = {
     targetArmedDays?: Record<string, string>;
     targetLostDays?: Record<string, string>;
   }>;
+  syncAnalyticsContext(payloadJson: string): Promise<{
+    requestId: string;
+    stored: boolean;
+  }>;
   runtimeStatus(): Promise<{
     hardWallReached: boolean;
     hardWallDate: string | null;

@@ -15,6 +15,7 @@ import { F } from '@/constants/tokens';
 import { NotoEmoji } from '@/components/shared/NotoEmoji';
 import { HABIT_SVG } from '@/components/shared/notoEmoji/habits';
 import { normalizeHabitIcon } from '@/components/shared/notoEmoji/legacyMap';
+import { scaleReadableLineHeight, useReadableFontScale } from '@/components/shared/typographyScale';
 
 export type TaskVariant = 'spiritual' | 'routine' | 'quick' | 'habit' | 'challenge' | 'gratitude' | 'reading';
 export type TaskState = 'pending' | 'active' | 'done' | 'skipped' | 'locked';
@@ -208,12 +209,6 @@ function TaskCheck({ variant, state, size, habitColor }: { variant: TaskVariant;
     bg = '#f5f5f4'; borderColor = '#e7e5e4'; iconColor = '#d6d3d1';
   } else if (isSkipped) {
     bg = '#f5f5f4'; borderColor = '#d6d3d1'; iconColor = '#a8a29e';
-  } else if (isDone) {
-    const fillColor =
-      variant === 'habit' ? (habitColor || DEFAULT_HABIT_CARD_COLOR) :
-      variant === 'gratitude' ? '#F43F5E' :
-      variant === 'quick' || variant === 'routine' ? '#1c1917' : '#C5A059';
-    bg = fillColor; borderColor = fillColor; iconColor = '#fff';
   } else {
     if (variant === 'habit') { borderColor = (habitColor || DEFAULT_HABIT_CARD_COLOR) + '60'; }
     else if (variant === 'routine') { borderColor = 'rgba(28,25,23,0.28)'; borderWidth = 1.5; }
@@ -222,20 +217,85 @@ function TaskCheck({ variant, state, size, habitColor }: { variant: TaskVariant;
     else { borderColor = 'rgba(197,160,89,0.4)'; }
   }
 
-  if (isDone) {
-    const accent =
-      variant === 'habit' ? (habitColor || DEFAULT_HABIT_CARD_COLOR) :
-      variant === 'gratitude' ? '#E11D48' :
-      variant === 'quick' || variant === 'routine' ? '#8A8177' : '#C5A059';
-    const coreColor =
-      variant === 'quick' || variant === 'routine' ? '#8A8177' : accent;
-    return <CompletedTaskCheck size={size} accent={accent} coreColor={coreColor} />;
-  }
+  const accent =
+    variant === 'habit' ? (habitColor || DEFAULT_HABIT_CARD_COLOR) :
+    variant === 'gratitude' ? '#E11D48' :
+    variant === 'quick' || variant === 'routine' ? '#8A8177' : '#C5A059';
+  const coreColor =
+    variant === 'quick' || variant === 'routine' ? '#8A8177' : accent;
 
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, borderWidth, borderColor, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {isSkipped && <Skip s={size * 0.44} c={iconColor} w={2.4} />}
-      {(isLocked || (!isDone && !isSkipped)) && <CircleIcon s={size * 0.56} c={iconColor} w={2} />}
+    <AnimatedTaskCheckTransition
+      done={isDone}
+      size={size}
+      accent={accent}
+      coreColor={coreColor}
+      pending={(
+        <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, borderWidth, borderColor, alignItems: 'center', justifyContent: 'center' }}>
+          {isSkipped && <Skip s={size * 0.44} c={iconColor} w={2.4} />}
+          {!isSkipped && <CircleIcon s={size * 0.56} c={iconColor} w={2} />}
+        </View>
+      )}
+    />
+  );
+}
+
+export function AnimatedTaskCheckTransition({
+  done,
+  size,
+  accent,
+  coreColor,
+  pending,
+}: {
+  done: boolean;
+  size: number;
+  accent: string;
+  coreColor?: string;
+  pending: React.ReactNode;
+}) {
+  // Both visual states stay mounted so completing a task only updates shared
+  // values on the UI thread; it does not mount a new shadow/icon subtree in
+  // the same frame as the strike and flourish animations.
+  const completionProgress = useSharedValue(done ? 1 : 0);
+
+  useEffect(() => {
+    completionProgress.value = withTiming(done ? 1 : 0, {
+      duration: done ? 190 : 135,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [completionProgress, done]);
+
+  const pendingStyle = useAnimatedStyle(() => ({
+    opacity: 1 - completionProgress.value,
+    transform: [{ scale: 1 - completionProgress.value * 0.05 }],
+  }));
+  const completedStyle = useAnimatedStyle(() => ({
+    opacity: completionProgress.value,
+    transform: [{ scale: 0.84 + completionProgress.value * 0.16 }],
+  }));
+
+  return (
+    <View style={{ width: size, height: size, flexShrink: 0 }}>
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFillObject,
+          { alignItems: 'center', justifyContent: 'center' },
+          pendingStyle,
+        ]}
+      >
+        {pending}
+      </Reanimated.View>
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFillObject,
+          { alignItems: 'center', justifyContent: 'center' },
+          completedStyle,
+        ]}
+      >
+        <CompletedTaskCheck size={size} accent={accent} coreColor={coreColor} />
+      </Reanimated.View>
     </View>
   );
 }
@@ -332,6 +392,9 @@ function TypeBadge({ variant, type, habitColor, habitIconName }: { variant: Task
 }
 
 function TaskTitle({ title, variant, state }: { title: string; variant: TaskVariant; state: TaskState }) {
+  const readableScale = useReadableFontScale();
+  const titleFontSize = 17 * readableScale;
+  const titleLineHeight = scaleReadableLineHeight(17, 20, readableScale);
   const isDone = state === 'done', isSkipped = state === 'skipped';
   let color = '#1c1917';
   if (isSkipped) color = '#a8a29e';
@@ -403,8 +466,8 @@ function TaskTitle({ title, variant, state }: { title: string; variant: TaskVari
           position: 'absolute',
           opacity: 0,
           fontFamily: F.serifMedium,
-          fontSize: 17,
-          lineHeight: 20,
+          fontSize: titleFontSize,
+          lineHeight: titleLineHeight,
         }}
       >
         {title}
@@ -414,9 +477,9 @@ function TaskTitle({ title, variant, state }: { title: string; variant: TaskVari
         ellipsizeMode="tail"
         style={{
           fontFamily: F.serifMedium,
-          fontSize: 17,
+          fontSize: titleFontSize,
           color,
-          lineHeight: 20,
+          lineHeight: titleLineHeight,
         }}
       >
         {title}
@@ -428,7 +491,7 @@ function TaskTitle({ title, variant, state }: { title: string; variant: TaskVari
             {
               position: 'absolute',
               left: 0,
-              top: 10,
+              top: titleLineHeight / 2,
               height: 1.2,
               borderRadius: 1,
               backgroundColor: lineColor,

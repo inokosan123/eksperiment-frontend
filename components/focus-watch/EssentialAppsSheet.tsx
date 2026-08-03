@@ -6,6 +6,7 @@ import ConfirmModal from '@/components/shared/ConfirmModal';
 import { Lock, Trash2, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
+import { AlwaysBlockedRow } from './AlwaysBlockedList';
 import { ESSENTIAL_APP_OPTIONS } from './focusContent';
 import FocusCheck from './FocusCheck';
 import NativeActivitySelectionButton from './NativeActivitySelectionButton';
@@ -280,22 +281,9 @@ export default function EssentialAppsSheet({
               label="Always Blocked"
               note="This system group always stays closed. Its apps cannot become Essentials unless you remove that protection first."
             />
-            <View style={[s.list, s.blockedList]}>
-              {blockedApps.map((app, index) => (
-                <View key={app.id}>
-                  {index > 0 && <View style={s.separator} />}
-                  <View style={[s.row, s.rowDisabled]} accessibilityLabel={`${app.name}, Always Blocked, unavailable as an Essential`}>
-                    <View style={s.monogramBlocked}>
-                      <Lock s={14} c="#A24351" w={2.2} />
-                    </View>
-                    <Text style={s.appNameBlocked}>{app.name}</Text>
-                    <View style={s.blockedTag}>
-                      <Text style={s.blockedText}>UNAVAILABLE</Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
+            {blockedApps.map(app => (
+              <AlwaysBlockedRow key={app.id} name={app.name} />
+            ))}
           </View>
         )}
 
@@ -305,16 +293,10 @@ export default function EssentialAppsSheet({
               label="Always Blocked"
               note="Apple keeps app names private. This system group is shown here so it is clear why those apps cannot be selected as Essentials."
             />
-            <View style={[s.list, s.blockedList]}>
-              <View style={[s.row, s.rowDisabled]} accessibilityLabel={`Always Blocked, ${nativeBlockedCount} apps, unavailable as Essentials`}>
-                <View style={s.monogramBlocked}><Lock s={14} c="#A24351" w={2.2} /></View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={s.appNameBlocked}>Always Blocked</Text>
-                  <Text style={s.blockedGroupMeta}>{nativeBlockedCount} {nativeBlockedCount === 1 ? 'private app' : 'private apps'}</Text>
-                </View>
-                <View style={s.blockedTag}><Text style={s.blockedText}>UNAVAILABLE</Text></View>
-              </View>
-            </View>
+            <AlwaysBlockedRow
+              name="Always Blocked"
+              meta={`${nativeBlockedCount} ${nativeBlockedCount === 1 ? 'private app' : 'private apps'}`}
+            />
           </View>
         )}
       </ScrollView>
@@ -345,22 +327,15 @@ const s = StyleSheet.create({
   list: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.border },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 52 },
   row: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 3 },
-  rowDisabled: { opacity: 0.55 },
-  blockedList: { borderColor: '#E7C4CB', backgroundColor: '#FFF8F9' },
   monogram: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F0EFEB', alignItems: 'center', justifyContent: 'center' },
   monogramText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.textSecondary },
   monogramOn: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F1E3BF', alignItems: 'center', justifyContent: 'center' },
   monogramOnText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.goldDark },
   monogramLocked: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F2F1ED', alignItems: 'center', justifyContent: 'center' },
   monogramLockedText: { fontFamily: F.serifSemiBold, fontSize: 16, color: C.textMuted },
-  monogramBlocked: { width: 39, height: 39, borderRadius: 13, borderCurve: 'continuous', backgroundColor: '#F8E7EA', alignItems: 'center', justifyContent: 'center' },
   appName: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 17, color: C.text },
   appNameLocked: { flex: 1, minWidth: 0, fontFamily: F.serifMedium, fontSize: 17, color: C.textMuted },
-  appNameBlocked: { flexShrink: 1, fontFamily: F.serifMedium, fontSize: 17, color: '#7B3945' },
-  blockedGroupMeta: { marginTop: 2, fontFamily: F.sansMedium, fontSize: 13, lineHeight: 18, color: C.textMuted },
   emptyNote: { paddingHorizontal: 2, fontFamily: F.serifItalic, fontSize: 16, lineHeight: 22.5, color: C.textMuted },
   searchSurface: { height: 50, flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderCurve: 'continuous', borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 14, marginBottom: 12 },
   searchInput: { flex: 1, fontFamily: F.sansMedium, fontSize: 16, color: C.text },
-  blockedTag: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: '#F8E7EA', paddingHorizontal: 8, paddingVertical: 6 },
-  blockedText: { fontFamily: F.sansSemiBold, fontSize: 9.5, color: '#A24351' },
 });

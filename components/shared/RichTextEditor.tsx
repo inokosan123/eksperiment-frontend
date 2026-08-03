@@ -1,9 +1,10 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle, Text } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 import WebView from 'react-native-webview';
 import { F, C } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
+import { useReadableFontScale } from '@/components/shared/typographyScale';
 
 
 export type RichTextEditorRef = {
@@ -51,6 +52,7 @@ function buildEditorHTML(opts: {
   color: string;
   editable: boolean;
   autoHeight: boolean;
+  readableScale: number;
 }) {
   // Built once on mount — never rebuilt during editing
   const scrollCss = opts.autoHeight
@@ -63,6 +65,7 @@ function buildEditorHTML(opts: {
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     html, body { margin: 0; padding: 0; background: ${opts.backgroundColor}; ${scrollCss} }
     #editor {
       min-height: ${editorMinHeight};
@@ -70,7 +73,7 @@ function buildEditorHTML(opts: {
       outline: none;
       word-wrap: break-word;
       font-family: Georgia, 'Times New Roman', serif;
-      font-size: 17px;
+      font-size: ${17 * opts.readableScale}px;
       line-height: 1.7;
       color: ${opts.color};
       -webkit-user-select: text;
@@ -81,8 +84,8 @@ function buildEditorHTML(opts: {
       color: #CFCAC2;
       pointer-events: none;
     }
-    ul { padding-left: 22px; margin: 4px 0; }
-    ol { padding-left: 22px; margin: 4px 0; }
+    ul { padding-left: ${22 * opts.readableScale}px; margin: 4px 0; }
+    ol { padding-left: ${22 * opts.readableScale}px; margin: 4px 0; }
     li { margin: 2px 0; }
   </style>
 </head>
@@ -165,6 +168,15 @@ function buildEditorHTML(opts: {
       editor.style.color = textColor;
     }
 
+    function setEditorScale(scale) {
+      editor.style.fontSize = (17 * scale) + 'px';
+      document.querySelectorAll('ul, ol').forEach(function(list) {
+        list.style.paddingLeft = (22 * scale) + 'px';
+      });
+      scheduleHeight();
+      postCursor();
+    }
+
     // Initial measurement after layout
     setTimeout(reportHeight, 30);
     setTimeout(reportHeight, 200);
@@ -194,6 +206,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
   },
   ref,
 ) {
+  const readableScale = useReadableFontScale();
   const webViewRef = useRef<WebView>(null);
   const wrapperRef = useRef<View>(null);
   const htmlRequestIdRef = useRef(0);
@@ -207,7 +220,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
   const sourceKeyRef = useRef<string | number | null>(null);
   if (!sourceRef.current || sourceKeyRef.current !== sourceKey) {
     sourceRef.current = {
-      html: buildEditorHTML({ initialHTML, placeholder, backgroundColor, color, editable, autoHeight }),
+      html: buildEditorHTML({ initialHTML, placeholder, backgroundColor, color, editable, autoHeight, readableScale }),
     };
     sourceKeyRef.current = sourceKey;
   }
@@ -216,7 +229,7 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
     webViewRef.current?.injectJavaScript(`execCmd(${JSON.stringify(cmd)}); true;`);
   };
 
-  const syncEditorTheme = () => {
+  const syncEditorTheme = useCallback(() => {
     webViewRef.current?.injectJavaScript(`
       if (typeof setEditorTheme === 'function') {
         setEditorTheme(${JSON.stringify(backgroundColor)}, ${JSON.stringify(color)});
@@ -231,11 +244,24 @@ export const RichTextEditor = forwardRef<RichTextEditorRef, Props>(function Rich
       }
       true;
     `);
-  };
+  }, [backgroundColor, color]);
+
+  const syncEditorScale = useCallback(() => {
+    webViewRef.current?.injectJavaScript(`
+      if (typeof setEditorScale === 'function') {
+        setEditorScale(${JSON.stringify(readableScale)});
+      }
+      true;
+    `);
+  }, [readableScale]);
 
   useEffect(() => {
     syncEditorTheme();
-  }, [backgroundColor, color]);
+  }, [syncEditorTheme]);
+
+  useEffect(() => {
+    syncEditorScale();
+  }, [syncEditorScale]);
 
   useImperativeHandle(ref, () => ({
     bold:        () => inject('bold'),
