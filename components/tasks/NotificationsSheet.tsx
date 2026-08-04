@@ -277,28 +277,38 @@ export default function NotificationsSheet({ visible, onClose, selectedDate }: P
     optimisticReminder[task.id] ?? task.reminderMinutes ?? DEFAULT_REMINDER_MINUTES;
 
   /**
-   * ⚠ ONE LINE, NOT A STAT STRIP. This was three big numerals in a bordered
-   * bar — On, Double, Off — and none of them did anything: not a filter, not
-   * a control, three figures a reader can also get by looking at the list
-   * directly under them. It is a sentence now, and it sits with the date.
+   * ⚠ NOT A STAT STRIP, AND NOT A SENTENCE EITHER. This began as three big
+   * numerals in a bordered bar — On, Double, Off — that were neither a filter
+   * nor a control. Folding them into the date as "5 on, 2 off" was smaller
+   * but no better: a count set in the same grey as the date reads as more
+   * date, and "on"/"off" are the two words this sheet has already said in
+   * every card below.
+   *
+   * The counts are MARKS now — the bell that is ringing and the bell that is
+   * struck, the same two the cards wear — each with its figure beside it.
+   * The sheet's own vocabulary, and it needs no words at all.
    */
   const activeCount = dayTasks.filter(task => resolveMode(task) !== 'none').length;
   const offCount = Math.max(0, dayTasks.length - activeCount);
-  const tally = dayTasks.length === 0
-    ? ''
-    : offCount === 0
-      ? `${activeCount} on`
-      : activeCount === 0
-        ? `${offCount} off`
-        : `${activeCount} on, ${offCount} off`;
 
+  /**
+   * ⚠ THE DAY IS NAMED, NOT SPELLED OUT. "Monday, August 4" makes the reader
+   * work out whether Monday is today; a sheet opened from Home almost always
+   * IS today, and saying so is the whole point of the line. The weekday only
+   * appears when it is some other day, where it is the useful part.
+   */
   const dateLabel = useMemo(() => {
     const [year, month, day] = selectedDate.split('-').map(Number);
-    return new Date(year, month - 1, day, 12).toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-    });
+    const date = new Date(year, month - 1, day, 12);
+    const today = new Date();
+    const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const dayName = key(date) === key(today)
+      ? 'Today'
+      : date.toLocaleDateString('en-US', { weekday: 'long' });
+    return {
+      dayName,
+      date: date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+    };
   }, [selectedDate]);
 
   const handleModeChange = (task: TaskDefinition, mode: NotificationMode) => {
@@ -356,9 +366,31 @@ export default function NotificationsSheet({ visible, onClose, selectedDate }: P
         <View style={s.headerCopy}>
           <Text style={s.eyebrowText}>Notifications</Text>
           <Text style={s.title}>Daily reminders</Text>
-          <Text style={s.subtitle} numberOfLines={1}>
-            {tally ? `${dateLabel} · ${tally}` : dateLabel}
-          </Text>
+          <View style={s.dayLine}>
+            {/* The day, named. The date follows it quietly, after the app's
+                own hairline — one rule instead of a middle dot, because this
+                line now carries marks as well as words. */}
+            <Text style={s.dayName}>{dateLabel.dayName}</Text>
+            <View style={s.dayRule} />
+            <Text style={s.dayDate} numberOfLines={1}>{dateLabel.date}</Text>
+
+            {dayTasks.length > 0 && (
+              <View style={s.tally}>
+                {activeCount > 0 && (
+                  <View style={s.tallyItem}>
+                    <BellSingle s={12} c={C.gold} w={2.1} />
+                    <Text style={[s.tallyCount, { color: C.gold }]}>{activeCount}</Text>
+                  </View>
+                )}
+                {offCount > 0 && (
+                  <View style={s.tallyItem}>
+                    <BellNone s={12} c={OFF_INK} w={2.1} />
+                    <Text style={[s.tallyCount, { color: OFF_INK }]}>{offCount}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
         </View>
         <TouchableOpacity haptic="selection" activeOpacity={0.76} onPress={onClose} style={s.closeBtn}>
           <X s={18} c={C.textMuted} w={2.4} />
@@ -419,7 +451,15 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   title: { fontFamily: F.serifMedium, fontSize: 26, lineHeight: 31, color: C.text, marginTop: 3 },
-  subtitle: { fontFamily: F.sans, fontSize: 12, color: C.textSecondary, marginTop: 2 },
+  dayLine: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  // The day carries the weight — it is the thing being read.
+  dayName: { fontFamily: F.sansBold, fontSize: 11.5, letterSpacing: 1.3, color: C.text, textTransform: 'uppercase' },
+  dayRule: { width: 12, height: 1, backgroundColor: 'rgba(197,160,89,0.45)' },
+  dayDate: { flexShrink: 1, fontFamily: F.sans, fontSize: 12, color: C.textSecondary },
+  // The counts, as the two bells the cards already wear.
+  tally: { flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 'auto', paddingLeft: 8 },
+  tallyItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  tallyCount: { fontFamily: F.sansBold, fontSize: 12, fontVariant: ['tabular-nums'] },
   closeBtn: {
     width: 38,
     height: 38,
