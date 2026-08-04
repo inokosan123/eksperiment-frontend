@@ -33,7 +33,6 @@ import {
   ArrowUpRight,
   Bell,
   Book,
-  Calendar,
   ChevronLeft,
   ChevronRight,
   CircleIcon,
@@ -312,12 +311,25 @@ function getTaskSectionTitle(selectedDate: string, todayKey: string) {
   return `Tasks for ${month} ${getOrdinalDay(date.getDate())}`;
 }
 
+/**
+ * What the empty plate says on a day with nothing on it.
+ *
+ * ⚠ THE BODY NAMES A CONTROL THAT IS ON SCREEN, or it says nothing at
+ * all. Today's line used to read "Create a routine task or adjust your
+ * schedule when you are ready" — three verbs, no button, and a clause of
+ * pure padding. ADD QUICK TASK and MY ROUTINE are the two things sitting
+ * directly under this card; naming them is the whole instruction.
+ *
+ * A past day and a day ahead get NO instruction, because there is
+ * nothing useful to do about either from here. Telling someone to add a
+ * task to a day that has already gone is worse than silence.
+ */
 function getNoTasksCopy(selectedDate: string, todayKey: string) {
   if (selectedDate < todayKey) {
     return {
-      eyebrow: 'Past Day',
-      title: 'A Quiet Day',
-      body: 'No tasks were scheduled or saved for this date.',
+      eyebrow: 'Past day',
+      title: 'A quiet day',
+      body: 'Nothing was scheduled or saved for this date.',
       status: 'No saved tasks for this day',
     };
   }
@@ -325,16 +337,16 @@ function getNoTasksCopy(selectedDate: string, todayKey: string) {
   if (selectedDate > todayKey) {
     return {
       eyebrow: 'Ahead',
-      title: 'Open Space',
-      body: 'No tasks are planned for this date yet.',
+      title: 'Open space',
+      body: 'Nothing is planned for this date yet.',
       status: 'No planned tasks for this day',
     };
   }
 
   return {
     eyebrow: 'Today',
-    title: 'A Clear Day',
-    body: 'Create a routine task or adjust your schedule when you are ready.',
+    title: 'A clear day',
+    body: 'Add a quick task below, or open My Routine.',
     status: 'No tasks for today',
   };
 }
@@ -582,6 +594,66 @@ function ActiveTimeBridge({ nextLabel }: { nextLabel: string }) {
     </Reanimated.View>
   );
 }
+
+/* -------------------------------------------------------------
+ * WHAT STANDS WHERE THE TASKS WOULD BE.
+ *
+ * WHAT IT WAS: a flat cream plate with a 54pt tinted tile on the right
+ * holding a small calendar, a glow blob behind it and a loose dot in its
+ * corner. Three ornaments doing one job, and none of them belonging to
+ * anything else on the screen — while directly above and below it sit
+ * ADD QUICK TASK and MY ROUTINE, both of which are gradients with a
+ * watermark bleeding off a corner. The empty state was the only element
+ * in the column built to its own rules.
+ *
+ * WHAT IT IS NOW: the ghost of a task card. It takes the task rows' own
+ * ground — `TaskCards`' `#FFFDF7 → #ffffff` on their own 0.135/0.865
+ * diagonal — so the space reads as the place a task would occupy rather
+ * than as a notice about the absence of one.
+ *
+ * ⚠ THE WATERMARK IS THE CHECK RING, blown up and bled off the right
+ * edge, which is the idiom MY ROUTINE uses immediately below. A calendar
+ * was tried first: it is a RECTANGLE, so cropping it at the card's edge
+ * produces a box fragment rather than an object running out of frame.
+ * The ring crops gracefully at any size, and it is the task card's own
+ * unchecked mark — an empty circle is exactly what an empty day is.
+ * Drawn WITHOUT its tick on purpose; a tick would say the day was done.
+ *
+ * ⚠ AND IT STAYS AT ONE POINT OF BORDER. Its neighbours are 2pt because
+ * they are buttons. This is not one — a placeholder drawn as heavily as
+ * the two controls under it would compete with them for the tap.
+ * ------------------------------------------------------------- */
+const EmptyTaskCard = React.memo(function EmptyTaskCard({
+  eyebrow, title, body, onPress,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  onPress?: () => void;
+}) {
+  const Shell = onPress ? TouchableOpacity : View;
+  return (
+    <Shell
+      {...(onPress ? { onPress, activeOpacity: 0.84 } : {})}
+      style={s.emptyTaskCard}
+    >
+      <LinearGradient
+        colors={['#FFFDF7', '#FFFFFF']}
+        start={{ x: 0.135, y: 0 }}
+        end={{ x: 0.865, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View pointerEvents="none" style={s.emptyTaskRing} />
+      <View pointerEvents="none" style={s.emptyTaskLit} />
+      <View style={s.emptyTaskText}>
+        <Text style={s.emptyTaskEyebrow}>{eyebrow}</Text>
+        <Text style={s.emptyTaskTitle}>{title}</Text>
+        <Text style={s.emptyTaskBody}>{body}</Text>
+      </View>
+    </Shell>
+  );
+});
 
 function BigEventBanner({
   events,
@@ -2070,25 +2142,20 @@ export default function HomeView({
         )}
 
         {!isTaskContentLoading && !hasBackendTasks && taskBackendReady && (
-          <TouchableOpacity activeOpacity={0.84} onPress={() => router.push('/my-routine')} style={s.emptyTaskCard}>
-            <Text style={s.emptyTaskTitle}>No tasks yet</Text>
-            <Text style={s.emptyTaskBody}>Create your first routine, prayer, reading, habit, or challenge task.</Text>
-          </TouchableOpacity>
+          <EmptyTaskCard
+            eyebrow="FIRST STEP"
+            title="No tasks yet"
+            body="Open My Routine below to add your first prayer, reading, or habit."
+            onPress={() => router.push('/my-routine')}
+          />
         )}
 
         {!isTaskContentLoading && hasBackendTasks && taskBackendReady && homeCards.length === 0 && (
-          <View style={s.emptyTaskCard}>
-            <View style={s.emptyTaskText}>
-              <Text style={s.emptyTaskEyebrow}>{noTasksCopy.eyebrow}</Text>
-              <Text style={s.emptyTaskTitle}>{noTasksCopy.title}</Text>
-              <Text style={s.emptyTaskBody}>{noTasksCopy.body}</Text>
-            </View>
-            <View style={s.emptyTaskArt}>
-              <View style={s.emptyTaskArtGlow} />
-              <Calendar s={23} c="#C5A059" />
-              <View style={s.emptyTaskArtDot} />
-            </View>
-          </View>
+          <EmptyTaskCard
+            eyebrow={noTasksCopy.eyebrow}
+            title={noTasksCopy.title}
+            body={noTasksCopy.body}
+          />
         )}
 
         {!isTaskContentLoading && (
@@ -3062,15 +3129,13 @@ const s = StyleSheet.create({
   emptyTaskCard: {
     marginTop: 14,
     borderRadius: 18,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.24)',
-    backgroundColor: '#FFFDF8',
+    borderColor: 'rgba(197,160,89,0.30)',
     paddingHorizontal: 18,
-    paddingVertical: 17,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
+    paddingVertical: 16,
+    minHeight: 92,
+    justifyContent: 'center',
     overflow: 'hidden',
     shadowColor: '#C5A059',
     shadowOffset: { width: 0, height: 7 },
@@ -3078,8 +3143,34 @@ const s = StyleSheet.create({
     shadowRadius: 18,
     elevation: 2,
   },
+  /**
+   * The task card's unchecked mark, blown up and run off the right edge.
+   * A ring is the one shape that crops well there — see the note on the
+   * component.
+   */
+  emptyTaskRing: {
+    position: 'absolute',
+    right: -34,
+    top: -2,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 6,
+    borderColor: '#C5A059',
+    opacity: 0.085,
+  },
+  // The lit hairline every raised surface in this app wears.
+  emptyTaskLit: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    top: 1,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
   emptyTaskText: {
-    flex: 1,
+    // Held clear of the ring so no line of copy runs into it.
+    paddingRight: 46,
   },
   emptyTaskEyebrow: {
     fontFamily: F.sansBold,
@@ -3089,38 +3180,8 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 5,
   },
-  emptyTaskTitle: { fontFamily: F.serifMedium, fontSize: 21, lineHeight: 24, color: C.text },
-  emptyTaskBody: { marginTop: 6, fontFamily: F.sans, fontSize: 12.5, lineHeight: 18, color: C.textMuted },
-  emptyTaskArt: {
-    position: 'relative',
-    width: 54,
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.22)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  emptyTaskArtGlow: {
-    position: 'absolute',
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: 'rgba(197,160,89,0.08)',
-    right: -30,
-    bottom: -34,
-  },
-  emptyTaskArtDot: {
-    position: 'absolute',
-    right: 10,
-    top: 10,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D6B66F',
-  },
+  emptyTaskTitle: { fontFamily: F.serifMedium, fontSize: 22, lineHeight: 26, color: C.text },
+  emptyTaskBody: { marginTop: 5, fontFamily: F.sans, fontSize: 12.5, lineHeight: 18, color: C.textMuted },
   addBtn: {
     padding: 14,
     borderRadius: 16,
