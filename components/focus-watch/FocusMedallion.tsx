@@ -144,17 +144,62 @@ export const FocusMedallionMark = React.memo(function FocusMedallionMark({
  *                          them, where five full medallions become wallpaper
  *                          and five numerals all reading "1" say nothing.
  */
+/**
+ * ⚠ THE COIN HAS THREE TONES AND THE THIRD IS THE POINT OF THIS NOTE.
+ *
+ * A day that was WON is gold. A day at rest is ash. And a day that was
+ * LOST used to be no coin at all — a pink 27pt circle with a small red
+ * cross in it, the only object on that row that was not a coin, sitting
+ * among coins. It read as an error badge stuck to a ledger rather than as
+ * a day the ledger had recorded.
+ *
+ * STRUCK is the same coin, spent. The artwork does not change — same
+ * scallop, same face, same catch-light — only its metal does: the rim
+ * goes to the app's near-black, the face to a pale cut-out held against
+ * the light, and one drop of oxblood is set into it.
+ *
+ * That is Home's own register for a day the reader lost, and it is
+ * deliberately borrowed: `bankedPalette('struck')` dresses the whole task
+ * card in exactly this grey ground, near-black silhouette, white core and
+ * single oxblood accent. Two rooms, one reading of a bad day.
+ *
+ * ⚠ AND IT IS NOT COLOUR ALONE. A struck coin differs from a gold one in
+ * VALUE before it differs in hue — near-black against gold survives every
+ * kind of colour blindness, and the row can still be read at a glance in
+ * greyscale.
+ */
+export type FocusMedalCoinTone = 'gold' | 'ash' | 'struck';
+
+const COIN_TONES: Record<FocusMedalCoinTone, {
+  rim: string;
+  face: readonly [string, string, string];
+  light: number;
+  gem: string | null;
+}> = {
+  gold: { rim: '#8C5A9C', face: ['#FFF9E4', '#F3D48C', '#D4A754'], light: 0.72, gem: null },
+  ash: { rim: MEDALLION_ASH.rimDeep, face: ['#F3EDDF', '#DFD5BE', '#C9BEA3'], light: 0.4, gem: null },
+  struck: {
+    // The app's near-black, and a face that is white where the light lands.
+    rim: '#1C1917',
+    face: ['#FFFFFF', '#E9E9E6', '#C7C7C2'],
+    light: 0.86,
+    // The one drop of oxblood — the same `stud` the struck task card wears.
+    gem: '#A24351',
+  },
+};
+
 export const FocusMedalCoin = React.memo(function FocusMedalCoin({
   size = 26,
-  muted = false,
+  tone = 'gold',
   style,
 }: {
   size?: number;
-  muted?: boolean;
+  tone?: FocusMedalCoinTone;
   style?: StyleProp<ViewStyle>;
 }) {
-  const c = muted ? MEDALLION_ASH : MEDALLION;
+  const t = COIN_TONES[tone];
   const faceR = 297 * FOCUS_MEDALLION_FACE_R;
+  const gradientId = `coinFace-${tone}`;
   return (
     <View pointerEvents="none" style={[{ width: size, height: size }, style]}>
       <Svg width={size} height={size} viewBox={DISC_BOX}>
@@ -162,28 +207,39 @@ export const FocusMedalCoin = React.memo(function FocusMedalCoin({
           {/* The face has to carry gold on a plate that is ALSO gold, so its
               fall runs further than a lit disc normally would: near-white
               where the light lands, down to a true metal at the lower rim. */}
-          <RadialGradient id={muted ? 'coinFaceAsh' : 'coinFace'} cx="40%" cy="32%" r="78%">
-            <Stop offset="0" stopColor={muted ? '#F3EDDF' : '#FFF9E4'} />
-            <Stop offset="0.52" stopColor={muted ? '#DFD5BE' : '#F3D48C'} />
-            <Stop offset="1" stopColor={muted ? '#C9BEA3' : '#D4A754'} />
+          <RadialGradient id={gradientId} cx="40%" cy="32%" r="78%">
+            <Stop offset="0" stopColor={t.face[0]} />
+            <Stop offset="0.52" stopColor={t.face[1]} />
+            <Stop offset="1" stopColor={t.face[2]} />
           </RadialGradient>
         </Defs>
-        <Path fill={muted ? c.rimDeep : '#8C5A9C'} d={FOCUS_MEDALLION_SCALLOP} />
-        <Circle
-          cx={250}
-          cy={217.3}
-          r={faceR}
-          fill={`url(#${muted ? 'coinFaceAsh' : 'coinFace'})`}
-        />
+        <Path fill={t.rim} d={FOCUS_MEDALLION_SCALLOP} />
+        <Circle cx={250} cy={217.3} r={faceR} fill={`url(#${gradientId})`} />
         {/* The light the coin catches along its upper edge. */}
         <Path
           d={`M ${250 - faceR * 0.72} ${217.3 - faceR * 0.6} A ${faceR} ${faceR} 0 0 1 ${250 + faceR * 0.62} ${217.3 - faceR * 0.7}`}
           fill="none"
           stroke="#FFFFFF"
-          strokeOpacity={muted ? 0.4 : 0.72}
+          strokeOpacity={t.light}
           strokeWidth={9}
           strokeLinecap="round"
         />
+        {/* ⚠ SET INTO THE FACE, NOT PRINTED ON IT — a white lip around the
+            stone is what makes it a seat rather than a dot, and a dot at
+            the centre of a disc is a record button. */}
+        {!!t.gem && (
+          <>
+            <Circle cx={250} cy={217.3} r={faceR * 0.34} fill="#FFFFFF" fillOpacity={0.92} />
+            <Circle cx={250} cy={217.3} r={faceR * 0.26} fill={t.gem} />
+            <Circle
+              cx={250}
+              cy={217.3 - faceR * 0.08}
+              r={faceR * 0.08}
+              fill="#FFFFFF"
+              fillOpacity={0.35}
+            />
+          </>
+        )}
       </Svg>
     </View>
   );

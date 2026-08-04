@@ -15,9 +15,9 @@ import Reanimated, {
 import Svg, { Ellipse, Path } from 'react-native-svg';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import FocusSheetHeader from './FocusSheetHeader';
-import { ChevronLeft, ChevronRight, X } from '@/components/icons/Icons';
+import { ChevronLeft, ChevronRight } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { FocusMedallionMark, MEDALLION } from '@/components/focus-watch/FocusMedallion';
+import { FocusMedalCoin, FocusMedallionMark, MEDALLION } from '@/components/focus-watch/FocusMedallion';
 import MedalDayInProgress from '@/components/focus-watch/MedalDayInProgress';
 import { C, F } from '@/constants/tokens';
 import { dateKey, useDayPlanSelector } from './dayPlanStore';
@@ -215,11 +215,12 @@ function DayMark({ cell }: { cell: CellState }) {
     );
   }
   if (cell === 'broken') {
-    return (
-      <View style={s.brokenCoin}>
-        <X s={15} c="#B45360" w={2.6} />
-      </View>
-    );
+    /* ⚠ A LOST DAY IS A COIN, STRUCK — the same object the Medal Streak
+       card's week strip mounts, for the same reason today is shared: the
+       two rooms show one streak and must not drift. It was a pink disc
+       with a red cross, which was the only thing in this calendar that
+       was not a coin. */
+    return <FocusMedalCoin size={36} tone="struck" />;
   }
   if (cell === 'today') {
     // The same day-in-progress the Medal Streak card's week strip mounts. The
@@ -498,9 +499,7 @@ export function SharedTrophyCalendarSheet({
         </View>
         <View style={s.legendDiamond} />
         <View style={s.legendItem}>
-          <View style={s.legendBroken}>
-            <X s={10} c="#B45360" w={2.5} />
-          </View>
+          <FocusMedalCoin size={20} tone="struck" />
           <Text style={s.legendText}>broken</Text>
         </View>
         <View style={s.legendDiamond} />
@@ -778,16 +777,6 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,253,246,0.85)',
     transform: [{ rotate: '-18deg' }],
   },
-  brokenCoin: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FBEDEF',
-    borderWidth: 1,
-    borderColor: '#EBC7CD',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   // Today's seat, ring, warmth and spark all live in MedalDayInProgress now —
   // the one object this calendar and the Medal Streak card's strip both mount.
   restRing: {
@@ -845,16 +834,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  legendBroken: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FBEDEF',
-    borderWidth: 1,
-    borderColor: '#EBC7CD',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   legendRest: {
     width: 17,

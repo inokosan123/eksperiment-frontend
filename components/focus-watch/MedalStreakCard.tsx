@@ -2,7 +2,7 @@ import { forwardRef, memo, useState, type ComponentRef } from 'react';
 import { StyleSheet, Text, View, type LayoutChangeEvent, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { ChevronRight, X } from '@/components/icons/Icons';
+import { ChevronRight } from '@/components/icons/Icons';
 import { F } from '@/constants/tokens';
 import { BANKED, BankedGlint, LedgerRail, RestSeal } from '@/components/shared/BankedEmber';
 import { FocusMedalCoin } from './FocusMedallion';
@@ -285,11 +285,14 @@ const MedalStreakCard = forwardRef<ComponentRef<typeof TouchableOpacity>, MedalS
                           />
                         )}
                         {cell.status === 'kept' && <FocusMedalCoin size={MARK} />}
-                        {cell.status === 'broken' && (
-                          <View style={s.markBroken}>
-                            <X s={11} c="#B45360" w={2.5} />
-                          </View>
-                        )}
+                        {/* ⚠ A LOST DAY IS A COIN TOO, STRUCK. It used to be
+                            the only object on this row that was not one — a
+                            pink circle with a small red cross, which read as
+                            an error badge stuck to a ledger rather than as a
+                            day the ledger had recorded. Struck, it is the
+                            same coin in the register Home already uses for a
+                            day the reader lost. */}
+                        {cell.status === 'broken' && <FocusMedalCoin size={MARK} tone="struck" />}
                         {cell.status === 'rest' && <View style={s.markRest} />}
                       </View>
                     </View>
@@ -463,16 +466,6 @@ const s = StyleSheet.create({
   // A day lost is a rose token the size of the coin it did not become.
   // The rose token has to hold its own against a plate that is now gold on
   // every side of it — at the old hairline it dissolved into the card.
-  markBroken: {
-    width: MARK,
-    height: MARK,
-    borderRadius: MARK / 2,
-    borderWidth: 1.2,
-    borderColor: '#E2AEB7',
-    backgroundColor: '#FCF1F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   // A day with no target was ruled in a cold grey that belongs to no other
   // surface on this card. It is the card's own gold now, held faint: an empty
   // seat waiting, not a disabled control.
