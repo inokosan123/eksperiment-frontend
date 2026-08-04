@@ -732,6 +732,84 @@ export function GratitudeTaskCard({ task, streak }: { task: TaskData; streak?: n
   );
 }
 
+/* ─────────────────────────────────────────────────────────────
+ * THE CARD'S SKIN, AS DATA.
+ *
+ * Every card above hard-codes its own ground, edge and radius inline.
+ * That is fine while they are the only things wearing it — but the
+ * notifications sheet shows the SAME task and has to look like an
+ * enlarged version of the same card, or the app is speaking twice about
+ * one object in two voices.
+ *
+ * ⚠ SO THE RECIPE LIVES HERE, WHERE THE CARDS ARE, and both read from
+ * it. Copying seven gradients into a second file is exactly how the two
+ * would drift apart the first time one is tuned. Values are lifted
+ * verbatim from the components above; a habit's are computed from its
+ * own colour the same way `HabitTaskCard` computes them.
+ * ───────────────────────────────────────────────────────────── */
+
+export type TaskCardSkin = {
+  colors: [string, string];
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  borderColor: string;
+  radius: number;
+  /** The task's own colour, for a rail, a lit control, or a mark. */
+  accent: string;
+  /** Challenge alone is bound between two heavy gold rails. */
+  railed?: boolean;
+  /** Reading alone carries a book spine at its left edge. */
+  spine?: boolean;
+};
+
+const CARD_ANGLE = { start: { x: 0.135, y: 0 }, end: { x: 0.865, y: 1 } } as const;
+
+export function taskCardSkin(variant: TaskVariant, habitColor?: string): TaskCardSkin {
+  const base = { ...CARD_ANGLE, radius: 16 };
+
+  switch (variant) {
+    case 'spiritual':
+      return { ...base, colors: ['#FFFBEB', '#FFFDF8'], borderColor: 'rgba(197,160,89,0.3)', accent: '#C5A059' };
+    case 'challenge':
+      return {
+        ...base,
+        colors: ['#FFFDF7', '#ffffff'],
+        borderColor: 'rgba(197,160,89,0.35)',
+        radius: 22,
+        accent: '#C5A059',
+        railed: true,
+      };
+    case 'habit': {
+      const color = habitColor || DEFAULT_HABIT_CARD_COLOR;
+      return {
+        ...base,
+        colors: [mixHex(color, '#FFFFFF', 0.88), mixHex(color, '#FFFFFF', 0.95)],
+        borderColor: hexToRgba(color, 0.28),
+        accent: color,
+      };
+    }
+    case 'reading':
+      return {
+        ...base,
+        start: { x: 0.1, y: 0 },
+        end: { x: 0.9, y: 1 },
+        colors: ['#FFFFFF', '#F4EBDC'],
+        borderColor: 'rgba(146,116,82,0.30)',
+        accent: '#9C7C4F',
+        spine: true,
+      };
+    case 'gratitude':
+      return { ...base, colors: ['#FFEDF2', '#FFF7F8'], borderColor: 'rgba(244,63,94,0.18)', accent: '#F43F5E' };
+    case 'quick':
+      return { ...base, colors: ['#ffffff', '#F0FDF4'], borderColor: 'rgba(28,25,23,0.2)', accent: '#16A34A' };
+    default:
+      return { ...base, colors: ['#F2F1EF', '#FFFFFF'], borderColor: 'rgba(28,25,23,0.18)', accent: '#7C756D' };
+  }
+}
+
+/** The card's own type mark, so a second surface showing a task can wear it. */
+export const TaskTypeBadge = TypeBadge;
+
 export function AnyTaskCard({ task, streak }: { task: TaskData; streak?: number }) {
   switch (task.variant) {
     case 'spiritual':  return <SpiritualTaskCard task={task} streak={streak} />;

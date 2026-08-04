@@ -5,9 +5,12 @@ import * as Haptics from 'expo-haptics';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
 import { X } from '@/components/icons/Icons';
 import { BellDouble, BellNone, BellSingle } from '@/components/icons/NotificationBells';
+import { LinearGradient } from 'expo-linear-gradient';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import NotificationSettings from '@/components/shared/NotificationSettings';
+import { TaskTypeBadge, taskCardSkin } from '@/components/shared/TaskCards';
+import { resolveTaskVariant } from '@/components/tasks/taskAdapters';
 import { useTasks } from './TaskProvider';
 import type { NotificationMode } from '@/components/shared/NotificationSettings';
 import type { TaskDefinition, TaskDraft } from './taskTypes';
@@ -27,25 +30,31 @@ import type { TaskDefinition, TaskDraft } from './taskTypes';
  * way now, and a stack of six such cards is what made this sheet look
  * like a different application.
  *
- * WHAT IT IS: ONE PLATE, and the tasks are rows on it, divided by the
- * app's own fold — a gold hairline fading at both ends with white
- * caught under it. Mobbin's notification screens all land in the same
- * place (Alan, BeReal, Google Photos, Phantom): a settings list is
- * rows on a surface, never a deck of illustrated cards.
+ * WHAT IT IS: EACH TASK IS ITS OWN CARD AGAIN — but the card it
+ * already is on Home, enlarged, rather than a decorated invention.
  *
- * ⚠ COLOUR NOW ARRIVES THROUGH ONE MEMBER. Each task keeps its own
- * accent — gold for spiritual, the habit's own colour, brown for
- * reading — but it is carried by a 3pt rail at the row's edge and by
- * the lit mode button, and nowhere else. Six accents on six grounds
- * is a fruit salad; six accents on six rails is an index.
+ * ⚠ THE SKIN COMES FROM `taskCardSkin()` IN `TaskCards`, WHERE THE REAL
+ * CARDS LIVE. Same gradient, same angle, same edge, same radius, and
+ * the same two ornaments: challenge bound between its heavy gold rails,
+ * reading carrying its book spine. So you know what a task is here the
+ * same way you know it on Home — spiritual is cream and gold, a habit
+ * wears its own colour, gratitude is rose, quick is green — and the two
+ * screens cannot drift, because there is one recipe and both read it.
+ *
+ * ⚠ WHAT WAS TRIED FIRST AND WAS WRONG: flattening all of this into one
+ * plate of rows with a 3pt colour rail each. It killed the very thing
+ * that makes the list scannable — a task's category was a hairline
+ * instead of the whole surface — and the sheet stopped looking like the
+ * app it belongs to. The old sheet's fault was never that it had cards.
+ * It was that the cards were DECORATED: two floating colour blobs per
+ * row, a third behind the header, a solid gold disc. Those are gone;
+ * the card is not.
  *
  * ⚠ AND THE CONTROL IS NO LONGER A COPY. This sheet used to carry its
  * own `AnimatedModeButton` and `ReminderButton`, duplicating
  * `NotificationSettings` — the component six other screens already
  * use, whose header comment says this sheet "would be odd to speak
- * differently". It now uses the real one. Two implementations of one
- * choice cannot stay in step, and this deletes about a hundred and
- * forty lines of the second.
+ * differently". It now uses the real one.
  * ───────────────────────────────────────────────────────────── */
 
 type Props = {
@@ -56,21 +65,13 @@ type Props = {
 
 const DEFAULT_REMINDER_MINUTES = 15;
 
-const SOURCE_ACCENTS: Record<TaskDefinition['source'], string> = {
-  routine: '#7C756D',
-  spiritual: C.gold,
-  quick: '#16A34A',
-  habit: '#14A8E1',
-  challenge: C.gold,
-  reading_book: '#8B5E34',
-  gratitude: '#F43F5E',
-};
-
-function accentForTask(task: TaskDefinition) {
-  return task.habitColor || SOURCE_ACCENTS[task.source] || C.gold;
-}
-
-/** The one colour a silenced row is allowed. */
+/**
+ * What a silenced task wears. Its ground stays its own — a spiritual card
+ * that has been muted is still a spiritual card — but its edge, its ink and
+ * its rails all drain, so a scan of the list separates on from off without
+ * reading a word.
+ */
+const OFF_EDGE = 'rgba(120,113,108,0.20)';
 const OFF_RAIL = '#D8D5D0';
 const OFF_INK = '#A8A29E';
 const OFF_FAINT = '#C4C0BB';
@@ -125,27 +126,20 @@ function buildDraftFromDefinition(
   };
 }
 
-/* The fold that divides one row from the next: a gold hairline fading at
- * both ends with white caught under it. The app divides a plate with its
- * rules, never by seating a second plate on it. */
-const RowFold = memo(function RowFold() {
-  return (
-    <View pointerEvents="none" style={s.fold}>
-      <View style={s.foldCut} />
-      <View style={s.foldLit} />
-    </View>
-  );
-});
-
 /**
- * One task on the plate.
+ * One task, as its own card.
  *
- * ⚠ MEMOISED, and it matters here: tapping a mode on one task used to
- * re-render every other row on the sheet, each of which then rebuilt an
- * eight-field colour object through two rounds of hex arithmetic. The row
- * now re-renders only when its own mode or minutes change.
+ * The skin is the real card's — see `taskCardSkin`. What is enlarged is the
+ * TYPE: the title runs at 19 where the Home card sets it at about 15, because
+ * here the card is the whole subject of the row rather than one line in a
+ * list, and because the control below it needs a head heavy enough to sit
+ * under.
+ *
+ * ⚠ MEMOISED, and it matters: tapping a mode on one task used to re-render
+ * every other card on the sheet, each of which then rebuilt an eight-field
+ * colour object through two rounds of hex arithmetic.
  */
-const NotificationTaskRow = memo(function NotificationTaskRow({
+const NotificationTaskCard = memo(function NotificationTaskCard({
   task,
   mode,
   reminderMinutes,
@@ -159,8 +153,13 @@ const NotificationTaskRow = memo(function NotificationTaskRow({
   onReminderChange: (task: TaskDefinition, minutes: number) => void;
 }) {
   const off = mode === 'none';
-  const accent = accentForTask(task);
+  const variant = resolveTaskVariant(task);
+  const skin = useMemo(
+    () => taskCardSkin(variant, task.habitColor),
+    [variant, task.habitColor],
+  );
   const SummaryIcon = off ? BellNone : mode === 'double' ? BellDouble : BellSingle;
+  const summaryInk = off ? OFF_INK : skin.accent;
 
   const handleMode = useCallback(
     (next: NotificationMode) => onModeChange(task, next),
@@ -172,44 +171,81 @@ const NotificationTaskRow = memo(function NotificationTaskRow({
   );
 
   return (
-    <View style={s.row}>
-      {/* The task's own colour, and the only place on the row it appears
-          besides the lit button. Ash when the task is silenced — this is
-          what makes an off row readable from across the list. */}
-      <View pointerEvents="none" style={[s.rowRail, { backgroundColor: off ? OFF_RAIL : accent }]} />
+    <LinearGradient
+      colors={skin.colors}
+      start={skin.start}
+      end={skin.end}
+      style={[
+        s.card,
+        {
+          borderColor: off ? OFF_EDGE : skin.borderColor,
+          borderRadius: skin.radius,
+        },
+        // Challenge is bound between two heavy gold rails on Home, and it
+        // keeps them here — it is the mark that tells a challenge apart.
+        skin.railed && {
+          borderLeftWidth: 5,
+          borderRightWidth: 5,
+          borderLeftColor: off ? OFF_RAIL : skin.accent,
+          borderRightColor: off ? OFF_RAIL : skin.accent,
+        },
+      ]}
+    >
+      {/* The lit hairline every raised surface in this app wears. */}
+      <View pointerEvents="none" style={s.cardLit} />
+      {/* Reading's book spine, tucked at the left edge and inset top and
+          bottom so it reads as a closed-book sliver rather than a bar. */}
+      {skin.spine && (
+        <>
+          <View pointerEvents="none" style={[s.spineOuter, { backgroundColor: off ? '#D6D3D1' : '#9C7C4F' }]} />
+          <View pointerEvents="none" style={[s.spineInner, { backgroundColor: off ? '#E7E5E4' : C.gold }]} />
+        </>
+      )}
 
-      <View style={s.rowHead}>
-        <Text style={[s.rowTime, { color: off ? OFF_INK : accent }]}>
-          {task.schedule.time || '--:--'}
+      <View style={[s.cardHead, skin.spine && s.cardHeadSpined]}>
+        <View style={s.cardCopy}>
+          <Text style={[s.cardTitle, off && s.cardTitleOff]} numberOfLines={2}>{task.title}</Text>
+          <View style={s.cardMetaRow}>
+            <Text style={[s.cardTime, { color: off ? OFF_INK : skin.accent }]}>
+              {task.schedule.time || '--:--'}
+            </Text>
+            <View style={[s.metaDot, { backgroundColor: off ? OFF_FAINT : skin.accent }]} />
+            <Text style={[s.cardMeta, off && s.cardMetaOff]} numberOfLines={1}>
+              {sourceLabel(task)}{task.subtitle ? ` · ${task.subtitle}` : ''}
+            </Text>
+          </View>
+        </View>
+        {/* The card's own type mark, the one it wears on Home. */}
+        <TaskTypeBadge
+          variant={variant}
+          type={task.type}
+          habitColor={task.habitColor}
+          habitIconName={task.icon}
+        />
+      </View>
+
+      <View style={s.cardStatus}>
+        <SummaryIcon s={13} c={summaryInk} w={2.1} />
+        <Text style={[s.cardStatusText, { color: summaryInk }]} numberOfLines={1}>
+          {formatModeLabel(mode, reminderMinutes)}
         </Text>
-        <View style={s.rowCopy}>
-          <Text style={[s.rowTitle, off && s.rowTitleOff]} numberOfLines={1}>{task.title}</Text>
-          <Text style={[s.rowMeta, off && s.rowMetaOff]} numberOfLines={1}>
-            {sourceLabel(task)} · {task.subtitle || task.type}
-          </Text>
-        </View>
-        <View style={s.rowSummary}>
-          <SummaryIcon s={12} c={off ? OFF_INK : accent} w={2.1} />
-          <Text style={[s.rowSummaryText, { color: off ? OFF_INK : accent }]} numberOfLines={1}>
-            {formatModeLabel(mode, reminderMinutes)}
-          </Text>
-        </View>
       </View>
 
       {/* The real control, not this sheet's copy of it. `label=""` drops its
-          heading, because the row above already names the task. */}
+          heading, because the card above already names the task. */}
       <NotificationSettings
         label=""
         mode={mode}
-        accent={accent}
+        accent={skin.accent}
         reminderMinutes={reminderMinutes}
         onModeChange={handleMode}
         onReminderChange={handleReminder}
-        style={s.rowControl}
+        style={s.cardControl}
       />
-    </View>
+    </LinearGradient>
   );
 });
+
 
 
 export default function NotificationsSheet({ visible, onClose, selectedDate }: Props) {
@@ -339,21 +375,16 @@ export default function NotificationsSheet({ visible, onClose, selectedDate }: P
             <Text style={s.emptyText}>No active tasks for this day</Text>
           </View>
         ) : (
-          <View style={s.plate}>
-            <View pointerEvents="none" style={s.plateLit} />
-            {dayTasks.map((task, index) => (
-              <React.Fragment key={task.id}>
-                {index > 0 && <RowFold />}
-                <NotificationTaskRow
-                  task={task}
-                  mode={resolveMode(task)}
-                  reminderMinutes={resolveReminder(task)}
-                  onModeChange={handleModeChange}
-                  onReminderChange={handleReminderChange}
-                />
-              </React.Fragment>
-            ))}
-          </View>
+          dayTasks.map(task => (
+            <NotificationTaskCard
+              key={task.id}
+              task={task}
+              mode={resolveMode(task)}
+              reminderMinutes={resolveReminder(task)}
+              onModeChange={handleModeChange}
+              onReminderChange={handleReminderChange}
+            />
+          ))
         )}
       </ScrollView>
     </SmoothBottomSheet>
@@ -400,67 +431,82 @@ const s = StyleSheet.create({
     borderColor: '#EEEAE2',
   },
 
-  scrollContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24, gap: 12 },
 
-  /* One plate; the tasks are rows on it. */
-  plate: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderCurve: 'continuous',
+  /* The task's own card, enlarged. Ground, edge, radius and ornaments all
+     come from `taskCardSkin` so this and Home cannot drift. */
+  card: {
     borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.26)',
+    borderCurve: 'continuous',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 15,
     overflow: 'hidden',
-    shadowColor: '#C5A059',
+    shadowColor: '#8C7A4F',
     shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
     elevation: 2,
   },
-  plateLit: {
+  cardLit: {
     position: 'absolute',
     left: 18,
     right: 18,
     top: 1,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
-
-  fold: { marginHorizontal: 16, height: 2 },
-  foldCut: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(197,160,89,0.30)' },
-  foldLit: { height: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
-
-  row: { paddingLeft: 16, paddingRight: 16, paddingVertical: 14 },
-  // The task's colour, and the row's whole claim to it.
-  rowRail: {
+  spineOuter: {
     position: 'absolute',
     left: 0,
-    top: 15,
-    bottom: 15,
-    width: 3,
-    borderTopRightRadius: 3,
-    borderBottomRightRadius: 3,
+    top: 14,
+    bottom: 14,
+    width: 5,
+    borderTopRightRadius: 5,
+    borderBottomRightRadius: 5,
   },
-  rowHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  rowTime: {
+  spineInner: {
+    position: 'absolute',
+    left: 7,
+    top: 18,
+    bottom: 18,
+    width: 2,
+    borderRadius: 2,
+    opacity: 0.92,
+  },
+
+  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  // Reading's spine takes the left edge, so its head steps clear of it.
+  cardHeadSpined: { paddingLeft: 8 },
+  cardCopy: { flex: 1, minWidth: 0 },
+  /**
+   * ⚠ 19, where the Home card sets its title at about 15. Here the card IS
+   * the row rather than one line in a list, and it has a three-button
+   * control sitting under it — a 16pt head cannot hold that up.
+   */
+  cardTitle: { fontFamily: F.serifMedium, fontSize: 19, lineHeight: 24, color: C.text },
+  cardTitleOff: { color: OFF_INK },
+  cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 },
+  cardTime: {
     fontFamily: F.sansBold,
-    fontSize: 11.5,
+    fontSize: 12,
     letterSpacing: 0.4,
-    minWidth: 40,
     fontVariant: ['tabular-nums'],
   },
-  rowCopy: { flex: 1, minWidth: 0 },
-  rowTitle: { fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, color: C.text },
-  rowTitleOff: { color: OFF_INK },
-  rowMeta: { fontFamily: F.sans, fontSize: 10.5, lineHeight: 14, color: C.textMuted, marginTop: 1 },
-  rowMetaOff: { color: OFF_FAINT },
-  rowSummary: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  rowSummaryText: {
+  metaDot: { width: 3, height: 3, borderRadius: 1.5, opacity: 0.5 },
+  cardMeta: { flex: 1, minWidth: 0, fontFamily: F.sans, fontSize: 11.5, color: C.textMuted },
+  cardMetaOff: { color: OFF_FAINT },
+
+  // The reading, on its own line under the head — it is what the control
+  // below is about, so it belongs between them rather than in a corner.
+  cardStatus: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 11 },
+  cardStatusText: {
     fontFamily: F.sansBold,
-    fontSize: 8.5,
-    letterSpacing: 0.8,
+    fontSize: 9.5,
+    letterSpacing: 1.1,
     textTransform: 'uppercase',
   },
-  rowControl: { marginTop: 12 },
+  cardControl: { marginTop: 9 },
 
   emptyWrap: { alignItems: 'center', paddingVertical: 54, gap: 12 },
   emptyText: { fontFamily: F.serifItalic, fontSize: 14, color: C.textMuted },
