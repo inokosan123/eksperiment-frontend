@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { Lock, X } from '@/components/icons/Icons';
+import { ChevronRight, Lock, X } from '@/components/icons/Icons';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
 import { C, F } from '@/constants/tokens';
 import DurationWheel from './DurationWheel';
@@ -20,7 +20,6 @@ import {
   allCoreEssentialIds,
   extendQuietHour,
   formatEndsAt,
-  quietHourDefaultSelection,
   startQuietHour,
   useDayPlanSelector,
   type DayPlanState,
@@ -89,14 +88,15 @@ const selectQuietHourSheetState = (snapshot: DayPlanState) => snapshot;
 const quietHourSheetStateEqual = (previous: DayPlanState, next: DayPlanState) => (
   previous.alwaysBlockedApps === next.alwaysBlockedApps
   && previous.designatedCoreAppIds === next.designatedCoreAppIds
+  // ⚠ The standing Essentials are read live now — the plate names them and
+  // they go into the hour whether or not this sheet was open when they
+  // changed — so a snapshot that ignored them would show a stale set.
+  && previous.optionalEssentialAppIds === next.optionalEssentialAppIds
 );
 
-function cloneSelection(selection: WatchSelection): WatchSelection {
-  return {
-    categoryIds: [],
-    appIds: [...selection.appIds],
-    groupIds: [],
-  };
+/** The shipped name for an app id, or the id itself if it has none. */
+function appName(appId: string) {
+  return ESSENTIAL_APP_OPTIONS.find(app => app.id === appId)?.name ?? appId;
 }
 
 function durationLabel(minutes: number) {
@@ -157,6 +157,49 @@ function withAlpha(hex: string, alpha: number) {
 
 type ChoiceApp = { id: string; name: string; state: AppChoiceState; note?: string };
 
+/**
+ * The faces of the standing set, overlapped.
+ *
+ * ⚠ FOUR AT MOST, AND THE REST COUNTED. A row that grows with the list
+ * would push the copy beside it off the card the moment somebody kept
+ * eight apps; four seats and a tally is the same information at a fixed
+ * width. The seat is the app cards' own, at three quarters.
+ */
+const SEAT_STACK_MAX = 4;
+
+function SeatStack({ apps }: { apps: ChoiceApp[] }) {
+  const shown = apps.slice(0, SEAT_STACK_MAX);
+  const rest = apps.length - shown.length;
+  return (
+    <View style={s.stack} pointerEvents="none">
+      {shown.map((app, index) => (
+        <View
+          key={app.id}
+          style={[s.stackSeat, index > 0 && s.stackSeatOver, { zIndex: SEAT_STACK_MAX - index }]}
+        >
+          <Text style={s.stackSeatText} allowFontScaling={false}>
+            {app.name.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+      ))}
+      {rest > 0 && (
+        <View style={[s.stackSeat, s.stackSeatOver, s.stackRest]}>
+          <Text style={s.stackRestText} allowFontScaling={false}>+{rest}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** The one disclosure mark on the sheet: a chevron that turns a quarter. */
+function Disclosure({ open }: { open: boolean }) {
+  return (
+    <View style={[s.disclosure, open && s.disclosureOpen]}>
+      <ChevronRight s={15} c={C.textMuted} w={2.2} />
+    </View>
+  );
+}
+
 export default function QuietHourSheet({
   visible,
   onClose,
@@ -170,10 +213,20 @@ export default function QuietHourSheet({
   const nativeAvailable = isNativeFocusAvailable();
   const { alwaysBlockedApps } = state;
   const [minutes, setMinutes] = useState(60);
-  const [selection, setSelection] = useState<WatchSelection>(() => quietHourDefaultSelection());
+  /**
+   * ⚠ WHAT THIS SHEET OWNS IS THE EXTRAS, NOT THE WHOLE SELECTION.
+   *
+   * The standing Essentials are a rule made elsewhere and they are read
+   * live from the store; this hour's own additions are the only thing
+   * chosen here. Holding one list instead of two is what lets the sheet
+   * say plainly that Essentials are always open — there is no state in
+   * which one of them could have been switched off in passing.
+   */
+  const [extraIds, setExtraIds] = useState<string[]>([]);
   const [nativePreparing, setNativePreparing] = useState(false);
   const [pickerRevision, setPickerRevision] = useState(0);
   const [query, setQuery] = useState('');
+  const [essentialsOpen, setEssentialsOpen] = useState(false);
   const { request, gate } = usePermissionGate({ embedded: true });
 
   const accent = C.gold;
@@ -182,15 +235,15 @@ export default function QuietHourSheet({
   useEffect(() => {
     if (!visible) return;
     setQuery('');
+    setEssentialsOpen(false);
     if (editingSession) {
       setNativePreparing(false);
       const available = Math.max(0, Math.floor((editingSession.startedAt + MAX_DURATION * 60_000 - editingSession.endsAt) / 60_000));
       setMinutes(Math.min(15, available));
-      setSelection(cloneSelection(editingSession.selection));
       return;
     }
     setMinutes(60);
-    setSelection(cloneSelection(quietHourDefaultSelection()));
+    setExtraIds([]);
     if (nativeAvailable) {
       let current = true;
       setNativePreparing(true);
@@ -207,46 +260,89 @@ export default function QuietHourSheet({
     }
   }, [editingSession, nativeAvailable, visible]);
 
-  const selectedIds = useMemo(() => new Set(selection.appIds), [selection.appIds]);
   const alwaysBlockedIds = useMemo(
     () => new Set(alwaysBlockedApps.map(entry => entry.appId)),
     [alwaysBlockedApps]
   );
   const coreIds = useMemo(() => new Set(allCoreEssentialIds(state)), [state]);
+
+  /**
+   * THE STANDING SET — everything that is open before this sheet asks a
+   * single question.
+   *
+   * ⚠ THE CORE AND THE ESSENTIALS ARE TWO DIFFERENT PROMISES and the card
+   * says so: the core is kept open FOR SAFETY and nobody chooses it, while
+   * the Essentials are the reader's own standing list, set once in Focus
+   * and honoured by every Quiet Hour. Both are always open; only one of
+   * them is anybody's decision.
+   *
+   * ⚠ THE BLOCKED ARE FILTERED AGAIN HERE even though `saveOptionalEssentialApps`
+   * already refuses to store one: an app can be added to Always Blocked
+   * AFTER it was made an Essential, and the standing list is not rewritten
+   * when that happens. A card promising an app stays open while another
+   * rule holds it shut is the one thing this plate must never do.
+   */
+  const essentialIds = useMemo(
+    () => state.optionalEssentialAppIds
+      .filter(id => !coreIds.has(id) && !alwaysBlockedIds.has(id)),
+    [alwaysBlockedIds, coreIds, state.optionalEssentialAppIds]
+  );
+
   const coreApps = useMemo<ChoiceApp[]>(
     () => Array.from(coreIds)
       .map(id => ({
         id,
-        name: ESSENTIAL_APP_OPTIONS.find(app => app.id === id)?.name ?? id,
+        name: appName(id),
         state: 'locked' as const,
-        note: 'Always open, for safety',
+        note: 'Kept open for safety',
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     [coreIds]
   );
 
+  const essentialApps = useMemo<ChoiceApp[]>(
+    () => essentialIds
+      .map(id => ({
+        id,
+        name: appName(id),
+        state: 'locked' as const,
+        note: 'One of your Essentials',
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [essentialIds]
+  );
+
+  const alwaysOpenApps = useMemo(
+    () => [...coreApps, ...essentialApps],
+    [coreApps, essentialApps]
+  );
+
+  const extraSet = useMemo(() => new Set(extraIds), [extraIds]);
+
   /**
-   * ⚠ THREE LISTS, NOT ONE LIST WITH THREE LOOKS. Chosen apps gather at
-   * the top so the answer is readable without hunting; everything else
-   * sits under it; the shut ones come last because nothing can be done
+   * ⚠ TWO LISTS, NOT ONE WITH TWO LOOKS. What has been added for this hour
+   * gathers at the top so the answer is readable without hunting; the rest
+   * sits under it; the shut ones come last, because nothing can be done
    * about them here.
    */
-  const chosenApps = useMemo<ChoiceApp[]>(
+  const addedApps = useMemo<ChoiceApp[]>(
     () => ESSENTIAL_APP_OPTIONS
-      .filter(app => !coreIds.has(app.id) && !alwaysBlockedIds.has(app.id) && selectedIds.has(app.id))
+      .filter(app => !coreIds.has(app.id) && !essentialIds.includes(app.id)
+        && !alwaysBlockedIds.has(app.id) && extraSet.has(app.id))
       .map(app => ({ id: app.id, name: app.name, state: 'chosen' as const }))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [alwaysBlockedIds, coreIds, selectedIds]
+    [alwaysBlockedIds, coreIds, essentialIds, extraSet]
   );
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const otherApps = useMemo<ChoiceApp[]>(
     () => ESSENTIAL_APP_OPTIONS
-      .filter(app => !coreIds.has(app.id) && !alwaysBlockedIds.has(app.id) && !selectedIds.has(app.id))
+      .filter(app => !coreIds.has(app.id) && !essentialIds.includes(app.id)
+        && !alwaysBlockedIds.has(app.id) && !extraSet.has(app.id))
       .filter(app => !normalizedQuery || app.name.toLocaleLowerCase().includes(normalizedQuery))
       .map(app => ({ id: app.id, name: app.name, state: 'open' as const }))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    [alwaysBlockedIds, coreIds, normalizedQuery, selectedIds]
+    [alwaysBlockedIds, coreIds, essentialIds, extraSet, normalizedQuery]
   );
 
   const blockedApps = useMemo<ChoiceApp[]>(
@@ -257,17 +353,12 @@ export default function QuietHourSheet({
     [alwaysBlockedIds]
   );
 
-  const searchable = otherApps.length + chosenApps.length >= SEARCH_THRESHOLD;
-  const openCount = chosenApps.length + coreApps.length;
+  const searchable = otherApps.length + addedApps.length >= SEARCH_THRESHOLD;
 
   const toggleApp = useCallback((appId: string) => {
-    setSelection(current => ({
-      categoryIds: [],
-      groupIds: [],
-      appIds: current.appIds.includes(appId)
-        ? current.appIds.filter(id => id !== appId)
-        : [...current.appIds, appId],
-    }));
+    setExtraIds(current => (current.includes(appId)
+      ? current.filter(id => id !== appId)
+      : [...current, appId]));
   }, []);
 
   // The whole duration range lives on one wheel: 15-minute steps for a new
@@ -307,10 +398,28 @@ export default function QuietHourSheet({
       return;
     }
     request(() => {
+      // The standing Essentials plus whatever this hour added — assembled
+      // here rather than held in state, so the two can never disagree.
+      const selection: WatchSelection = {
+        categoryIds: [],
+        groupIds: [],
+        appIds: Array.from(new Set([...essentialIds, ...extraIds])),
+      };
       startQuietHour({ minutes, selection });
       onClose();
     });
   };
+
+  /**
+   * What the standing set actually is, in words — because a row of
+   * initials is a picture of the answer, not the answer.
+   */
+  const essentialsLine = useMemo(() => {
+    const names = alwaysOpenApps.map(app => app.name);
+    if (names.length === 0) return 'Nothing is held open yet.';
+    if (names.length <= 3) return names.join(', ');
+    return `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`;
+  }, [alwaysOpenApps]);
 
   const headMeta = editingSession
     ? `Holding until ${formatEndsAt(editingSession.endsAt)}`
@@ -414,28 +523,79 @@ export default function QuietHourSheet({
             <PartHead
               step={2}
               label="What stays open"
-              note="This choice belongs to this Quiet Hour alone. Everything you do not keep open closes until it lifts."
               accent={accent}
             />
 
-            {nativeAvailable ? (
-              <NativeActivitySelectionButton
-                key={`quiet-current-${pickerRevision}`}
-                selectionId="quiet.current"
-                title="Choose Quiet Hour Essentials"
-                label="Choose this Quiet Hour's apps"
-                prominent
-              />
-            ) : (
-              <>
-                <View style={s.tally}>
-                  <Text style={[s.tallyCount, { color: platePalette.name }]} allowFontScaling={false}>
-                    {openCount}
-                  </Text>
-                  <Text style={s.tallyWord}>
-                    {openCount === 1 ? 'app stays open' : 'apps stay open'}
+            {/* ── THE STANDING SET ──────────────────────────────────
+                ⚠ IT IS STATED BEFORE ANYTHING IS ASKED, because it is
+                already true. Quiet Hour begins from the Essentials the
+                reader has already set in Focus, and the old sheet buried
+                that: the core apps were four small chips and the
+                Essentials were pre-ticked rows in the same list as
+                everything else, indistinguishable from a choice made
+                here and quietly un-tickable by accident.
+
+                So it is one plate that says what it is, carries the
+                faces, and opens to name them. Not a control — nothing
+                inside it can be switched off from this sheet, which is
+                the whole point of calling it always open. */}
+            <TouchableOpacity
+              style={s.standing}
+              onPress={() => setEssentialsOpen(open => !open)}
+              activeOpacity={0.82}
+              haptic="selection"
+              accessibilityRole="button"
+              accessibilityState={{ expanded: essentialsOpen }}
+              accessibilityLabel={`Always open: ${alwaysOpenApps.length} apps`}
+              accessibilityHint={essentialsOpen
+                ? 'Double tap to hide the list.'
+                : 'Double tap to see which apps stay open.'}
+            >
+              <View style={s.standingRow}>
+                <SeatStack apps={alwaysOpenApps} />
+                <View style={s.standingCopy}>
+                  <Text style={s.standingTitle}>Always open</Text>
+                  <Text style={s.standingNote} numberOfLines={2}>
+                    {essentialsLine}
                   </Text>
                 </View>
+                <Disclosure open={essentialsOpen} />
+              </View>
+
+              {essentialsOpen && (
+                <Animated.View entering={FadeIn.duration(160)} style={s.standingList}>
+                  {alwaysOpenApps.map(app => (
+                    <AppChoiceCard
+                      key={app.id}
+                      id={app.id}
+                      name={app.name}
+                      state={app.state}
+                      note={app.note}
+                      accent={accent}
+                    />
+                  ))}
+                  <Text style={s.standingFoot}>
+                    Your Essentials are set once in Focus, under Essential Apps.
+                    Every Quiet Hour honours them.
+                  </Text>
+                </Animated.View>
+              )}
+            </TouchableOpacity>
+
+            {nativeAvailable ? (
+              <>
+                <Text style={s.addLead}>Add anything else, for this hour only.</Text>
+                <NativeActivitySelectionButton
+                  key={`quiet-current-${pickerRevision}`}
+                  selectionId="quiet.current"
+                  title="Choose Quiet Hour Essentials"
+                  label="Choose this Quiet Hour's apps"
+                  prominent
+                />
+              </>
+            ) : (
+              <>
+                <Text style={s.addLead}>Add anything else, for this hour only.</Text>
 
                 {searchable && (
                   <View style={s.searchSurface}>
@@ -462,10 +622,10 @@ export default function QuietHourSheet({
                   </View>
                 )}
 
-                {chosenApps.length > 0 && (
+                {addedApps.length > 0 && (
                   <View style={s.group}>
-                    <Text style={s.groupLabel}>YOUR CHOICE</Text>
-                    {chosenApps.map(app => (
+                    <Text style={s.groupLabel}>ADDED FOR THIS HOUR</Text>
+                    {addedApps.map(app => (
                       <AppChoiceCard
                         key={app.id}
                         id={app.id}
@@ -479,24 +639,8 @@ export default function QuietHourSheet({
                   </View>
                 )}
 
-                {coreApps.length > 0 && (
-                  <View style={s.group}>
-                    <Text style={s.groupLabel}>ALWAYS OPEN</Text>
-                    {coreApps.map(app => (
-                      <AppChoiceCard
-                        key={app.id}
-                        id={app.id}
-                        name={app.name}
-                        state={app.state}
-                        note={app.note}
-                        accent={accent}
-                      />
-                    ))}
-                  </View>
-                )}
-
                 <View style={s.group}>
-                  <Text style={s.groupLabel}>EVERYTHING ELSE</Text>
+                  {addedApps.length > 0 && <Text style={s.groupLabel}>EVERYTHING ELSE</Text>}
                   {otherApps.length === 0 ? (
                     <Text style={s.emptyNote}>
                       {normalizedQuery
@@ -685,15 +829,75 @@ const s = StyleSheet.create({
     color: '#8F3443',
   },
 
-  // ── Choosing ───────────────────────────────────────────────────────
-  tally: { flexDirection: 'row', alignItems: 'baseline', gap: 7, marginBottom: 4, marginLeft: 2 },
-  tallyCount: {
-    fontFamily: F.serifSemiBold,
-    fontSize: 26,
-    lineHeight: 30,
-    fontVariant: ['tabular-nums'],
+  // ── The standing set ───────────────────────────────────────────────
+  standing: {
+    marginTop: 2,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#EAE6DC',
+    backgroundColor: '#FCFBF7',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  tallyWord: { fontFamily: F.serif, fontSize: 15.5, lineHeight: 21, color: C.textSecondary },
+  standingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  standingCopy: { flex: 1, minWidth: 0 },
+  standingTitle: {
+    fontFamily: F.serifSemiBold,
+    fontSize: 17,
+    lineHeight: 21,
+    letterSpacing: -0.15,
+    color: C.text,
+  },
+  standingNote: {
+    marginTop: 2,
+    fontFamily: F.sansMedium,
+    fontSize: 11.5,
+    lineHeight: 15.5,
+    color: C.textSecondary,
+  },
+  standingList: { marginTop: 4 },
+  standingFoot: {
+    marginTop: 12,
+    fontFamily: F.serifItalic,
+    fontSize: 14,
+    lineHeight: 19,
+    color: C.textMuted,
+  },
+
+  /** The overlapped faces — see SeatStack. */
+  stack: { flexDirection: 'row', alignItems: 'center' },
+  stackSeat: {
+    width: 29,
+    height: 29,
+    borderRadius: 10,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#E6E2D9',
+    backgroundColor: '#F3F1EC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // ⚠ A ring of the card's own ground, so overlapping seats stay separate
+  // objects rather than merging into one grey shape.
+  stackSeatOver: { marginLeft: -9, borderColor: '#FCFBF7', borderWidth: 1.5 },
+  stackSeatText: { fontFamily: F.serifSemiBold, fontSize: 13, lineHeight: 17, color: '#9A9186' },
+  stackRest: { backgroundColor: '#EFECE4' },
+  stackRestText: { fontFamily: F.sansBold, fontSize: 10, lineHeight: 14, color: '#8A8178' },
+
+  disclosure: { width: 22, alignItems: 'center', justifyContent: 'center' },
+  disclosureOpen: { transform: [{ rotate: '90deg' }] },
+
+  addLead: {
+    marginTop: 20,
+    marginLeft: 2,
+    fontFamily: F.serif,
+    fontSize: 16,
+    lineHeight: 22,
+    color: C.textSecondary,
+  },
+
+  // ── Choosing ───────────────────────────────────────────────────────
   searchSurface: {
     height: 48,
     flexDirection: 'row',

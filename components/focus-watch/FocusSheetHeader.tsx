@@ -122,7 +122,20 @@ const h = StyleSheet.create({
   // divider under it. Title, rule and reading are one assembly, so they are
   // spaced like one.
   copy: { marginTop: 6, alignItems: 'center', paddingHorizontal: 44 },
+  /**
+   * ⚠ `alignSelf: 'stretch'` IS WHAT MAKES THE TITLE READABLE, and its
+   * absence is why this name was arriving shrunk to a whisper.
+   *
+   * The parent centres its children, so without a stretch this Text is
+   * laid out at its own SHRINK-TO-FIT width — and `adjustsFontSizeToFit`
+   * then has a box barely wider than the glyphs to fit into, so it shrinks
+   * the type toward `minimumFontScale` even though the full 29 would have
+   * fitted the sheet with room to spare. Stretched, the fitting has the
+   * whole measure to work with and only shrinks a name that genuinely
+   * overruns; `textAlign` below still centres it.
+   */
   title: {
+    alignSelf: 'stretch',
     fontFamily: F.serifMedium,
     fontSize: 29,
     lineHeight: 33,
