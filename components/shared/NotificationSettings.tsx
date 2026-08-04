@@ -132,7 +132,10 @@ export default function NotificationSettings({
 }: Props) {
   return (
     <View style={[s.wrap, style]}>
-      <Text style={[s.label, { color: accent }]}>{label}</Text>
+      {/* Optional so a caller that already names the setting in its own row
+          can drop the heading rather than say it twice. Every existing caller
+          takes the default and is unaffected. */}
+      {!!label && <Text style={[s.label, { color: accent }]}>{label}</Text>}
 
       <View style={s.modeRow}>
         {MODE_OPTIONS.map(({ key, label: optionLabel, Icon }) => (

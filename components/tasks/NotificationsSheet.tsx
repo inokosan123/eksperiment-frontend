@@ -1,23 +1,52 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
-import Reanimated, {
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
 import SmoothBottomSheet from '@/components/shared/SmoothBottomSheet';
-import { Clock, X } from '@/components/icons/Icons';
+import { X } from '@/components/icons/Icons';
 import { BellDouble, BellNone, BellSingle } from '@/components/icons/NotificationBells';
 import { C, F } from '@/constants/tokens';
 import { HapticTouchableOpacity as TouchableOpacity } from '@/components/shared/HapticTouch';
-import { resolveTaskVariant } from '@/components/tasks/taskAdapters';
+import NotificationSettings from '@/components/shared/NotificationSettings';
 import { useTasks } from './TaskProvider';
 import type { NotificationMode } from '@/components/shared/NotificationSettings';
 import type { TaskDefinition, TaskDraft } from './taskTypes';
+
+/* ─────────────────────────────────────────────────────────────
+ * THE DAY'S REMINDERS.
+ *
+ * WHAT IT WAS, and why it had to go: every task sat on its own
+ * gradient card carrying TWO COLOUR BLOBS — an 82pt circle off the
+ * top-left at 30% and a 128×96 lozenge off the top-right at 48% —
+ * plus an accent rail, and depending on the task a habit ribbon, a
+ * second rail, or a pair of book spines. The header wore a third
+ * blob, a 130pt gold circle, behind a 46pt solid gold disc. Eight
+ * decorative layers before a single word was read.
+ *
+ * That is the app's old voice. Nothing else in Anasta is built that
+ * way now, and a stack of six such cards is what made this sheet look
+ * like a different application.
+ *
+ * WHAT IT IS: ONE PLATE, and the tasks are rows on it, divided by the
+ * app's own fold — a gold hairline fading at both ends with white
+ * caught under it. Mobbin's notification screens all land in the same
+ * place (Alan, BeReal, Google Photos, Phantom): a settings list is
+ * rows on a surface, never a deck of illustrated cards.
+ *
+ * ⚠ COLOUR NOW ARRIVES THROUGH ONE MEMBER. Each task keeps its own
+ * accent — gold for spiritual, the habit's own colour, brown for
+ * reading — but it is carried by a 3pt rail at the row's edge and by
+ * the lit mode button, and nowhere else. Six accents on six grounds
+ * is a fruit salad; six accents on six rails is an index.
+ *
+ * ⚠ AND THE CONTROL IS NO LONGER A COPY. This sheet used to carry its
+ * own `AnimatedModeButton` and `ReminderButton`, duplicating
+ * `NotificationSettings` — the component six other screens already
+ * use, whose header comment says this sheet "would be odd to speak
+ * differently". It now uses the real one. Two implementations of one
+ * choice cannot stay in step, and this deletes about a hundred and
+ * forty lines of the second.
+ * ───────────────────────────────────────────────────────────── */
 
 type Props = {
   visible: boolean;
@@ -25,16 +54,6 @@ type Props = {
   selectedDate: string;
 };
 
-// The same three marks the shared `NotificationSettings` row wears — one bell,
-// and the number of arcs off it is the setting. This sheet is the other place
-// the choice is made, and it would be odd for it to speak differently.
-const MODES: { mode: NotificationMode; label: string; Icon: typeof BellNone }[] = [
-  { mode: 'none', label: 'Off', Icon: BellNone },
-  { mode: 'single', label: 'Single', Icon: BellSingle },
-  { mode: 'double', label: 'Double', Icon: BellDouble },
-];
-
-const REMINDER_OPTIONS = [5, 10, 15, 30, 60];
 const DEFAULT_REMINDER_MINUTES = 15;
 
 const SOURCE_ACCENTS: Record<TaskDefinition['source'], string> = {
@@ -47,151 +66,14 @@ const SOURCE_ACCENTS: Record<TaskDefinition['source'], string> = {
   gratitude: '#F43F5E',
 };
 
-function hexToRgba(hex: string, alpha: number) {
-  const normalized = hex.replace('#', '');
-  const safe = normalized.length === 3
-    ? normalized.split('').map(char => `${char}${char}`).join('')
-    : normalized;
-  const value = Number.parseInt(safe, 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function mixHex(hex: string, target: string, amount: number) {
-  const normalize = (value: string) => {
-    const raw = value.replace('#', '');
-    return raw.length === 3 ? raw.split('').map(char => `${char}${char}`).join('') : raw;
-  };
-  const from = Number.parseInt(normalize(hex), 16);
-  const to = Number.parseInt(normalize(target), 16);
-  const mix = (a: number, b: number) => Math.round(a + (b - a) * amount);
-  const r = mix((from >> 16) & 255, (to >> 16) & 255);
-  const g = mix((from >> 8) & 255, (to >> 8) & 255);
-  const b = mix(from & 255, to & 255);
-  return `#${[r, g, b].map(channel => channel.toString(16).padStart(2, '0')).join('')}`;
-}
-
 function accentForTask(task: TaskDefinition) {
   return task.habitColor || SOURCE_ACCENTS[task.source] || C.gold;
 }
 
-function notificationToneForTask(task: TaskDefinition, muted: boolean) {
-  const variant = resolveTaskVariant(task);
-  const taskAccent = accentForTask(task);
-  const mutedStatus = '#8A8177';
-
-  if (variant === 'habit') {
-    return {
-      variant,
-      accent: taskAccent,
-      statusColor: muted ? mutedStatus : taskAccent,
-      colors: [
-        mixHex(taskAccent, '#FFFFFF', muted ? 0.96 : 0.88),
-        mixHex(taskAccent, '#FFFFFF', muted ? 0.98 : 0.95),
-        '#FFFFFF',
-      ],
-      borderColor: hexToRgba(taskAccent, muted ? 0.16 : 0.24),
-      glowColor: mixHex(taskAccent, '#FFFFFF', muted ? 0.92 : 0.82),
-      leftGlowColor: mixHex(taskAccent, '#FFFFFF', muted ? 0.94 : 0.74),
-      rowAccentColor: muted ? '#D1D5DB' : taskAccent,
-      shadowColor: taskAccent,
-      radius: 18,
-    };
-  }
-
-  if (variant === 'gratitude') {
-    const accent = '#F43F5E';
-    return {
-      variant,
-      accent,
-      statusColor: muted ? mutedStatus : accent,
-      colors: ['#FFEDF2', '#FFF7F8', '#FFFFFF'],
-      borderColor: hexToRgba(accent, muted ? 0.12 : 0.24),
-      glowColor: hexToRgba(accent, muted ? 0.05 : 0.15),
-      leftGlowColor: hexToRgba(accent, muted ? 0.05 : 0.11),
-      rowAccentColor: muted ? '#D1D5DB' : accent,
-      shadowColor: accent,
-      radius: 18,
-    };
-  }
-
-  if (variant === 'reading') {
-    const accent = '#9C7C4F';
-    return {
-      variant,
-      accent,
-      statusColor: muted ? mutedStatus : accent,
-      colors: ['#FFFFFF', '#F4EBDC', '#FFF9F1'],
-      borderColor: muted ? 'rgba(120,113,108,0.18)' : 'rgba(146,116,82,0.30)',
-      glowColor: muted ? 'rgba(156,124,79,0.04)' : 'rgba(156,124,79,0.13)',
-      leftGlowColor: muted ? 'rgba(156,124,79,0.05)' : 'rgba(197,160,89,0.18)',
-      rowAccentColor: muted ? '#D6D3D1' : accent,
-      shadowColor: '#1C1917',
-      radius: 18,
-    };
-  }
-
-  if (variant === 'challenge') {
-    return {
-      variant,
-      accent: C.gold,
-      statusColor: muted ? mutedStatus : '#A8853C',
-      colors: ['#FFFDF7', '#FFFFFF', '#FFF8EA'],
-      borderColor: muted ? 'rgba(120,113,108,0.18)' : 'rgba(197,160,89,0.36)',
-      glowColor: muted ? 'rgba(197,160,89,0.05)' : 'rgba(197,160,89,0.14)',
-      leftGlowColor: muted ? 'rgba(197,160,89,0.05)' : 'rgba(197,160,89,0.13)',
-      rowAccentColor: muted ? '#D6D3D1' : C.gold,
-      shadowColor: C.gold,
-      radius: 24,
-    };
-  }
-
-  if (variant === 'spiritual') {
-    return {
-      variant,
-      accent: C.gold,
-      statusColor: muted ? mutedStatus : '#A8853C',
-      colors: ['#FFFBEB', '#FFFFFF', '#FFF9EA'],
-      borderColor: muted ? 'rgba(120,113,108,0.16)' : 'rgba(197,160,89,0.30)',
-      glowColor: muted ? 'rgba(197,160,89,0.05)' : 'rgba(197,160,89,0.11)',
-      leftGlowColor: muted ? 'rgba(197,160,89,0.04)' : 'rgba(197,160,89,0.10)',
-      rowAccentColor: muted ? '#D6D3D1' : C.gold,
-      shadowColor: C.gold,
-      radius: 18,
-    };
-  }
-
-  if (variant === 'quick') {
-    const accent = '#16A34A';
-    return {
-      variant,
-      accent,
-      statusColor: muted ? mutedStatus : accent,
-      colors: ['#FFFFFF', '#F0FDF4', '#FFFFFF'],
-      borderColor: muted ? 'rgba(120,113,108,0.16)' : hexToRgba(accent, 0.22),
-      glowColor: hexToRgba(accent, muted ? 0.04 : 0.12),
-      leftGlowColor: hexToRgba(accent, muted ? 0.04 : 0.10),
-      rowAccentColor: muted ? '#D1D5DB' : accent,
-      shadowColor: accent,
-      radius: 18,
-    };
-  }
-
-  return {
-    variant,
-    accent: '#1C1917',
-    statusColor: muted ? mutedStatus : '#1C1917',
-    colors: ['#F2F1EF', '#FFFFFF', '#FAFAFA'],
-    borderColor: muted ? 'rgba(120,113,108,0.16)' : 'rgba(28,25,23,0.18)',
-    glowColor: muted ? 'rgba(28,25,23,0.03)' : 'rgba(28,25,23,0.08)',
-    leftGlowColor: muted ? 'rgba(28,25,23,0.03)' : 'rgba(28,25,23,0.07)',
-    rowAccentColor: muted ? '#D1D5DB' : '#1C1917',
-    shadowColor: '#1C1917',
-    radius: 18,
-  };
-}
+/** The one colour a silenced row is allowed. */
+const OFF_RAIL = '#D8D5D0';
+const OFF_INK = '#A8A29E';
+const OFF_FAINT = '#C4C0BB';
 
 function sourceLabel(task: TaskDefinition) {
   switch (task.source) {
@@ -243,110 +125,27 @@ function buildDraftFromDefinition(
   };
 }
 
-function AnimatedModeButton({
-  active,
-  accent,
-  mode,
-  label,
-  Icon,
-  onPress,
-}: {
-  active: boolean;
-  accent: string;
-  mode: NotificationMode;
-  label: string;
-  Icon: typeof BellNone;
-  onPress: () => void;
-}) {
-  const progress = useSharedValue(active ? 1 : 0);
-
-  useEffect(() => {
-    progress.value = withSpring(active ? 1 : 0, {
-      damping: 18,
-      stiffness: 210,
-      mass: 0.8,
-    });
-  }, [active, progress]);
-
-  // The same ladder the shared `NotificationSettings` row climbs: none is a
-  // refusal and takes the one colour that is not the accent, single is the
-  // accent lightly, double is the accent whole.
-  const lit = mode === 'none'
-    ? { plate: '#FFFFFF', edge: C.red, ink: C.red }
-    : mode === 'single'
-      ? { plate: hexToRgba(accent, 0.12), edge: accent, ink: accent }
-      : { plate: accent, edge: accent, ink: '#FFFFFF' };
-
-  // ⚠ Everything rides `progress`. This button used to animate its SCALE only
-  // and swap plate, icon and label through `active && {...}` — so it grew
-  // smoothly while its colours changed in one frame.
-  const plateStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], ['rgba(255,255,255,0.72)', lit.plate]),
-    borderColor: interpolateColor(progress.value, [0, 1], ['#EFEDE6', lit.edge]),
-    transform: [{ scale: 1 + progress.value * 0.015 }],
-  }), [lit.plate, lit.edge]);
-  const litIcon = useAnimatedStyle(() => ({ opacity: progress.value }));
-  const restIcon = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
-  const textStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(progress.value, [0, 1], ['#A8A29E', lit.ink]),
-  }), [lit.ink]);
-
+/* The fold that divides one row from the next: a gold hairline fading at
+ * both ends with white caught under it. The app divides a plate with its
+ * rules, never by seating a second plate on it. */
+const RowFold = memo(function RowFold() {
   return (
-    <TouchableOpacity activeOpacity={0.88} onPress={onPress} style={s.modeTouch}>
-      <Reanimated.View style={[s.modeBtn, plateStyle]}>
-        <View style={s.modeBtnIcon}>
-          <Reanimated.View style={restIcon}>
-            <Icon s={21} c="#A8A29E" w={2.05} />
-          </Reanimated.View>
-          <Reanimated.View style={[s.modeBtnIconLit, litIcon]}>
-            <Icon s={21} c={lit.ink} w={2.05} />
-          </Reanimated.View>
-        </View>
-        <Reanimated.Text style={[s.modeBtnText, textStyle]}>{label}</Reanimated.Text>
-      </Reanimated.View>
-    </TouchableOpacity>
+    <View pointerEvents="none" style={s.fold}>
+      <View style={s.foldCut} />
+      <View style={s.foldLit} />
+    </View>
   );
-}
+});
 
-function ReminderButton({
-  minutes,
-  active,
-  accent,
-  onPress,
-}: {
-  minutes: number;
-  active: boolean;
-  accent: string;
-  onPress: () => void;
-}) {
-  const progress = useSharedValue(active ? 1 : 0);
-
-  useEffect(() => {
-    progress.value = withSpring(active ? 1 : 0, {
-      damping: 18,
-      stiffness: 220,
-      mass: 0.75,
-    });
-  }, [active, progress]);
-
-  const pillStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], ['#F5F3EF', accent]),
-    transform: [{ scale: 1 + progress.value * 0.025 }],
-  }), [accent]);
-  const textStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(progress.value, [0, 1], [C.textSecondary, '#FFFFFF']),
-  }));
-
-  return (
-    <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={s.reminderTouch}>
-      <Reanimated.View style={[s.reminderPill, pillStyle]}>
-        <Reanimated.Text style={[s.reminderPillText, textStyle]}>{minutes}m</Reanimated.Text>
-      </Reanimated.View>
-    </TouchableOpacity>
-  );
-}
-
-function NotificationTaskRow({
+/**
+ * One task on the plate.
+ *
+ * ⚠ MEMOISED, and it matters here: tapping a mode on one task used to
+ * re-render every other row on the sheet, each of which then rebuilt an
+ * eight-field colour object through two rounds of hex arithmetic. The row
+ * now re-renders only when its own mode or minutes change.
+ */
+const NotificationTaskRow = memo(function NotificationTaskRow({
   task,
   mode,
   reminderMinutes,
@@ -359,92 +158,59 @@ function NotificationTaskRow({
   onModeChange: (task: TaskDefinition, mode: NotificationMode) => void;
   onReminderChange: (task: TaskDefinition, minutes: number) => void;
 }) {
-  const muted = mode === 'none';
-  const tone = notificationToneForTask(task, muted);
-  const SummaryIcon = mode === 'none' ? BellNone : mode === 'double' ? BellDouble : BellSingle;
+  const off = mode === 'none';
+  const accent = accentForTask(task);
+  const SummaryIcon = off ? BellNone : mode === 'double' ? BellDouble : BellSingle;
+
+  const handleMode = useCallback(
+    (next: NotificationMode) => onModeChange(task, next),
+    [onModeChange, task],
+  );
+  const handleReminder = useCallback(
+    (minutes: number) => onReminderChange(task, minutes),
+    [onReminderChange, task],
+  );
 
   return (
-    <View>
-      <LinearGradient
-        colors={tone.colors as [string, string, string]}
-        start={{ x: 0.08, y: 0 }}
-        end={{ x: 0.96, y: 1 }}
-        style={[
-          s.row,
-          {
-            borderColor: tone.borderColor,
-            borderRadius: tone.radius,
-            shadowColor: tone.shadowColor,
-            opacity: muted ? 0.90 : 1,
-          },
-        ]}
-      >
-        {tone.variant === 'reading' ? (
-          <>
-            <View pointerEvents="none" style={[s.rowReadingSpineOuter, { backgroundColor: muted ? '#D6D3D1' : '#9C7C4F' }]} />
-            <View pointerEvents="none" style={[s.rowReadingSpineInner, { backgroundColor: muted ? '#E7E5E4' : C.gold }]} />
-          </>
-        ) : (
-          <View pointerEvents="none" style={[s.rowAccent, { backgroundColor: tone.rowAccentColor }]} />
-        )}
-        {tone.variant === 'challenge' ? <View pointerEvents="none" style={[s.rowChallengeAccent, { backgroundColor: tone.rowAccentColor }]} /> : null}
-        <View pointerEvents="none" style={[s.rowLeftGlow, { backgroundColor: tone.leftGlowColor }]} />
-        <View pointerEvents="none" style={[s.rowGlow, { backgroundColor: tone.glowColor }]} />
-        {tone.variant === 'habit' ? <View pointerEvents="none" style={[s.rowHabitRibbon, { backgroundColor: tone.rowAccentColor }]} /> : null}
+    <View style={s.row}>
+      {/* The task's own colour, and the only place on the row it appears
+          besides the lit button. Ash when the task is silenced — this is
+          what makes an off row readable from across the list. */}
+      <View pointerEvents="none" style={[s.rowRail, { backgroundColor: off ? OFF_RAIL : accent }]} />
 
-        <View style={s.rowHead}>
-          <View style={[s.timeBadge, { borderColor: hexToRgba(tone.statusColor, muted ? 0.15 : 0.26) }]}>
-            <Clock s={11} c={tone.statusColor} w={2.2} />
-            <Text style={[s.timeText, { color: tone.statusColor }]}>{task.schedule.time || '--:--'}</Text>
-          </View>
-
-          <View style={s.titleBlock}>
-            <Text style={s.rowTitle} numberOfLines={1}>{task.title}</Text>
-            <Text style={s.rowMeta} numberOfLines={1}>
-              {sourceLabel(task)} - {task.subtitle || task.type}
-            </Text>
-          </View>
-
-          <View style={[s.summaryPill, { backgroundColor: hexToRgba(tone.statusColor, muted ? 0.10 : 0.13) }]}>
-            <SummaryIcon s={12} c={tone.statusColor} w={2.1} />
-            <Text style={[s.summaryPillText, { color: tone.statusColor }]}>{formatModeLabel(mode, reminderMinutes)}</Text>
-          </View>
+      <View style={s.rowHead}>
+        <Text style={[s.rowTime, { color: off ? OFF_INK : accent }]}>
+          {task.schedule.time || '--:--'}
+        </Text>
+        <View style={s.rowCopy}>
+          <Text style={[s.rowTitle, off && s.rowTitleOff]} numberOfLines={1}>{task.title}</Text>
+          <Text style={[s.rowMeta, off && s.rowMetaOff]} numberOfLines={1}>
+            {sourceLabel(task)} · {task.subtitle || task.type}
+          </Text>
         </View>
-
-        <View style={s.modeRow}>
-          {MODES.map(({ mode: optionMode, label, Icon }) => (
-            <AnimatedModeButton
-              key={optionMode}
-              active={mode === optionMode}
-              accent={tone.accent}
-              mode={optionMode}
-              label={label}
-              Icon={Icon}
-              onPress={() => onModeChange(task, optionMode)}
-            />
-          ))}
+        <View style={s.rowSummary}>
+          <SummaryIcon s={12} c={off ? OFF_INK : accent} w={2.1} />
+          <Text style={[s.rowSummaryText, { color: off ? OFF_INK : accent }]} numberOfLines={1}>
+            {formatModeLabel(mode, reminderMinutes)}
+          </Text>
         </View>
+      </View>
 
-        {mode === 'double' && (
-          <View style={s.reminderWrap}>
-            <Text style={s.reminderLabel}>Remind before</Text>
-            <View style={s.reminderRow}>
-              {REMINDER_OPTIONS.map(minutes => (
-                <ReminderButton
-                  key={minutes}
-                  minutes={minutes}
-                  active={reminderMinutes === minutes}
-                  accent={tone.accent}
-                  onPress={() => onReminderChange(task, minutes)}
-                />
-              ))}
-            </View>
-          </View>
-        )}
-      </LinearGradient>
+      {/* The real control, not this sheet's copy of it. `label=""` drops its
+          heading, because the row above already names the task. */}
+      <NotificationSettings
+        label=""
+        mode={mode}
+        accent={accent}
+        reminderMinutes={reminderMinutes}
+        onModeChange={handleMode}
+        onReminderChange={handleReminder}
+        style={s.rowControl}
+      />
     </View>
   );
-}
+});
+
 
 export default function NotificationsSheet({ visible, onClose, selectedDate }: Props) {
   const insets = useSafeAreaInsets();
@@ -474,9 +240,21 @@ export default function NotificationsSheet({ visible, onClose, selectedDate }: P
   const resolveReminder = (task: TaskDefinition): number =>
     optimisticReminder[task.id] ?? task.reminderMinutes ?? DEFAULT_REMINDER_MINUTES;
 
+  /**
+   * ⚠ ONE LINE, NOT A STAT STRIP. This was three big numerals in a bordered
+   * bar — On, Double, Off — and none of them did anything: not a filter, not
+   * a control, three figures a reader can also get by looking at the list
+   * directly under them. It is a sentence now, and it sits with the date.
+   */
   const activeCount = dayTasks.filter(task => resolveMode(task) !== 'none').length;
-  const doubleCount = dayTasks.filter(task => resolveMode(task) === 'double').length;
   const offCount = Math.max(0, dayTasks.length - activeCount);
+  const tally = dayTasks.length === 0
+    ? ''
+    : offCount === 0
+      ? `${activeCount} on`
+      : activeCount === 0
+        ? `${offCount} off`
+        : `${activeCount} on, ${offCount} off`;
 
   const dateLabel = useMemo(() => {
     const [year, month, day] = selectedDate.split('-').map(Number);
@@ -536,42 +314,19 @@ export default function NotificationsSheet({ visible, onClose, selectedDate }: P
         <View style={s.handle} />
       </View>
 
-      <LinearGradient
-        colors={['#FFFFFF', '#FFF9EC', '#FFF7E8']}
-        locations={[0, 0.62, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={s.header}
-      >
-        <View pointerEvents="none" style={s.headerHalo} />
-        <View style={s.headerIcon}>
-          <BellDouble s={24} c="#FFFFFF" w={2.15} />
-        </View>
+      {/* No plate, no halo, no gold disc — the sheet's own surface is the
+          ground, and the head is type on it. */}
+      <View style={s.header}>
         <View style={s.headerCopy}>
           <Text style={s.eyebrowText}>Notifications</Text>
           <Text style={s.title}>Daily reminders</Text>
-          <Text style={s.subtitle}>{dateLabel}</Text>
+          <Text style={s.subtitle} numberOfLines={1}>
+            {tally ? `${dateLabel} · ${tally}` : dateLabel}
+          </Text>
         </View>
         <TouchableOpacity haptic="selection" activeOpacity={0.76} onPress={onClose} style={s.closeBtn}>
           <X s={18} c={C.textMuted} w={2.4} />
         </TouchableOpacity>
-      </LinearGradient>
-
-      <View style={s.metricsRow}>
-        <View style={s.metricItem}>
-          <Text style={s.metricValue}>{activeCount}</Text>
-          <Text style={s.metricLabel}>On</Text>
-        </View>
-        <View style={s.metricDivider} />
-        <View style={s.metricItem}>
-          <Text style={s.metricValue}>{doubleCount}</Text>
-          <Text style={s.metricLabel}>Double</Text>
-        </View>
-        <View style={s.metricDivider} />
-        <View style={s.metricItem}>
-          <Text style={s.metricValue}>{offCount}</Text>
-          <Text style={s.metricLabel}>Off</Text>
-        </View>
       </View>
 
       <ScrollView
@@ -580,22 +335,25 @@ export default function NotificationsSheet({ visible, onClose, selectedDate }: P
       >
         {dayTasks.length === 0 ? (
           <View style={s.emptyWrap}>
-            <View style={s.emptyIcon}>
-              <BellNone s={27} c="#D6D3D1" w={2} />
-            </View>
+            <BellNone s={30} c="#D6D3D1" w={1.9} />
             <Text style={s.emptyText}>No active tasks for this day</Text>
           </View>
         ) : (
-          dayTasks.map(task => (
-            <NotificationTaskRow
-              key={task.id}
-              task={task}
-              mode={resolveMode(task)}
-              reminderMinutes={resolveReminder(task)}
-              onModeChange={handleModeChange}
-              onReminderChange={handleReminderChange}
-            />
-          ))
+          <View style={s.plate}>
+            <View pointerEvents="none" style={s.plateLit} />
+            {dayTasks.map((task, index) => (
+              <React.Fragment key={task.id}>
+                {index > 0 && <RowFold />}
+                <NotificationTaskRow
+                  task={task}
+                  mode={resolveMode(task)}
+                  reminderMinutes={resolveReminder(task)}
+                  onModeChange={handleModeChange}
+                  onReminderChange={handleReminderChange}
+                />
+              </React.Fragment>
+            ))}
+          </View>
         )}
       </ScrollView>
     </SmoothBottomSheet>
@@ -610,334 +368,100 @@ const s = StyleSheet.create({
     maxHeight: '88%',
     overflow: 'hidden',
   },
-  handleWrap: {
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 6,
-  },
-  handle: {
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#DDD8CE',
-  },
+  handleWrap: { alignItems: 'center', paddingTop: 10, paddingBottom: 6 },
+  handle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#DDD8CE' },
+
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 2,
-    padding: 14,
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.22)',
-    overflow: 'hidden',
-    shadowColor: '#C5A059',
-    shadowOpacity: 0.10,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingTop: 6,
+    paddingBottom: 4,
+    gap: 12,
   },
-  headerHalo: {
-    position: 'absolute',
-    right: -28,
-    top: -34,
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: 'rgba(197,160,89,0.13)',
-  },
-  headerIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: C.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: C.gold,
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  headerCopy: {
-    flex: 1,
-    minWidth: 0,
-    paddingHorizontal: 12,
-  },
+  headerCopy: { flex: 1, minWidth: 0 },
   eyebrowText: {
     fontFamily: F.sansBold,
     fontSize: 9.5,
-    letterSpacing: 1.6,
+    letterSpacing: 1.8,
     color: C.gold,
     textTransform: 'uppercase',
   },
-  title: {
-    fontFamily: F.serifMedium,
-    fontSize: 24,
-    color: C.text,
-    marginTop: 2,
-  },
-  subtitle: {
-    fontFamily: F.sans,
-    fontSize: 12,
-    color: C.textMuted,
-    marginTop: 2,
-  },
+  title: { fontFamily: F.serifMedium, fontSize: 26, lineHeight: 31, color: C.text, marginTop: 3 },
+  subtitle: { fontFamily: F.sans, fontSize: 12, color: C.textSecondary, marginTop: 2 },
   closeBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.84)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
     borderWidth: 1,
     borderColor: '#EEEAE2',
   },
-  metricsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingVertical: 10,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.74)',
+
+  scrollContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 },
+
+  /* One plate; the tasks are rows on it. */
+  plate: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: '#EEEAE2',
-  },
-  metricItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 38,
-  },
-  metricValue: {
-    fontFamily: F.serifMedium,
-    fontSize: 20,
-    color: C.text,
-  },
-  metricLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 8.5,
-    letterSpacing: 1.2,
-    color: C.textMuted,
-    textTransform: 'uppercase',
-    marginTop: 1,
-  },
-  metricDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: '#EEEAE2',
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 24,
-    gap: 12,
-  },
-  emptyWrap: {
-    alignItems: 'center',
-    paddingVertical: 54,
-  },
-  emptyIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#F0EEE9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  emptyText: {
-    fontFamily: F.serifItalic,
-    fontSize: 14,
-    color: C.textMuted,
-  },
-  row: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 14,
+    borderColor: 'rgba(197,160,89,0.26)',
     overflow: 'hidden',
-    shadowOpacity: 0.08,
-    shadowRadius: 11,
-    shadowOffset: { width: 0, height: 5 },
+    shadowColor: '#C5A059',
+    shadowOpacity: 0.07,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
     elevation: 2,
   },
-  rowAccent: {
+  plateLit: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    top: 1,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+
+  fold: { marginHorizontal: 16, height: 2 },
+  foldCut: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(197,160,89,0.30)' },
+  foldLit: { height: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
+
+  row: { paddingLeft: 16, paddingRight: 16, paddingVertical: 14 },
+  // The task's colour, and the row's whole claim to it.
+  rowRail: {
     position: 'absolute',
     left: 0,
-    top: 16,
-    bottom: 16,
-    width: 4,
-    borderTopRightRadius: 4,
-    borderBottomRightRadius: 4,
-    opacity: 0.76,
+    top: 15,
+    bottom: 15,
+    width: 3,
+    borderTopRightRadius: 3,
+    borderBottomRightRadius: 3,
   },
-  rowChallengeAccent: {
-    position: 'absolute',
-    right: 0,
-    top: 16,
-    bottom: 16,
-    width: 4,
-    borderTopLeftRadius: 4,
-    borderBottomLeftRadius: 4,
-    opacity: 0.76,
-  },
-  rowReadingSpineOuter: {
-    position: 'absolute',
-    left: 0,
-    top: 14,
-    bottom: 14,
-    width: 5,
-    borderTopRightRadius: 5,
-    borderBottomRightRadius: 5,
-  },
-  rowReadingSpineInner: {
-    position: 'absolute',
-    left: 6,
-    top: 18,
-    bottom: 18,
-    width: 2,
-    borderRadius: 2,
-    opacity: 0.92,
-  },
-  rowLeftGlow: {
-    position: 'absolute',
-    left: -22,
-    top: -18,
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    opacity: 0.30,
-  },
-  rowGlow: {
-    position: 'absolute',
-    right: -30,
-    top: -28,
-    width: 128,
-    height: 96,
-    borderRadius: 64,
-    opacity: 0.48,
-  },
-  rowHabitRibbon: {
-    position: 'absolute',
-    right: 14,
-    top: 0,
-    width: 22,
-    height: 5,
-    borderBottomLeftRadius: 7,
-    borderBottomRightRadius: 7,
-    opacity: 0.74,
-  },
-  rowHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
-  },
-  timeBadge: {
-    minWidth: 68,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255,255,255,0.70)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingHorizontal: 9,
-  },
-  timeText: {
+  rowHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  rowTime: {
     fontFamily: F.sansBold,
-    fontSize: 11,
+    fontSize: 11.5,
     letterSpacing: 0.4,
+    minWidth: 40,
+    fontVariant: ['tabular-nums'],
   },
-  titleBlock: {
-    flex: 1,
-    minWidth: 0,
-  },
-  rowTitle: {
-    fontFamily: F.serifMedium,
-    fontSize: 16,
-    color: C.text,
-  },
-  rowMeta: {
-    fontFamily: F.sans,
-    fontSize: 11,
-    color: C.textMuted,
-    marginTop: 2,
-  },
-  summaryPill: {
-    minHeight: 30,
-    maxWidth: 104,
-    borderRadius: 15,
-    paddingHorizontal: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-  },
-  summaryPillText: {
+  rowCopy: { flex: 1, minWidth: 0 },
+  rowTitle: { fontFamily: F.serifMedium, fontSize: 16.5, lineHeight: 20, color: C.text },
+  rowTitleOff: { color: OFF_INK },
+  rowMeta: { fontFamily: F.sans, fontSize: 10.5, lineHeight: 14, color: C.textMuted, marginTop: 1 },
+  rowMetaOff: { color: OFF_FAINT },
+  rowSummary: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rowSummaryText: {
     fontFamily: F.sansBold,
     fontSize: 8.5,
-    letterSpacing: 0.7,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-  modeRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  modeTouch: {
-    flex: 1,
-  },
-  modeBtn: {
-    minHeight: 46,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#EFEDE6',
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-  },
-  modeBtnIcon: { width: 21, height: 21, alignItems: 'center', justifyContent: 'center' },
-  modeBtnIconLit: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  modeBtnText: {
-    fontFamily: F.sansBold,
-    fontSize: 9.5,
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-  },
-  reminderWrap: {
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(120,113,108,0.12)',
-  },
-  reminderLabel: {
-    fontFamily: F.sansBold,
-    fontSize: 9,
-    letterSpacing: 1.4,
-    color: C.textMuted,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  reminderRow: {
-    flexDirection: 'row',
-    gap: 7,
-  },
-  reminderTouch: {
-    flex: 1,
-  },
-  reminderPill: {
-    minHeight: 34,
-    borderRadius: 17,
-    backgroundColor: '#F5F3EF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reminderPillText: {
-    fontFamily: F.sansBold,
-    fontSize: 11,
-    letterSpacing: 0.35,
-    color: C.textSecondary,
-  },
+  rowControl: { marginTop: 12 },
+
+  emptyWrap: { alignItems: 'center', paddingVertical: 54, gap: 12 },
+  emptyText: { fontFamily: F.serifItalic, fontSize: 14, color: C.textMuted },
 });
